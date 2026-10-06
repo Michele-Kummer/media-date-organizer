@@ -27,6 +27,14 @@ Phases (mutually exclusive on a single invocation):
                         and no editor-software tag is present). Date Created
                         is only settable on Windows; elsewhere just Date
                         Modified is synced.
+    --flatten           Move every file that has a Date Taken out of its
+                        subfolder and up into the root folder itself, then
+                        delete the subfolders left empty. Files with no Date
+                        Taken stay where they are (the folder name may be the
+                        only record of their date), so their folders survive.
+                        A name already taken in the root gets a _<date-taken>
+                        suffix. Add --dry-run to preview without changing
+                        anything.
 
 Dependencies: Pillow (`pip install pillow`) and, for the audit workbook,
 openpyxl (`pip install openpyxl`). Scanning works without openpyxl — the XLSX
@@ -562,6 +570,64 @@ def sync_timestamps(root: str) -> dict:
     return dict(counts)
 
 
+# ---------------- Flatten into root ----------------
+
+def flatten(root: str, dry_run: bool = False) -> dict:
+    """Move dated files up from their subfolder into root, then remove the
+    subfolders that end up empty. Undated files are left in place."""
+    counts = Counter()
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    # Names already claimed in root, lowercased (Windows is case-insensitive)
+    taken = {n.lower() for n in os.listdir(root)}
+    gone = set()  # paths moved or removed, so a dry run can tell what empties
+    for folder, name, full in iter_media(root):
+        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+        dt = read_metadata(full, ftype)['date_taken']
+        if dt is None:
+            counts['left-undated'] += 1
+            print(f"LEFT (no Date Taken): {folder}/{name}")
+            continue
+        new_name = name
+        if new_name.lower() in taken:
+            p = pathlib.Path(name)
+            new_name = f"{p.stem}_{dt:%Y-%m-%d}{p.suffix}"
+            if new_name.lower() in taken:
+                counts['collision'] += 1
+                print(f"COLLISION, skipping: {folder}/{name}", file=sys.stderr)
+                continue
+            counts['renamed'] += 1
+        if not dry_run:
+            try:
+                shutil.move(full, os.path.join(root, new_name))
+            except OSError as e:
+                counts['failed'] += 1
+                print(f"FAILED {folder}/{name}: {e}", file=sys.stderr)
+                continue
+        taken.add(new_name.lower())
+        gone.add(full)
+        counts['moved'] += 1
+        print(f"{verb}: {folder}/{name} -> {new_name}")
+
+    verb = 'WOULD REMOVE EMPTY' if dry_run else 'REMOVED EMPTY'
+    for dirpath, _dirs, _files in os.walk(root, topdown=False):
+        if dirpath == root:
+            continue
+        if any(os.path.join(dirpath, e) not in gone for e in os.listdir(dirpath)):
+            counts['folders-kept'] += 1
+            continue
+        if not dry_run:
+            try:
+                os.rmdir(dirpath)
+            except OSError as e:
+                counts['folders-kept'] += 1
+                print(f"FAILED to remove {dirpath}: {e}", file=sys.stderr)
+                continue
+        gone.add(dirpath)
+        counts['folders-removed'] += 1
+        print(f"{verb}: {dirpath}")
+    return dict(counts)
+
+
 # ---------------- Reporting ----------------
 
 def write_xlsx(root: str, plan: list, output: str) -> None:
@@ -637,8 +703,12 @@ def main(argv=None):
     g.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     g.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     g.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
+    g.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders.')
+    ap.add_argument('--dry-run', action='store_true', help='With --flatten: list what would be moved and removed without changing anything.')
     ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
     args = ap.parse_args(argv)
+    if args.dry_run and not args.flatten:
+        ap.error('--dry-run is only supported with --flatten')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)
@@ -652,6 +722,10 @@ def main(argv=None):
         return 0
     if args.sync_timestamps:
         print(json.dumps({'sync_timestamps': sync_timestamps(args.root)}, indent=2))
+        return 0
+    if args.flatten:
+        key = 'flatten_dry_run' if args.dry_run else 'flatten'
+        print(json.dumps({key: flatten(args.root, args.dry_run)}, indent=2))
         return 0
 
     # report-only and apply-moves both need the scanned plan

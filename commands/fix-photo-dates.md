@@ -27,9 +27,11 @@ pip install -r requirements.txt
 
 6. **Sync Date Modified and Date Created (optional).** If the user wants Explorer's "Date Modified" and "Date Created" to show the real capture time, run `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --sync-timestamps`. Only files that look unedited (EXIF ModifyDate matches DateTimeOriginal and no editor-software tag) are touched; edited files are skipped and listed.
 
-7. **Cleanup.** Remind the user: `skills/photo-date-fixer/scripts/Cleanup-Pictures.ps1 -Path "$ARGUMENTS"` removes duplicate base-name files and empty folders.
+7. **Flatten into the root folder (optional).** If the user wants the photos out of their dated subfolders, preview with `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --flatten --dry-run`, then after confirming run it without `--dry-run`. Every file that has a Date Taken moves up into `$ARGUMENTS` itself and the emptied subfolders are deleted; undated files stay put. Also available on its own as `/flatten-photos`.
+
+8. **Cleanup.** Remind the user: `skills/photo-date-fixer/scripts/Cleanup-Pictures.ps1 -Path "$ARGUMENTS"` removes duplicate base-name files and empty folders.
 
 ## Deliverables
 
 - `photo-audit.xlsx` at the root of `$ARGUMENTS`.
-- Summary message with counts (extensions corrected, dates written, files converted, files moved, timestamps synced) plus the Cleanup-Pictures.ps1 reminder.
+- Summary message with counts (extensions corrected, dates written, files converted, files moved, timestamps synced, files flattened and folders removed) plus the Cleanup-Pictures.ps1 reminder.

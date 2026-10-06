@@ -14,6 +14,7 @@ Works on any photo source. The author built it from a cleanup on a mixed folder 
 4. **Converts PNG to JPEG when needed.** Windows Explorer only shows Date Taken for JPEG/HEIC/TIFF/raw; PNG dates stay invisible there. The plugin re-encodes PNG → JPEG at quality 95, preserving EXIF, so Explorer surfaces the date.
 5. **Moves files to date-matched folders.** Files whose Date Taken doesn't match their current folder's name are moved to a sibling folder named for their real date.
 6. **Produces an audit workbook** and finishes with a PowerShell cleanup script that removes duplicates and empty folders.
+7. **Flattens the result, if you want.** An optional last step moves every dated photo up out of its `YYYY-MM-DD` subfolder into the photo folder itself and deletes the emptied subfolders. Runs on its own with `/flatten-photos <folder>`.
 
 End state: every photo has a Date Taken, is in a folder matching that date, has a correct file extension, and shows up correctly in Windows Explorer.
 
@@ -53,7 +54,7 @@ Claude walks through: extension fix → metadata read → date-write for blanks 
 .
 ├── .claude-plugin/plugin.json         Plugin manifest
 ├── skills/photo-date-fixer/           The skill
-├── commands/fix-photo-dates.md        Slash command
+├── commands/                          Slash commands (fix-photo-dates, flatten-photos)
 ├── docs/                              Case study, screenshots, example audit
 └── sample-data/                       Synthetic test photos
 ```

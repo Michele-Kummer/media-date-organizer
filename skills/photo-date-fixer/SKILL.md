@@ -5,7 +5,7 @@ description: Use this skill when the user wants every photo in a folder to have 
 
 # photo-date-fixer
 
-Ensures every photo has a Date Taken. Six phases, each independently runnable.
+Ensures every photo has a Date Taken. Seven phases, each independently runnable.
 
 ## Prerequisites
 
@@ -62,6 +62,14 @@ Writes `photo-audit.xlsx` summarizing which files have Date Taken, which don't, 
 ### Phase 6 — Sync file-system timestamps (optional)
 `python scripts/organize.py --root "<PhotoRoot>" --sync-timestamps`. Sets each file's "Date Modified" and "Date Created" to its EXIF Date Taken, **but only for files that look unedited**. An "unedited" file is one whose EXIF `DateTime` tag (file-level modify time) equals `DateTimeOriginal` (or is missing) AND whose EXIF `Software` tag does not match a known editor (Photoshop, Lightroom, Camera Raw, GIMP, Affinity, Luminar, Pixelmator, Snapseed, VSCO, Instagram). Files that fail the check are skipped and listed — neither timestamp is touched. "Date Created" is set through the Win32 `SetFileTime` API, so on non-Windows systems only "Date Modified" is synced (reported as `created-unsupported`).
 
+### Phase 7 — Flatten into the root folder (optional)
+`python scripts/organize.py --root "<PhotoRoot>" --flatten`. Moves every file that has a Date Taken up one level, out of its `YYYY-MM-DD` subfolder and into `<PhotoRoot>` itself, then deletes the subfolders left empty. Preview first with `--flatten --dry-run`, which lists every move and folder removal without touching anything.
+- Files with no Date Taken are left where they are — the folder name may be the only record of their date — so their folders are kept.
+- Folders that still hold anything else (undated files, non-media files) are kept.
+- If a name is already taken in the root (e.g. two days each have an `IMG_0001.JPG`), the incoming file gets a `_<date-taken>` suffix; if that is taken too, it is skipped and reported.
+
+Run this last: once files are in the root, the other phases no longer see them (they only look inside subfolders).
+
 ### Cleanup
 Remind the user to run `scripts/Cleanup-Pictures.ps1 -Path "<PhotoRoot>"` at the end. It removes duplicate base-name files (keeps the preferred format: HEIC > JPG > MOV > … > PNG) and empty folders.
 
@@ -69,7 +77,7 @@ Remind the user to run `scripts/Cleanup-Pictures.ps1 -Path "<PhotoRoot>"` at the
 
 Every scan writes `photo-audit.xlsx` to the root folder with Summary, Plan, and Only-moves sheets. End the response with:
 
-1. A short summary of counts (extensions corrected, dates written, files converted, files moved, timestamps synced).
+1. A short summary of counts (extensions corrected, dates written, files converted, files moved, timestamps synced, files flattened and folders removed).
 2. A reminder to run `.\Cleanup-Pictures.ps1` from `<PhotoRoot>` (and any extra PowerShell for leftovers the sandbox could not delete).
 3. A link to the audit XLSX.
 
