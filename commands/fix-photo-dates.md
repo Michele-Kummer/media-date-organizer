@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 2. **Scan metadata.** Run `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --report-only`. Writes `photo-audit.xlsx`. Share the summary before anything destructive.
 
-3. **Write Date Taken where blank.** After user confirms: `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --fill-blanks`. JPEG/PNG/TIFF files whose containing folder is named `YYYY-MM-DD` get `DateTimeOriginal = <folder-date> 12:00:00` stamped into their EXIF. HEIC/MOV without EXIF are flagged (need exiftool).
+3. **Write Date Taken where blank.** After user confirms: `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --fill-blanks`. JPEG/PNG/TIFF files get `DateTimeOriginal` stamped into their EXIF from a date in the filename if there is one, else `<folder-date> 12:00:00` when the containing folder is named `YYYY-MM-DD`. File modified time is never used. HEIC/MOV without EXIF are flagged (need exiftool).
 
 4. **Convert PNG → JPEG (optional).** If the user wants Windows Explorer to show Date Taken for PNG screenshots, run `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --convert-png` after confirming. JPEG is lossy; the original PNG is left for the cleanup script.
 

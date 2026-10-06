@@ -47,11 +47,14 @@ Writes `photo-audit.xlsx` summarizing which files have Date Taken, which don't, 
 
 ### Phase 3 — Write Date Taken where it's missing
 `python scripts/organize.py --root "<PhotoRoot>" --fill-blanks`. For every file whose Date Taken is blank:
-- If the containing folder is named `YYYY-MM-DD`, write `DateTimeOriginal = <folder-date> 12:00:00` into the file's EXIF (JPEG, PNG, TIFF).
+- If the filename contains a date (e.g. Snapchat exports `2023-12-20_<id>-main.jpg`, or `IMG_20231220_142355.jpg`), write that as `DateTimeOriginal` (JPEG, PNG, TIFF), using the time from the name if present, else `12:00:00`.
+- Otherwise, if the containing folder is named `YYYY-MM-DD`, write `DateTimeOriginal = <folder-date> 12:00:00`.
+- The file's modified time is never used as a source — it usually reflects the import, not the capture.
+- JPEGs get the EXIF segment swapped in place; the image data is not re-encoded.
 - HEIC/MOV files without existing EXIF are flagged — writing new EXIF into those containers reliably needs `exiftool`. Offer to install it, or convert HEIC → JPEG in Phase 4.
 
 ### Phase 4 — Convert formats Windows can't read Date Taken from
-`python scripts/organize.py --root "<PhotoRoot>" --convert-png`. Converts PNG files to JPEG at quality 95, preserving EXIF, so Windows Explorer surfaces Date Taken. Only run after confirming with the user — JPEG is lossy and the original PNG is left in place for the cleanup script to remove.
+`python scripts/organize.py --root "<PhotoRoot>" --convert-png`. Converts PNG files to JPEG at quality 95, preserving EXIF, so Windows Explorer surfaces Date Taken. Only run after confirming with the user — JPEG is lossy and the original PNG is left in place for the cleanup script to remove. PNGs named `*-overlay.png` (Snapchat's transparent caption layers) are skipped.
 
 ### Phase 5 — Move to date-matched folders
 `python scripts/organize.py --root "<PhotoRoot>" --apply-moves`. Any file whose Date Taken differs from its current folder's `YYYY-MM-DD` name is moved to a sibling folder named for its real date, creating that folder if needed.

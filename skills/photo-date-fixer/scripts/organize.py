@@ -6,11 +6,16 @@ by real Date Taken.
 Phases (mutually exclusive on a single invocation):
     --report-only       Scan and write audit XLSX; make no changes.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
-                        are missing Date Taken. Uses the containing folder's
-                        YYYY-MM-DD name at 12:00:00 as the fallback. HEIC
+                        are missing Date Taken. Uses a date embedded in the
+                        filename (e.g. 2023-12-20_<id>-main.jpg,
+                        IMG_20231220_142355.jpg) first, then the containing
+                        folder's YYYY-MM-DD name at 12:00:00. The file's
+                        modified time is never used — it is usually the import
+                        time. JPEGs are rewritten without re-encoding. HEIC
                         files without existing EXIF are flagged, not written.
     --convert-png       Re-encode PNG files as JPEG at quality 95, preserving
-                        EXIF. Leaves originals in place.
+                        EXIF. Leaves originals in place. Transparent
+                        "-overlay" PNGs (Snapchat caption layers) are skipped.
     --apply-moves       Move files whose Date Taken does not match their current
                         folder name into a sibling folder named for the real
                         date. Renames use the clean iPhone-native stem; a
@@ -230,6 +235,46 @@ def iter_media(root: str):
             yield folder, name, full
 
 
+# YYYY-MM-DD or YYYYMMDD, optionally followed by HHMMSS, not embedded in a
+# longer run of digits (so "Snapchat-1234567890" does not match).
+_NAME_DATE_RE = re.compile(
+    r'(?<!\d)(\d{4})([-_.]?)(\d{2})\2(\d{2})'
+    r'(?:[-_ T.]?(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})(?![0-9A-Za-z]))?(?!\d)')
+
+
+def _filename_date(stem: str) -> Optional[datetime.datetime]:
+    """Return the first plausible date embedded in a filename stem, at the
+    embedded time if there is one, else 12:00:00."""
+    today = datetime.date.today()
+    for m in _NAME_DATE_RE.finditer(stem):
+        try:
+            d = datetime.date(int(m[1]), int(m[3]), int(m[4]))
+        except ValueError:
+            continue
+        if d.year < 1990 or d > today:
+            continue
+        if m[5]:
+            try:
+                return datetime.datetime.combine(d, datetime.time(int(m[5]), int(m[6]), int(m[7])))
+            except ValueError:
+                pass
+        return datetime.datetime.combine(d, datetime.time(12, 0, 0))
+    return None
+
+
+def _fallback_date(name: str, folder: str) -> tuple:
+    """Return (datetime, source) to use when Date Taken is blank: the date in
+    the filename, else the YYYY-MM-DD folder name at 12:00:00. The file's
+    modified time is deliberately not consulted — imports reset it."""
+    dt = _filename_date(pathlib.Path(name).stem)
+    if dt is not None:
+        return dt, 'filename'
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
+    if m:
+        return datetime.datetime(int(m[1]), int(m[2]), int(m[3]), 12, 0, 0), 'folder'
+    return None, None
+
+
 def scan(root: str) -> list:
     """Return a list of plan dicts for every file under root."""
     rows = []
@@ -243,7 +288,12 @@ def scan(root: str) -> list:
         base = re.match(r'^(.+?)_\d{4}-\d{2}-\d{2}$', stem)
         base = base.group(1) if base else stem
         ext_canonical = ftype.upper() if ftype else pathlib.Path(name).suffix
-        if dt is None and folder_date is not None:
+        fallback_source = _fallback_date(name, folder)[1] if dt is None else None
+        if fallback_source == 'filename':
+            action = 'fill-blank'
+            target_folder = folder
+            new_name = name
+        elif fallback_source == 'folder':
             action = 'fill-blank'
             target_folder = folder
             new_name = f"{base}_{folder_date.isoformat()}{ext_canonical}"
@@ -302,45 +352,85 @@ def apply_moves(root: str, plan: list) -> dict:
 
 # ---------------- Fill blank Date Taken ----------------
 
+def _jpeg_set_exif(path: str, exif_bytes: bytes) -> None:
+    """Replace (or insert) the EXIF APP1 segment of a JPEG, leaving the
+    compressed image data byte-for-byte untouched."""
+    if len(exif_bytes) > 65533:
+        raise ValueError("EXIF block too large for a JPEG APP1 segment")
+    with open(path, 'rb') as f:
+        data = f.read()
+    if data[:2] != b'\xff\xd8':
+        raise ValueError("not a JPEG file")
+    pos = insert_at = 2
+    old = []
+    while pos + 4 <= len(data) and data[pos] == 0xFF:
+        marker = data[pos + 1]
+        if marker in (0xDA, 0xD9):  # start of scan / end of image
+            break
+        end = pos + 2 + struct.unpack('>H', data[pos + 2:pos + 4])[0]
+        if marker == 0xE0 and pos == insert_at:
+            insert_at = end  # keep JFIF header(s) first
+        elif marker == 0xE1 and data[pos + 4:pos + 10] == b'Exif\x00\x00':
+            old.append((pos, end))
+        pos = end
+    segment = b'\xff\xe1' + struct.pack('>H', len(exif_bytes) + 2) + exif_bytes
+    out = bytearray(data[:insert_at]) + segment
+    cur = insert_at
+    for s, e in old:
+        out += data[cur:s]
+        cur = e
+    out += data[cur:]
+    tmp = path + '.tmp'
+    with open(tmp, 'wb') as f:
+        f.write(out)
+    os.replace(tmp, path)
+
+
 def _write_exif_date_image(path: str, dt: datetime.datetime) -> None:
-    """Write EXIF DateTime/DateTimeOriginal/DateTimeDigitized on JPEG or PNG."""
+    """Write EXIF DateTime/DateTimeOriginal/DateTimeDigitized on JPEG or PNG.
+    JPEGs get the EXIF segment swapped in place (no re-encode, no quality
+    loss); other formats are re-saved through Pillow."""
     if not HAS_PIL:
         raise RuntimeError("Pillow is required to write EXIF; pip install pillow")
-    img = Image.open(path)
-    img.load()
     ds = dt.strftime("%Y:%m:%d %H:%M:%S")
-    exif = img.getexif()
-    exif[0x0132] = ds
-    sub = exif.get_ifd(0x8769)
-    sub[0x9003] = ds
-    sub[0x9004] = ds
-    save_kwargs = {'exif': exif.tobytes()}
-    if 'icc_profile' in img.info:
-        save_kwargs['icc_profile'] = img.info['icc_profile']
-    fmt = (img.format or '').upper()
     tmp = path + '.tmp'
-    img.save(tmp, format=fmt, **save_kwargs)
-    os.replace(tmp, path)
+    with Image.open(path) as img:
+        fmt = (img.format or '').upper()
+        exif = img.getexif()
+        exif[0x0132] = ds
+        sub = exif.get_ifd(0x8769)
+        sub[0x9003] = ds
+        sub[0x9004] = ds
+        exif_bytes = exif.tobytes()
+        if fmt not in ('JPEG', 'MPO'):
+            img.load()
+            save_kwargs = {'exif': exif_bytes}
+            if 'icc_profile' in img.info:
+                save_kwargs['icc_profile'] = img.info['icc_profile']
+            img.save(tmp, format=fmt, **save_kwargs)
+    if fmt in ('JPEG', 'MPO'):
+        _jpeg_set_exif(path, exif_bytes)
+    else:
+        os.replace(tmp, path)
 
 
 def fill_blanks(root: str) -> dict:
     counts = Counter()
     for folder, name, full in iter_media(root):
-        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
-        if not m:
-            counts['no-folder-date'] += 1
-            continue
-        folder_dt = datetime.datetime(int(m[1]), int(m[2]), int(m[3]), 12, 0, 0)
         ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
         meta = read_metadata(full, ftype)
         if meta['date_taken'] is not None:
             counts['already-dated'] += 1
             continue
+        fill_dt, source = _fallback_date(name, folder)
+        if fill_dt is None:
+            counts['no-date-source'] += 1
+            continue
         if ftype in ('.jpg', '.jpeg', '.png', '.tif', '.tiff'):
             try:
-                _write_exif_date_image(full, folder_dt)
-                counts['written'] += 1
-                print(f"WROTE Date Taken {folder_dt:%Y-%m-%d %H:%M:%S}: {folder}/{name}")
+                _write_exif_date_image(full, fill_dt)
+                counts['written-from-' + source] += 1
+                print(f"WROTE Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} (from {source}): {folder}/{name}")
             except Exception as e:
                 counts['write-failed'] += 1
                 print(f"FAILED to write {folder}/{name}: {e}", file=sys.stderr)
@@ -360,6 +450,10 @@ def convert_pngs(root: str) -> dict:
     for dirpath, _dirs, files in os.walk(root):
         for name in files:
             if not name.lower().endswith('.png'):
+                continue
+            if pathlib.Path(name).stem.lower().endswith('-overlay'):
+                # Snapchat caption layer: transparent, flattens to a blank image
+                counts['skipped-overlay'] += 1
                 continue
             p = os.path.join(dirpath, name)
             new = str(pathlib.Path(p).with_suffix('.JPG'))
@@ -539,7 +633,7 @@ def main(argv=None):
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes.')
-    g.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the folder date.')
+    g.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the date in the filename, else the folder date.')
     g.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     g.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     g.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
