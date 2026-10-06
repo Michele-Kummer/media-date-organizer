@@ -18,3 +18,6 @@ desktop.ini
 
 # Don't commit user photos accidentally
 sample-data/private/
+
+# Local-only docs (keep on disk, don't push to GitHub)
+docs/git-cheatsheet.md

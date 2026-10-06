@@ -22,12 +22,12 @@ End state: every photo has a Date Taken, is in a folder matching that date, has 
 Requires [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) and Windows PowerShell 5.1+ (or PowerShell 7).
 
 ```bash
-git clone https://github.com/<you>/photo-date-fixer.git
+git clone https://github.com/Michele.Kummer/photo-date-fixer.git
 # Then in Claude Code:
 /plugin install ./photo-date-fixer
 ```
 
-Or install directly from a URL: `/plugin install https://github.com/<you>/photo-date-fixer`.
+Or install directly from a URL: `/plugin install https://github.com/Michele-Kummer/photo-date-fixer`.
 
 ## Use
 

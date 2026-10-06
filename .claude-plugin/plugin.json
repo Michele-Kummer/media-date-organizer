@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Ensures all photos have a Date Taken, by converting to JPG and adding the metadata.",
   "author": {
-    "name": "Shelly",
-    "email": "shellykummerstar@gmail.com"
+    "name": "Michele Kummer",
+    "email": "michele.shelly.kummer@gmail.com"
   },
   "license": "MIT",
   "homepage": "https://github.com/your-handle/photo-date-fixer",
