@@ -3,7 +3,11 @@
 organize.py — read photo metadata (EXIF, MOV mvhd, HEIC TIFF) and sort files
 by real Date Taken.
 
-Phases (mutually exclusive on a single invocation):
+Phases (several can be given on one command line; they run in a fixed order
+and a summary of every phase's counts and problems is printed at the end):
+    --all               Shorthand for --fill-blanks --convert-png --apply-moves
+                        --sync-timestamps. Add --move-no-data, --quarantine-ads
+                        or --flatten to include those too.
     --report-only       Scan and write audit XLSX; make no changes.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
                         are missing Date Taken. Uses a date embedded in the
@@ -12,10 +16,13 @@ Phases (mutually exclusive on a single invocation):
                         folder's YYYY-MM-DD name at 12:00:00. The file's
                         modified time is never used — it is usually the import
                         time. JPEGs are rewritten without re-encoding. HEIC
-                        files without existing EXIF are flagged, not written.
+                        and video files are written with exiftool when it is
+                        installed, else flagged. Empty (0-byte) files are
+                        skipped and counted.
     --convert-png       Re-encode PNG files as JPEG at quality 95, preserving
-                        EXIF. Leaves originals in place. Transparent
-                        "-overlay" PNGs (Snapchat caption layers) are skipped.
+                        EXIF. Leaves originals in place. PNGs with any
+                        transparent pixels are skipped and stay PNG, as are
+                        "-overlay" PNGs (Snapchat caption layers).
     --apply-moves       Move files whose Date Taken does not match their current
                         folder name into a sibling folder named for the real
                         date. Renames use the clean iPhone-native stem; a
@@ -35,10 +42,28 @@ Phases (mutually exclusive on a single invocation):
                         A name already taken in the root gets a _<date-taken>
                         suffix. Add --dry-run to preview without changing
                         anything.
+    --quarantine-ads    Move ad images into an _ads folder inside the root,
+                        keeping their subfolder path, for the user to review
+                        and delete. A file is an ad only if BOTH hold: its
+                        name is a UUID (0c4cda27-b4cc-4e92-a446-d6b780f24a64),
+                        a 9-character hex id plus a number (bed51b94a_1595),
+                        or gmsnet plus an optional number (gmsnet2); AND it
+                        carries no camera Make/Model. Name matches that do
+                        have camera info are kept and listed. Looks in the
+                        root folder and every subfolder. Nothing is deleted.
+                        Add --dry-run to preview without moving anything.
+    --move-no-data      Move media files that hold no image data (0 bytes, or
+                        nothing but null bytes: the remains of a failed copy
+                        or transfer) into a "_no-image-data" folder inside the
+                        root, keeping their subfolder path. Looks in the root
+                        folder and every subfolder. Nothing is deleted. Add
+                        --dry-run to preview without moving anything.
 
 Dependencies: Pillow (`pip install pillow`) and, for the audit workbook,
 openpyxl (`pip install openpyxl`). Scanning works without openpyxl — the XLSX
-step is skipped with a clear message if it's missing.
+step is skipped with a clear message if it's missing. exiftool is optional:
+when present (on PATH, or in winget's default folder) --fill-blanks uses it
+for HEIC and video files. Install with `winget install OliverBetz.ExifTool`.
 """
 from __future__ import annotations
 
@@ -50,6 +75,7 @@ import pathlib
 import re
 import shutil
 import struct
+import subprocess
 import sys
 from collections import Counter
 from typing import Optional
@@ -102,8 +128,8 @@ def detect_type(path: str) -> Optional[str]:
 # ---------------- Date Taken extraction ----------------
 
 def _heic_dates(path: str) -> dict:
-    """Return {DateTimeOriginal, DateTimeDigitized, DateTime, Software}
-    strings found in a HEIC/HEIF file's embedded TIFF/EXIF block."""
+    """Return {DateTimeOriginal, DateTimeDigitized, DateTime, Software, Make,
+    Model} strings found in a HEIC/HEIF file's embedded TIFF/EXIF block."""
     out = {}
     with open(path, 'rb') as f:
         data = f.read()
@@ -127,6 +153,8 @@ def _heic_dates(path: str) -> dict:
                         out['DateTime'] = data[i + val_off:i + val_off + cnt].rstrip(b'\x00').decode('ascii', 'replace')
                     if tag == 0x0131 and typ == 2 and cnt < 128:
                         out['Software'] = data[i + val_off:i + val_off + cnt].rstrip(b'\x00').decode('ascii', 'replace')
+                    if tag in (0x010F, 0x0110) and typ == 2 and 4 < cnt < 128:
+                        out['Make' if tag == 0x010F else 'Model'] = data[i + val_off:i + val_off + cnt].rstrip(b'\x00').decode('ascii', 'replace')
                     if tag == 0x8769:
                         sn = struct.unpack(endian + 'H', data[i + val_off:i + val_off + 2])[0]
                         for kk in range(sn):
@@ -154,10 +182,15 @@ def _parse_exif_dt(s: str) -> Optional[datetime.datetime]:
 
 
 def _mp4_times(path: str) -> dict:
-    """Return {creation_time, modification_time} from the mvhd atom."""
+    """Return {creation_time, modification_time} from the mvhd atom, plus
+    {camera} when the file carries a device-make tag."""
     out = {}
     with open(path, 'rb') as f:
         data = f.read()
+    for marker in (b'com.apple.quicktime.make', b'\xa9mak', b'com.android.manufacturer'):
+        if marker in data:
+            out['camera'] = marker.decode('latin-1')
+            break
     i = data.find(b'mvhd')
     if i < 0:
         return out
@@ -180,7 +213,8 @@ def _mp4_times(path: str) -> dict:
 
 
 def _pil_meta(path: str) -> dict:
-    """Return {DateTimeOriginal, DateTime, Software} from an image via Pillow."""
+    """Return {DateTimeOriginal, DateTime, Software, Make, Model} from an
+    image via Pillow."""
     out = {}
     if not HAS_PIL:
         return out
@@ -196,28 +230,48 @@ def _pil_meta(path: str) -> dict:
         v = exif.get(0x0131)
         if v:
             out['Software'] = v
+        v = exif.get(0x010F)
+        if v:
+            out['Make'] = v
+        v = exif.get(0x0110)
+        if v:
+            out['Model'] = v
     except Exception:
         pass
     return out
 
 
+def _camera(d: dict) -> Optional[str]:
+    """Join EXIF Make and Model into one string, or None if both are blank."""
+    parts = [str(d.get(k) or '').strip('\x00 ') for k in ('Make', 'Model')]
+    return ' '.join(p for p in parts if p) or None
+
+
 def read_metadata(path: str, ftype: str) -> dict:
-    """Return a normalized dict of {date_taken, modify_time, software}."""
-    out = {'date_taken': None, 'modify_time': None, 'software': None}
+    """Return a normalized dict of {date_taken, modify_time, software, camera}."""
+    out = {'date_taken': None, 'modify_time': None, 'software': None, 'camera': None}
     if ftype == '.heic':
         d = _heic_dates(path)
         out['date_taken'] = _parse_exif_dt(d.get('DateTimeOriginal') or d.get('DateTimeDigitized'))
         out['modify_time'] = _parse_exif_dt(d.get('DateTime'))
         out['software'] = d.get('Software')
+        out['camera'] = _camera(d)
     elif ftype in ('.mov', '.mp4', '.m4v'):
         d = _mp4_times(path)
         out['date_taken'] = d.get('creation_time')
         out['modify_time'] = d.get('modification_time')
+        out['camera'] = d.get('camera')
     elif ftype in ('.png', '.jpg', '.jpeg', '.tif', '.tiff'):
         d = _pil_meta(path)
+        if not d and ftype in ('.tif', '.tiff'):
+            # TIFF variants Pillow cannot open: walk the TIFF structure directly
+            d = _heic_dates(path)
         out['date_taken'] = _parse_exif_dt(d.get('DateTimeOriginal'))
         out['modify_time'] = _parse_exif_dt(d.get('DateTime'))
         out['software'] = d.get('Software')
+        out['camera'] = _camera(d)
+    elif ftype == '.webp':
+        out['camera'] = _camera(_pil_meta(path))
     return out
 
 
@@ -226,12 +280,28 @@ def read_metadata(path: str, ftype: str) -> dict:
 MEDIA_EXTS = {'.png', '.jpg', '.jpeg', '.heic', '.heif', '.mov', '.mp4', '.m4v',
               '.tif', '.tiff', '.gif', '.bmp', '.webp'}
 
+# Folder inside root that --quarantine-ads moves ad images into. Every phase
+# ignores it.
+QUARANTINE_DIR = '_ads'
+
+# Folder inside root that --move-no-data moves empty / null-filled files into.
+# Every phase ignores it.
+NO_DATA_DIR = '_no-image-data'
+
+HOLDING_DIRS = (QUARANTINE_DIR, NO_DATA_DIR)
+
+
+def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
+    """Stop an os.walk of root from descending into the holding folders."""
+    if dirpath == root:
+        dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
+
 
 def iter_media(root: str):
     """Yield (folder_name, filename, full_path) for every media file under root."""
     for folder in sorted(os.listdir(root)):
         fp = os.path.join(root, folder)
-        if not os.path.isdir(fp):
+        if not os.path.isdir(fp) or folder in HOLDING_DIRS:
             continue
         for name in sorted(os.listdir(fp)):
             full = os.path.join(fp, name)
@@ -349,7 +419,9 @@ def apply_moves(root: str, plan: list) -> dict:
         if src == dst:
             counts['unchanged'] += 1
             continue
-        if os.path.exists(dst):
+        # A case-only rename (IMG_1.jpg -> IMG_1.JPG) "exists" on Windows but
+        # is the same file, not a collision
+        if os.path.exists(dst) and not os.path.samefile(src, dst):
             counts['collision'] += 1
             print(f"COLLISION, skipping: {dst}", file=sys.stderr)
             continue
@@ -422,9 +494,49 @@ def _write_exif_date_image(path: str, dt: datetime.datetime) -> None:
         os.replace(tmp, path)
 
 
+def _find_exiftool() -> Optional[str]:
+    """Return the path to exiftool, or None if it is not installed."""
+    exe = shutil.which('exiftool')
+    if exe:
+        return exe
+    # winget's default location, for terminals opened before it was on PATH
+    local = os.environ.get('LOCALAPPDATA')
+    if local:
+        exe = os.path.join(local, 'Programs', 'ExifTool', 'ExifTool.exe')
+        if os.path.isfile(exe):
+            return exe
+    return None
+
+
+VIDEO_EXTS = ('.mov', '.mp4', '.m4v')
+
+
+def _write_date_exiftool(exiftool: str, path: str, ftype: str, dt: datetime.datetime) -> None:
+    """Write Date Taken with exiftool, for formats Pillow cannot write
+    (HEIC, video). The file is rewritten in place; image data is not
+    re-encoded."""
+    ds = dt.strftime("%Y:%m:%d %H:%M:%S")
+    if ftype in VIDEO_EXTS:
+        tags = ['-QuickTime:CreateDate=' + ds, '-QuickTime:ModifyDate=' + ds,
+                '-TrackCreateDate=' + ds, '-MediaCreateDate=' + ds]
+    else:
+        tags = ['-AllDates=' + ds]
+    r = subprocess.run(
+        [exiftool, '-charset', 'filename=utf8', '-overwrite_original', '-m', *tags, path],
+        capture_output=True, text=True, encoding='utf-8', errors='replace')
+    if r.returncode != 0 or '1 image files updated' not in r.stdout:
+        msg = (r.stderr or r.stdout).strip().splitlines()
+        raise RuntimeError(msg[-1] if msg else f"exiftool exited {r.returncode}")
+
+
 def fill_blanks(root: str) -> dict:
     counts = Counter()
+    exiftool = _find_exiftool()
     for folder, name, full in iter_media(root):
+        if os.path.getsize(full) == 0:
+            # A failed copy or transfer: there is no image to write a date into
+            counts['empty-file'] += 1
+            continue
         ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
         meta = read_metadata(full, ftype)
         if meta['date_taken'] is not None:
@@ -436,26 +548,57 @@ def fill_blanks(root: str) -> dict:
             continue
         if ftype in ('.jpg', '.jpeg', '.png', '.tif', '.tiff'):
             try:
-                _write_exif_date_image(full, fill_dt)
+                try:
+                    _write_exif_date_image(full, fill_dt)
+                except Exception:
+                    # e.g. a TIFF variant Pillow cannot open
+                    if not exiftool:
+                        raise
+                    _write_date_exiftool(exiftool, full, ftype, fill_dt)
                 counts['written-from-' + source] += 1
                 print(f"WROTE Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} (from {source}): {folder}/{name}")
             except Exception as e:
                 counts['write-failed'] += 1
                 print(f"FAILED to write {folder}/{name}: {e}", file=sys.stderr)
+        elif ftype in ('.heic', '.heif') + VIDEO_EXTS:
+            if not exiftool:
+                counts['heic-mov-needs-exiftool'] += 1
+                print(f"SKIPPED (needs exiftool): {folder}/{name}", file=sys.stderr)
+                continue
+            try:
+                _write_date_exiftool(exiftool, full, ftype, fill_dt)
+                counts['written-from-' + source] += 1
+                print(f"WROTE Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} (from {source}, exiftool): {folder}/{name}")
+            except Exception as e:
+                counts['write-failed'] += 1
+                print(f"FAILED to write {folder}/{name}: {e}", file=sys.stderr)
         else:
-            counts['heic-mov-needs-exiftool'] += 1
-            print(f"SKIPPED (needs exiftool): {folder}/{name}", file=sys.stderr)
+            # GIF, BMP, WEBP: no Date Taken field this script can write
+            counts['unsupported-format'] += 1
+    if counts['empty-file']:
+        print(f"NOTE: {counts['empty-file']} file(s) are empty (0 bytes) and were skipped.", file=sys.stderr)
     return dict(counts)
 
 
 # ---------------- Convert PNG to JPEG ----------------
+
+def _has_transparency(img) -> bool:
+    """True when an image has at least one pixel that is not fully opaque.
+    An alpha channel that is opaque throughout does not count."""
+    if img.mode == 'P' and 'transparency' in img.info:
+        img = img.convert('RGBA')
+    if img.mode not in ('RGBA', 'LA', 'PA'):
+        return 'transparency' in img.info
+    return img.getchannel('A').getextrema()[0] < 255
+
 
 def convert_pngs(root: str) -> dict:
     counts = Counter()
     if not HAS_PIL:
         print("Pillow required for PNG conversion; pip install pillow", file=sys.stderr)
         return {}
-    for dirpath, _dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(root, dirpath, dirs)
         for name in files:
             if not name.lower().endswith('.png'):
                 continue
@@ -470,13 +613,12 @@ def convert_pngs(root: str) -> dict:
                 continue
             img = Image.open(p)
             img.load()
+            if _has_transparency(img):
+                # JPEG has no transparency; flattening would change the picture
+                counts['skipped-transparent'] += 1
+                continue
             exif_bytes = img.info.get('exif', b'')
-            if img.mode in ('RGBA', 'LA', 'P'):
-                bg = Image.new('RGB', img.size, (255, 255, 255))
-                mask = img.split()[-1] if img.mode in ('RGBA', 'LA') else None
-                bg.paste(img, mask=mask)
-                img = bg
-            elif img.mode != 'RGB':
+            if img.mode != 'RGB':
                 img = img.convert('RGB')
             img.save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
             counts['converted'] += 1
@@ -609,8 +751,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         print(f"{verb}: {folder}/{name} -> {new_name}")
 
     verb = 'WOULD REMOVE EMPTY' if dry_run else 'REMOVED EMPTY'
+    holding = tuple(os.path.join(root, d) + os.sep for d in HOLDING_DIRS)
     for dirpath, _dirs, _files in os.walk(root, topdown=False):
-        if dirpath == root:
+        if dirpath == root or (dirpath + os.sep).startswith(holding):
             continue
         if any(os.path.join(dirpath, e) not in gone for e in os.listdir(dirpath)):
             counts['folders-kept'] += 1
@@ -625,6 +768,124 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         gone.add(dirpath)
         counts['folders-removed'] += 1
         print(f"{verb}: {dirpath}")
+    return dict(counts)
+
+
+# ---------------- Quarantine ad images ----------------
+
+# Filename stems that ad images are saved under:
+#   0c4cda27-b4cc-4e92-a446-d6b780f24a64   UUID
+#   bed51b94a_1595                         9-char hex id (with a letter, so
+#                                          20231220_142355 is safe) + number
+#   gmsnet2                                gmsnet + optional number
+# optionally followed by the _YYYY-MM-DD suffix --flatten adds on a name
+# clash, or a " (2)" copy marker.
+_AD_NAME_RE = re.compile(
+    r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    r'|(?=\d*[a-f])[0-9a-f]{9}_\d+'
+    r'|gmsnet\d*)'
+    r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?',
+    re.IGNORECASE)
+
+
+def is_ad_name(name: str) -> bool:
+    return _AD_NAME_RE.fullmatch(pathlib.Path(name).stem) is not None
+
+
+def quarantine_ads(root: str, dry_run: bool = False) -> dict:
+    """Move ad images from root and every subfolder into root/_ads, keeping
+    their relative path. A file is an ad only if its name matches AND it has
+    no camera Make/Model; name matches with camera info are kept and listed.
+    Emptied folders are left for --flatten or the cleanup script."""
+    counts = Counter()
+    if not HAS_PIL:
+        # Without Pillow the camera check cannot run, and name alone is not enough
+        print("Pillow required to check for camera info; pip install pillow", file=sys.stderr)
+        return {}
+    verb = 'WOULD QUARANTINE' if dry_run else 'QUARANTINED'
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(root, dirpath, dirs)
+        dirs.sort()
+        for name in sorted(files):
+            if pathlib.Path(name).suffix.lower() not in MEDIA_EXTS or not is_ad_name(name):
+                continue
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, root)
+            ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+            camera = read_metadata(full, ftype)['camera']
+            if camera:
+                counts['kept-camera-info'] += 1
+                print(f"KEPT (camera: {camera}): {rel}")
+                continue
+            dst = os.path.join(root, QUARANTINE_DIR, rel)
+            if os.path.exists(dst):
+                counts['collision'] += 1
+                print(f"COLLISION, skipping: {rel}", file=sys.stderr)
+                continue
+            if not dry_run:
+                try:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.move(full, dst)
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED {rel}: {e}", file=sys.stderr)
+                    continue
+            counts['quarantined'] += 1
+            print(f"{verb}: {rel}")
+    return dict(counts)
+
+
+# ---------------- Move files with no image data ----------------
+
+def _has_no_data(path: str) -> bool:
+    """True when a file is 0 bytes or contains nothing but null bytes."""
+    with open(path, 'rb') as f:
+        while True:
+            chunk = f.read(1 << 20)
+            if not chunk:
+                return True
+            if chunk.count(0) != len(chunk):
+                return False
+
+
+def move_no_data(root: str, dry_run: bool = False) -> dict:
+    """Move media files holding no image data from root and every subfolder
+    into root/_no-image-data, keeping their relative path (the dated folder
+    name may be the only record of when they were taken). Emptied folders are
+    left for --flatten or the cleanup script."""
+    counts = Counter()
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(root, dirpath, dirs)
+        dirs.sort()
+        for name in sorted(files):
+            if pathlib.Path(name).suffix.lower() not in MEDIA_EXTS:
+                continue
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, root)
+            try:
+                if not _has_no_data(full):
+                    continue
+            except OSError as e:
+                counts['failed'] += 1
+                print(f"FAILED {rel}: {e}", file=sys.stderr)
+                continue
+            kind = 'empty' if os.path.getsize(full) == 0 else 'null-filled'
+            dst = os.path.join(root, NO_DATA_DIR, rel)
+            if os.path.exists(dst):
+                counts['collision'] += 1
+                print(f"COLLISION, skipping: {rel}", file=sys.stderr)
+                continue
+            if not dry_run:
+                try:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.move(full, dst)
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED {rel}: {e}", file=sys.stderr)
+                    continue
+            counts['moved-' + kind] += 1
+            print(f"{verb} ({kind}): {rel}")
     return dict(counts)
 
 
@@ -694,51 +955,126 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
 
 # ---------------- CLI ----------------
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
-    g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes.')
-    g.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the date in the filename, else the folder date.')
-    g.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
-    g.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
-    g.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
-    g.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders.')
-    ap.add_argument('--dry-run', action='store_true', help='With --flatten: list what would be moved and removed without changing anything.')
-    ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
-    args = ap.parse_args(argv)
-    if args.dry_run and not args.flatten:
-        ap.error('--dry-run is only supported with --flatten')
+# Order phases run in when several are given on one command line: clear out
+# junk first, then date, convert, move, sync, and flatten last (once files are
+# in the root the other phases no longer see them).
+PHASE_ORDER = ('move_no_data', 'quarantine_ads', 'fill_blanks', 'convert_png',
+               'apply_moves', 'sync_timestamps', 'flatten')
+ALL_PHASES = ('fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
+DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_no_data')
 
-    if not os.path.isdir(args.root):
-        print(f"Not a directory: {args.root}", file=sys.stderr)
-        return 2
+# Most problem lines repeated per phase in the closing summary
+MAX_SUMMARY_ISSUES = 50
 
-    if args.convert_png:
-        print(json.dumps({'convert_png': convert_pngs(args.root)}, indent=2))
-        return 0
-    if args.fill_blanks:
-        print(json.dumps({'fill_blanks': fill_blanks(args.root)}, indent=2))
-        return 0
-    if args.sync_timestamps:
-        print(json.dumps({'sync_timestamps': sync_timestamps(args.root)}, indent=2))
-        return 0
-    if args.flatten:
-        key = 'flatten_dry_run' if args.dry_run else 'flatten'
-        print(json.dumps({key: flatten(args.root, args.dry_run)}, indent=2))
-        return 0
 
+class _IssueTee:
+    """Pass stderr through unchanged while keeping a copy of each line, so
+    the problems a phase reported can be repeated in the closing summary."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.text = ''
+
+    def write(self, s):
+        self.text += s
+        return self.stream.write(s)
+
+    def flush(self):
+        self.stream.flush()
+
+    def lines(self) -> list:
+        return [ln for ln in self.text.splitlines() if ln.strip()]
+
+
+def _run_phase(phase: str, args) -> dict:
+    if phase == 'move_no_data':
+        return move_no_data(args.root, args.dry_run)
+    if phase == 'quarantine_ads':
+        return quarantine_ads(args.root, args.dry_run)
+    if phase == 'fill_blanks':
+        return fill_blanks(args.root)
+    if phase == 'convert_png':
+        return convert_pngs(args.root)
+    if phase == 'sync_timestamps':
+        return sync_timestamps(args.root)
+    if phase == 'flatten':
+        return flatten(args.root, args.dry_run)
     # report-only and apply-moves both need the scanned plan
     plan = scan(args.root)
     out_xlsx = os.path.join(args.root, args.xlsx)
     write_xlsx(args.root, plan, out_xlsx)
     print(f"Audit workbook: {out_xlsx}")
+    if phase == 'apply_moves':
+        return apply_moves(args.root, plan)
+    return dict(Counter(r['action'] for r in plan))
 
-    if args.apply_moves:
-        print(json.dumps({'apply_moves': apply_moves(args.root, plan)}, indent=2))
-    else:
-        summary = Counter(r['action'] for r in plan)
-        print(json.dumps({'report_only': dict(summary)}, indent=2))
+
+def _print_summary(results: list) -> None:
+    """Print every phase's counts and reported problems together, so a run of
+    several phases can be read from the end of the output."""
+    print()
+    print('=' * 24 + ' Summary of this run ' + '=' * 24)
+    for key, counts, issues in results:
+        print(f"\n{key}")
+        if not counts:
+            print("    nothing to do")
+        width = max((len(k) for k in counts), default=0)
+        for k, v in counts.items():
+            print(f"    {k:<{width}}  {v:>7}")
+        if issues:
+            print(f"    problems reported: {len(issues)}")
+            for ln in issues[:MAX_SUMMARY_ISSUES]:
+                print(f"      {ln}")
+            if len(issues) > MAX_SUMMARY_ISSUES:
+                print(f"      ... and {len(issues) - MAX_SUMMARY_ISSUES} more (see above)")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
+    ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
+    ap.add_argument('--all', action='store_true', help='Run --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
+    ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the date in the filename, else the folder date.')
+    ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
+    ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
+    ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
+    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders.')
+    ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images (ad-style filename AND no camera Make/Model) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
+    ap.add_argument('--move-no-data', action='store_true', help='Move media files that hold no image data (0 bytes or all null bytes) from the root and every subfolder into a _no-image-data folder. Nothing is deleted.')
+    ap.add_argument('--dry-run', action='store_true', help='With --flatten, --quarantine-ads or --move-no-data: list what would be moved or removed without changing anything.')
+    ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
+    args = ap.parse_args(argv)
+
+    phases = [p for p in PHASE_ORDER
+              if getattr(args, p) or (args.all and p in ALL_PHASES)]
+    if args.report_only:
+        if phases:
+            ap.error('--report-only cannot be combined with other phases')
+        phases = ['report_only']
+    if not phases:
+        ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
+    if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
+        ap.error('--dry-run is only supported with --flatten, --quarantine-ads and --move-no-data')
+
+    if not os.path.isdir(args.root):
+        print(f"Not a directory: {args.root}", file=sys.stderr)
+        return 2
+
+    results = []
+    for phase in phases:
+        key = phase + '_dry_run' if args.dry_run else phase
+        if len(phases) > 1:
+            print(f"\n----- {key} -----")
+        tee = _IssueTee(sys.stderr)
+        sys.stderr = tee
+        try:
+            counts = _run_phase(phase, args)
+        finally:
+            sys.stderr = tee.stream
+        print(json.dumps({key: counts}, indent=2))
+        results.append((key, counts, tee.lines()))
+    if len(phases) > 1:
+        _print_summary(results)
     return 0
 
 

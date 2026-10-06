@@ -9,12 +9,16 @@ Works on any photo source. The author built it from a cleanup on a mixed folder 
 ## What it does
 
 1. **Fixes wrong file extensions.** Reads the first 16 bytes of each file and renames anything whose extension doesn't match its real format (PNG, JPEG, HEIC/HEIF, MOV/MP4/M4V, GIF, BMP, TIFF, WEBP).
-2. **Reads the true Date Taken.** HEIC embedded TIFF/EXIF, MOV/MP4 `mvhd` creation time, JPEG/PNG standard EXIF — all parsed without external tools like `exiftool`.
+2. **Reads the true Date Taken.** HEIC embedded TIFF/EXIF, MOV/MP4 `mvhd` creation time, JPEG/PNG standard EXIF — all parsed without external tools like `exiftool` (which is only needed, optionally, to write dates into HEIC and video files).
 3. **Writes Date Taken where it's missing.** Falls back to the containing folder's date (if the folder is named `YYYY-MM-DD`) and stamps `DateTimeOriginal` into the EXIF.
-4. **Converts PNG to JPEG when needed.** Windows Explorer only shows Date Taken for JPEG/HEIC/TIFF/raw; PNG dates stay invisible there. The plugin re-encodes PNG → JPEG at quality 95, preserving EXIF, so Explorer surfaces the date.
+4. **Converts PNG to JPEG when needed.** Windows Explorer only shows Date Taken for JPEG/HEIC/TIFF/raw; PNG dates stay invisible there. The plugin re-encodes PNG → JPEG at quality 95, preserving EXIF, so Explorer surfaces the date. PNGs with transparency are left as PNG.
 5. **Moves files to date-matched folders.** Files whose Date Taken doesn't match their current folder's name are moved to a sibling folder named for their real date.
 6. **Produces an audit workbook** and finishes with a PowerShell cleanup script that removes duplicates and empty folders.
 7. **Flattens the result, if you want.** An optional last step moves every dated photo up out of its `YYYY-MM-DD` subfolder into the photo folder itself and deletes the emptied subfolders. Runs on its own with `/flatten-photos <folder>`.
+8. **Quarantines ad images, if you want.** `organize.py --quarantine-ads` moves images that have an ad-style name (a UUID, `bed51b94a_1595`, `gmsnet2`) and no camera Make/Model into an `_ads` folder for you to review and delete. Preview with `--dry-run` first.
+9. **Sets aside files with no image data, if you want.** `organize.py --move-no-data` moves media files that are 0 bytes or all null bytes (a failed copy or transfer) into a `_no-image-data` folder, keeping their subfolder path. Nothing is deleted. Preview with `--dry-run` first.
+
+Several steps can run in one command: `organize.py --root <folder> --all` runs steps 3–5 plus the timestamp sync, and prints one summary of every step's counts and problems at the end. Add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those.
 
 End state: every photo has a Date Taken, is in a folder matching that date, has a correct file extension, and shows up correctly in Windows Explorer.
 
