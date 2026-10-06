@@ -1,0 +1,27 @@
+{
+  "name": "photo-date-fixer",
+  "version": "1.0.0",
+  "description": "Ensures all photos have a Date Taken, by converting to JPG and adding the metadata.",
+  "author": {
+    "name": "Shelly",
+    "email": "shellykummerstar@gmail.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/your-handle/photo-date-fixer",
+  "keywords": [
+    "photos",
+    "exif",
+    "date-taken",
+    "metadata",
+    "heic",
+    "jpeg",
+    "windows",
+    "claude-code"
+  ],
+  "skills": [
+    "skills/photo-date-fixer"
+  ],
+  "commands": [
+    "commands/fix-photo-dates.md"
+  ]
+}
