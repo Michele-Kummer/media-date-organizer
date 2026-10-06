@@ -19,12 +19,14 @@ End state: every photo has a Date Taken, is in a folder matching that date, has 
 
 ## Install
 
-Requires [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) and Windows PowerShell 5.1+ (or PowerShell 7).
+Requires [Claude Code](https://docs.anthropic.com/claude/docs/claude-code), Python 3.9+, and Windows PowerShell 5.1+ (or PowerShell 7).
 
 ```bash
-git clone https://github.com/Michele.Kummer/photo-date-fixer.git
+git clone https://github.com/Michele-Kummer/photo-date-fixer.git
+cd photo-date-fixer
+pip install -r requirements.txt     # Pillow + openpyxl
 # Then in Claude Code:
-/plugin install ./photo-date-fixer
+/plugin install .
 ```
 
 Or install directly from a URL: `/plugin install https://github.com/Michele-Kummer/photo-date-fixer`.

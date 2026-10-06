@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
 """
-organize.py — read photo metadata (EXIF, MOV mvhd, HEIC TIFF) and sort files by real Date Taken.
+organize.py — read photo metadata (EXIF, MOV mvhd, HEIC TIFF) and sort files
+by real Date Taken.
 
-Phases:
-    --report-only     scan and write audit XLSX; make no changes
-    --apply           move/rename per the ruleset
-    --convert-png     convert PNG files to JPEG preserving EXIF (for Windows
-                      Explorer "Date Taken" compatibility)
+Phases (mutually exclusive on a single invocation):
+    --report-only       Scan and write audit XLSX; make no changes.
+    --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
+                        are missing Date Taken. Uses the containing folder's
+                        YYYY-MM-DD name at 12:00:00 as the fallback. HEIC
+                        files without existing EXIF are flagged, not written.
+    --convert-png       Re-encode PNG files as JPEG at quality 95, preserving
+                        EXIF. Leaves originals in place.
+    --apply-moves       Move files whose Date Taken does not match their current
+                        folder name into a sibling folder named for the real
+                        date. Renames use the clean iPhone-native stem; a
+                        _<folder-date> suffix is appended only if Date Taken is
+                        blank AND the folder is a dated folder.
+    --sync-timestamps   Set each file's "Date Modified" and "Date Created" to
+                        its EXIF Date Taken, BUT only for files that appear to
+                        be unedited (EXIF ModifyDate equals DateTimeOriginal
+                        and no editor-software tag is present). Date Created
+                        is only settable on Windows; elsewhere just Date
+                        Modified is synced.
 
-Rules:
-    * Detect true file format from first 16 bytes (magic bytes).
-    * Read Date Taken:
-        HEIC -> embedded TIFF/EXIF DateTimeOriginal
-        MOV/MP4 -> mvhd atom creation_time
-        PNG/JPG -> standard EXIF via PIL
-    * If Date Taken matches the current folder (YYYY-MM-DD), leave in place.
-    * If Date Taken differs, move to a sibling folder named YYYY-MM-DD.
-    * If Date Taken is blank (and we can write it), write folder-date at 12:00:00
-      and leave in place. Append _<folder-date> to the filename.
-    * If the file already has Date Taken, do NOT add a date suffix to the name.
-
-Dependencies: Pillow (`pip install pillow`). openpyxl for the XLSX report.
+Dependencies: Pillow (`pip install pillow`) and, for the audit workbook,
+openpyxl (`pip install openpyxl`). Scanning works without openpyxl — the XLSX
+step is skipped with a clear message if it's missing.
 """
 from __future__ import annotations
 
@@ -38,9 +43,10 @@ from typing import Optional
 
 try:
     from PIL import Image
+    HAS_PIL = True
 except ImportError:
-    print("Pillow is required: pip install pillow", file=sys.stderr)
-    sys.exit(1)
+    HAS_PIL = False
+    print("WARNING: Pillow is not installed. Install with: pip install pillow", file=sys.stderr)
 
 
 # ---------------- Format detection ----------------
@@ -82,9 +88,10 @@ def detect_type(path: str) -> Optional[str]:
 
 # ---------------- Date Taken extraction ----------------
 
-def _heic_date(path: str) -> Optional[datetime.datetime]:
-    """Scan a HEIC/HEIF file for an embedded TIFF/EXIF block and return
-    DateTimeOriginal if present. Uses raw byte scanning so no exiftool required."""
+def _heic_dates(path: str) -> dict:
+    """Return {DateTimeOriginal, DateTimeDigitized, DateTime, Software}
+    strings found in a HEIC/HEIF file's embedded TIFF/EXIF block."""
+    out = {}
     with open(path, 'rb') as f:
         data = f.read()
     for pat, endian in ((b'II*\x00', '<'), (b'MM\x00*', '>')):
@@ -101,122 +108,179 @@ def _heic_date(path: str) -> Optional[datetime.datetime]:
                     continue
                 for k in range(nentries):
                     e = i + ifd0 + 2 + k * 12
-                    tag, typ, _cnt = struct.unpack(endian + 'HHI', data[e:e + 8])
+                    tag, typ, cnt = struct.unpack(endian + 'HHI', data[e:e + 8])
                     val_off = struct.unpack(endian + 'I', data[e + 8:e + 12])[0]
-                    if tag != 0x8769:  # ExifIFDPointer
-                        continue
-                    sn = struct.unpack(endian + 'H', data[i + val_off:i + val_off + 2])[0]
-                    for kk in range(sn):
-                        se = i + val_off + 2 + kk * 12
-                        stag, styp, scnt = struct.unpack(endian + 'HHI', data[se:se + 8])
-                        svo = struct.unpack(endian + 'I', data[se + 8:se + 12])[0]
-                        if stag == 0x9003 and styp == 2 and scnt < 32:
-                            s = data[i + svo:i + svo + scnt].rstrip(b'\x00').decode('ascii', 'replace')
-                            try:
-                                return datetime.datetime.strptime(s.strip(), "%Y:%m:%d %H:%M:%S")
-                            except ValueError:
-                                pass
+                    if tag == 0x0132 and typ == 2 and cnt < 32:
+                        out['DateTime'] = data[i + val_off:i + val_off + cnt].rstrip(b'\x00').decode('ascii', 'replace')
+                    if tag == 0x0131 and typ == 2 and cnt < 128:
+                        out['Software'] = data[i + val_off:i + val_off + cnt].rstrip(b'\x00').decode('ascii', 'replace')
+                    if tag == 0x8769:
+                        sn = struct.unpack(endian + 'H', data[i + val_off:i + val_off + 2])[0]
+                        for kk in range(sn):
+                            se = i + val_off + 2 + kk * 12
+                            stag, styp, scnt = struct.unpack(endian + 'HHI', data[se:se + 8])
+                            svo = struct.unpack(endian + 'I', data[se + 8:se + 12])[0]
+                            if stag == 0x9003 and styp == 2 and scnt < 32:
+                                out['DateTimeOriginal'] = data[i + svo:i + svo + scnt].rstrip(b'\x00').decode('ascii', 'replace')
+                            if stag == 0x9004 and styp == 2 and scnt < 32:
+                                out['DateTimeDigitized'] = data[i + svo:i + svo + scnt].rstrip(b'\x00').decode('ascii', 'replace')
+                if out:
+                    return out
             except Exception:
                 continue
-    return None
+    return out
 
 
-def _mp4_date(path: str) -> Optional[datetime.datetime]:
-    """Read creation_time from the mvhd atom of an ISO BMFF file (MOV/MP4)."""
+def _parse_exif_dt(s: str) -> Optional[datetime.datetime]:
+    if not s:
+        return None
+    try:
+        return datetime.datetime.strptime(s.strip(), "%Y:%m:%d %H:%M:%S")
+    except (ValueError, AttributeError):
+        return None
+
+
+def _mp4_times(path: str) -> dict:
+    """Return {creation_time, modification_time} from the mvhd atom."""
+    out = {}
     with open(path, 'rb') as f:
         data = f.read()
     i = data.find(b'mvhd')
     if i < 0:
-        return None
+        return out
     p = data[i + 4:]
     try:
         if p[0] == 1:
             ct = struct.unpack('>Q', p[4:12])[0]
+            mt = struct.unpack('>Q', p[12:20])[0]
         else:
             ct = struct.unpack('>I', p[4:8])[0]
-        dt = datetime.datetime(1904, 1, 1) + datetime.timedelta(seconds=ct)
-        return dt if dt.year > 1970 else None
+            mt = struct.unpack('>I', p[8:12])[0]
+        epoch = datetime.datetime(1904, 1, 1)
+        for key, v in (('creation_time', ct), ('modification_time', mt)):
+            dt = epoch + datetime.timedelta(seconds=v)
+            if dt.year > 1970:
+                out[key] = dt
     except Exception:
-        return None
+        pass
+    return out
 
 
-def _pil_date(path: str) -> Optional[datetime.datetime]:
-    """Standard EXIF DateTimeOriginal via Pillow for PNG/JPEG/TIFF."""
+def _pil_meta(path: str) -> dict:
+    """Return {DateTimeOriginal, DateTime, Software} from an image via Pillow."""
+    out = {}
+    if not HAS_PIL:
+        return out
     try:
         img = Image.open(path)
-        v = img.getexif().get_ifd(0x8769).get(0x9003)
+        exif = img.getexif()
+        v = exif.get_ifd(0x8769).get(0x9003)
         if v:
-            return datetime.datetime.strptime(v.strip(), "%Y:%m:%d %H:%M:%S")
+            out['DateTimeOriginal'] = v
+        v = exif.get(0x0132)
+        if v:
+            out['DateTime'] = v
+        v = exif.get(0x0131)
+        if v:
+            out['Software'] = v
     except Exception:
-        return None
-    return None
+        pass
+    return out
 
 
-def date_taken(path: str, ftype: Optional[str]) -> Optional[datetime.datetime]:
+def read_metadata(path: str, ftype: str) -> dict:
+    """Return a normalized dict of {date_taken, modify_time, software}."""
+    out = {'date_taken': None, 'modify_time': None, 'software': None}
     if ftype == '.heic':
-        return _heic_date(path)
-    if ftype in ('.mov', '.mp4', '.m4v'):
-        return _mp4_date(path)
-    if ftype in ('.png', '.jpg', '.jpeg', '.tif', '.tiff'):
-        return _pil_date(path)
-    return None
+        d = _heic_dates(path)
+        out['date_taken'] = _parse_exif_dt(d.get('DateTimeOriginal') or d.get('DateTimeDigitized'))
+        out['modify_time'] = _parse_exif_dt(d.get('DateTime'))
+        out['software'] = d.get('Software')
+    elif ftype in ('.mov', '.mp4', '.m4v'):
+        d = _mp4_times(path)
+        out['date_taken'] = d.get('creation_time')
+        out['modify_time'] = d.get('modification_time')
+    elif ftype in ('.png', '.jpg', '.jpeg', '.tif', '.tiff'):
+        d = _pil_meta(path)
+        out['date_taken'] = _parse_exif_dt(d.get('DateTimeOriginal'))
+        out['modify_time'] = _parse_exif_dt(d.get('DateTime'))
+        out['software'] = d.get('Software')
+    return out
 
 
 # ---------------- Core workflow ----------------
 
-def scan(root: str):
-    """Return a list of plan dicts for every file under root."""
-    rows = []
+MEDIA_EXTS = {'.png', '.jpg', '.jpeg', '.heic', '.heif', '.mov', '.mp4', '.m4v',
+              '.tif', '.tiff', '.gif', '.bmp', '.webp'}
+
+
+def iter_media(root: str):
+    """Yield (folder_name, filename, full_path) for every media file under root."""
     for folder in sorted(os.listdir(root)):
         fp = os.path.join(root, folder)
         if not os.path.isdir(fp):
             continue
-        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
-        folder_date = datetime.date(int(m[1]), int(m[2]), int(m[3])) if m else None
         for name in sorted(os.listdir(fp)):
             full = os.path.join(fp, name)
             if not os.path.isfile(full):
                 continue
-            if name.lower().endswith(('.xlsx', '.ps1', '.py', '.md', '.json')):
+            ext = pathlib.Path(name).suffix.lower()
+            if ext not in MEDIA_EXTS:
                 continue
-            ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
-            dt = date_taken(full, ftype)
-            stem = pathlib.Path(name).stem
-            base = re.match(r'^(.+?)_\d{4}-\d{2}-\d{2}$', stem)
-            base = base.group(1) if base else stem
-            ext_canonical = ftype.upper() if ftype else pathlib.Path(name).suffix
-            if dt is None and folder_date is not None:
-                action = 'set-date-write-and-keep'
-                target_folder = folder
-                new_name = f"{base}_{folder_date.isoformat()}{ext_canonical}"
-            elif dt is None:
-                action = 'skip-no-folder-date'
-                target_folder = folder
-                new_name = name
-            elif folder_date is None or dt.date() == folder_date:
-                action = 'keep'
-                target_folder = folder
-                new_name = f"{base}{ext_canonical}"
-            else:
-                action = 'move'
-                target_folder = dt.date().isoformat()
-                new_name = f"{base}{ext_canonical}"
-            rows.append({
-                'current_folder': folder,
-                'current_name': name,
-                'detected_type': (ftype or '').lstrip('.').upper(),
-                'date_taken': dt.strftime('%Y-%m-%d %H:%M:%S') if dt else '',
-                'target_folder': target_folder,
-                'new_name': new_name,
-                'action': action,
-            })
+            yield folder, name, full
+
+
+def scan(root: str) -> list:
+    """Return a list of plan dicts for every file under root."""
+    rows = []
+    for folder, name, full in iter_media(root):
+        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
+        folder_date = datetime.date(int(m[1]), int(m[2]), int(m[3])) if m else None
+        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+        meta = read_metadata(full, ftype)
+        dt = meta['date_taken']
+        stem = pathlib.Path(name).stem
+        base = re.match(r'^(.+?)_\d{4}-\d{2}-\d{2}$', stem)
+        base = base.group(1) if base else stem
+        ext_canonical = ftype.upper() if ftype else pathlib.Path(name).suffix
+        if dt is None and folder_date is not None:
+            action = 'fill-blank'
+            target_folder = folder
+            new_name = f"{base}_{folder_date.isoformat()}{ext_canonical}"
+        elif dt is None:
+            action = 'skip-no-folder-date'
+            target_folder = folder
+            new_name = name
+        elif folder_date is None or dt.date() == folder_date:
+            action = 'keep'
+            target_folder = folder
+            new_name = f"{base}{ext_canonical}"
+        else:
+            action = 'move'
+            target_folder = dt.date().isoformat()
+            new_name = f"{base}{ext_canonical}"
+        rows.append({
+            'current_folder': folder,
+            'current_name': name,
+            'detected_type': (ftype or '').lstrip('.').upper(),
+            'date_taken': dt.strftime('%Y-%m-%d %H:%M:%S') if dt else '',
+            'target_folder': target_folder,
+            'new_name': new_name,
+            'action': action,
+        })
     return rows
 
 
-def apply(root: str, plan: list) -> dict:
-    """Execute moves and renames. Returns counts."""
+# ---------------- Apply moves ----------------
+
+def apply_moves(root: str, plan: list) -> dict:
+    """Execute moves and renames. Skips 'fill-blank' rows — those are handled
+    by --fill-blanks separately."""
     counts = Counter()
     for r in plan:
+        if r['action'] not in ('move', 'keep'):
+            counts['skipped-' + r['action']] += 1
+            continue
         src = os.path.join(root, r['current_folder'], r['current_name'])
         if not os.path.isfile(src):
             counts['missing'] += 1
@@ -236,9 +300,63 @@ def apply(root: str, plan: list) -> dict:
     return dict(counts)
 
 
-def convert_pngs(root: str) -> dict:
-    """Re-encode PNG files to JPEG preserving EXIF. Leaves original PNG alone."""
+# ---------------- Fill blank Date Taken ----------------
+
+def _write_exif_date_image(path: str, dt: datetime.datetime) -> None:
+    """Write EXIF DateTime/DateTimeOriginal/DateTimeDigitized on JPEG or PNG."""
+    if not HAS_PIL:
+        raise RuntimeError("Pillow is required to write EXIF; pip install pillow")
+    img = Image.open(path)
+    img.load()
+    ds = dt.strftime("%Y:%m:%d %H:%M:%S")
+    exif = img.getexif()
+    exif[0x0132] = ds
+    sub = exif.get_ifd(0x8769)
+    sub[0x9003] = ds
+    sub[0x9004] = ds
+    save_kwargs = {'exif': exif.tobytes()}
+    if 'icc_profile' in img.info:
+        save_kwargs['icc_profile'] = img.info['icc_profile']
+    fmt = (img.format or '').upper()
+    tmp = path + '.tmp'
+    img.save(tmp, format=fmt, **save_kwargs)
+    os.replace(tmp, path)
+
+
+def fill_blanks(root: str) -> dict:
     counts = Counter()
+    for folder, name, full in iter_media(root):
+        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
+        if not m:
+            counts['no-folder-date'] += 1
+            continue
+        folder_dt = datetime.datetime(int(m[1]), int(m[2]), int(m[3]), 12, 0, 0)
+        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+        meta = read_metadata(full, ftype)
+        if meta['date_taken'] is not None:
+            counts['already-dated'] += 1
+            continue
+        if ftype in ('.jpg', '.jpeg', '.png', '.tif', '.tiff'):
+            try:
+                _write_exif_date_image(full, folder_dt)
+                counts['written'] += 1
+                print(f"WROTE Date Taken {folder_dt:%Y-%m-%d %H:%M:%S}: {folder}/{name}")
+            except Exception as e:
+                counts['write-failed'] += 1
+                print(f"FAILED to write {folder}/{name}: {e}", file=sys.stderr)
+        else:
+            counts['heic-mov-needs-exiftool'] += 1
+            print(f"SKIPPED (needs exiftool): {folder}/{name}", file=sys.stderr)
+    return dict(counts)
+
+
+# ---------------- Convert PNG to JPEG ----------------
+
+def convert_pngs(root: str) -> dict:
+    counts = Counter()
+    if not HAS_PIL:
+        print("Pillow required for PNG conversion; pip install pillow", file=sys.stderr)
+        return {}
     for dirpath, _dirs, files in os.walk(root):
         for name in files:
             if not name.lower().endswith('.png'):
@@ -246,7 +364,7 @@ def convert_pngs(root: str) -> dict:
             p = os.path.join(dirpath, name)
             new = str(pathlib.Path(p).with_suffix('.JPG'))
             if os.path.exists(new):
-                counts['already_converted'] += 1
+                counts['already-converted'] += 1
                 continue
             img = Image.open(p)
             img.load()
@@ -260,6 +378,93 @@ def convert_pngs(root: str) -> dict:
                 img = img.convert('RGB')
             img.save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
             counts['converted'] += 1
+    return dict(counts)
+
+
+# ---------------- Sync timestamps (safe-only) ----------------
+
+EDITOR_SOFTWARE_HINTS = ('photoshop', 'lightroom', 'camera raw', 'gimp',
+                         'affinity', 'luminar', 'pixelmator', 'snapseed',
+                         'vsco', 'instagram')
+
+
+def _is_unedited(meta: dict) -> bool:
+    """Heuristic for 'has NOT been manually modified since capture.'
+    True when:
+      - the EXIF file-level DateTime equals DateTimeOriginal (iOS updates
+        DateTime when the user edits a photo), OR DateTime is missing;
+      - the Software tag does not match a known editor.
+    """
+    sw = (meta.get('software') or '').lower()
+    for hint in EDITOR_SOFTWARE_HINTS:
+        if hint in sw:
+            return False
+    dt = meta.get('date_taken')
+    mt = meta.get('modify_time')
+    if dt is None:
+        return False
+    if mt is None:
+        return True
+    # Equal within one minute of tolerance (iOS may differ by seconds)
+    return abs((mt - dt).total_seconds()) < 60
+
+
+def _set_creation_time(path: str, ts: float) -> bool:
+    """Set the filesystem "Date Created" to the POSIX timestamp ts.
+    os.utime only covers accessed/modified, so this goes through the Win32
+    SetFileTime API. Returns False on platforms where it isn't supported."""
+    if os.name != 'nt':
+        return False
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD,
+                                wintypes.HANDLE)
+    k32.SetFileTime.restype = wintypes.BOOL
+    k32.SetFileTime.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
+                                ctypes.POINTER(wintypes.FILETIME),
+                                ctypes.POINTER(wintypes.FILETIME))
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    # FILETIME = 100ns ticks since 1601-01-01 UTC
+    ticks = int(round((ts + 11644473600) * 10_000_000))
+    ft = wintypes.FILETIME(ticks & 0xFFFFFFFF, ticks >> 32)
+    # FILE_WRITE_ATTRIBUTES, share read/write/delete, OPEN_EXISTING
+    handle = k32.CreateFileW(os.path.abspath(path), 0x0100, 0x7, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        if not k32.SetFileTime(handle, ctypes.byref(ft), None, None):
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        k32.CloseHandle(handle)
+    return True
+
+
+def sync_timestamps(root: str) -> dict:
+    """Set Date Modified and Date Created to Date Taken on unedited files."""
+    counts = Counter()
+    for folder, name, full in iter_media(root):
+        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+        meta = read_metadata(full, ftype)
+        if meta['date_taken'] is None:
+            counts['no-date-taken'] += 1
+            continue
+        if not _is_unedited(meta):
+            counts['skipped-edited'] += 1
+            print(f"SKIP (edited): {folder}/{name}")
+            continue
+        ts = meta['date_taken'].timestamp()
+        try:
+            os.utime(full, (ts, ts))
+            if not _set_creation_time(full, ts):
+                counts['created-unsupported'] += 1
+            counts['synced'] += 1
+            print(f"SYNCED {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {folder}/{name}")
+        except Exception as e:
+            counts['failed'] += 1
+            print(f"FAILED {folder}/{name}: {e}", file=sys.stderr)
     return dict(counts)
 
 
@@ -298,17 +503,15 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
-    # Summary
     ws = wb.active
     ws.title = 'Summary'
     ws.append(['Metric', 'Value'])
     ws.append(['Files scanned', len(plan)])
     ws.append(['Keep in place', sum(1 for r in plan if r['action'] == 'keep')])
     ws.append(['Move to date-matched folder', sum(1 for r in plan if r['action'] == 'move')])
-    ws.append(['Blank Date Taken (will set to folder date)', sum(1 for r in plan if r['action'] == 'set-date-write-and-keep')])
+    ws.append(['Blank Date Taken (would fill)', sum(1 for r in plan if r['action'] == 'fill-blank')])
     style(ws, 2, [44, 10])
 
-    # Detail
     ws2 = wb.create_sheet('Plan')
     cols = ['Current folder', 'Current name', 'Detected type', 'Date Taken',
             'Target folder', 'New name', 'Action']
@@ -318,7 +521,6 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
                     r['date_taken'], r['target_folder'], r['new_name'], r['action']])
     style(ws2, len(cols), [14, 32, 10, 22, 14, 32, 24])
 
-    # Only moves
     ws3 = wb.create_sheet('Only moves')
     ws3.append(['From folder', 'Current name', 'Date Taken', 'Target folder', 'New name'])
     for r in plan:
@@ -335,10 +537,12 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
-    g = ap.add_mutually_exclusive_group()
-    g.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; make no changes.')
-    g.add_argument('--apply', action='store_true', help='Apply the move/rename plan.')
-    g.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG.')
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes.')
+    g.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the folder date.')
+    g.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
+    g.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
+    g.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
     ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
     args = ap.parse_args(argv)
 
@@ -347,22 +551,26 @@ def main(argv=None):
         return 2
 
     if args.convert_png:
-        counts = convert_pngs(args.root)
-        print(json.dumps({'convert_png': counts}, indent=2))
+        print(json.dumps({'convert_png': convert_pngs(args.root)}, indent=2))
+        return 0
+    if args.fill_blanks:
+        print(json.dumps({'fill_blanks': fill_blanks(args.root)}, indent=2))
+        return 0
+    if args.sync_timestamps:
+        print(json.dumps({'sync_timestamps': sync_timestamps(args.root)}, indent=2))
         return 0
 
+    # report-only and apply-moves both need the scanned plan
     plan = scan(args.root)
     out_xlsx = os.path.join(args.root, args.xlsx)
     write_xlsx(args.root, plan, out_xlsx)
     print(f"Audit workbook: {out_xlsx}")
 
-    if args.apply:
-        counts = apply(args.root, plan)
-        print(json.dumps({'apply': counts}, indent=2))
+    if args.apply_moves:
+        print(json.dumps({'apply_moves': apply_moves(args.root, plan)}, indent=2))
     else:
         summary = Counter(r['action'] for r in plan)
         print(json.dumps({'report_only': dict(summary)}, indent=2))
-
     return 0
 
 
