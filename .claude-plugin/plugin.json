@@ -1,7 +1,7 @@
 {
   "name": "media-date-organizer",
   "version": "1.0.0",
-  "description": "Ensures all photos have a Date Taken, by converting to JPG and adding the metadata.",
+  "description": "Ensures all photos and videos have a Date Taken, converting PNG to JPEG and writing the metadata where it is missing.",
   "author": {
     "name": "Michele Kummer",
     "email": "michele.shelly.kummer@gmail.com"
@@ -10,6 +10,7 @@
   "homepage": "https://github.com/Michele-Kummer/media-date-organizer",
   "keywords": [
     "photos",
+    "videos",
     "exif",
     "date-taken",
     "metadata",

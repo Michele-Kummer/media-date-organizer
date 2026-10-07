@@ -1,11 +1,11 @@
 ---
-description: Ensure every photo in a folder has a Date Taken — fix extensions, write missing dates, convert PNG to JPEG where needed, sort by date, and clean up.
-argument-hint: <path-to-photo-folder>
+description: Ensure every photo and video in a folder has a Date Taken — fix extensions, write missing dates, convert PNG to JPEG where needed, sort by date, and clean up.
+argument-hint: <path-to-media-folder>
 ---
 
 # /fix-media-dates
 
-Ensure every photo in `$ARGUMENTS` has a readable Date Taken.
+Ensure every photo and video in `$ARGUMENTS` has a readable Date Taken (Media Created for video).
 
 ## Prereq (first run only)
 
@@ -27,13 +27,13 @@ pip install -r requirements.txt
 
 6. **Sync Date Modified and Date Created (optional).** If the user wants Explorer's "Date Modified" and "Date Created" to show the real capture time, run `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --sync-timestamps`. Only files that look unedited (EXIF ModifyDate matches DateTimeOriginal and no editor-software tag) are touched; edited files are skipped and listed.
 
-7. **Flatten into the root folder (optional).** If the user wants the photos out of their dated subfolders, preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --flatten --dry-run`, then after confirming run it without `--dry-run`. Every file that has a Date Taken moves up into `$ARGUMENTS` itself and the emptied subfolders are deleted; undated files stay put. Also available on its own as `/flatten-media`.
+7. **Flatten into the root folder (optional).** If the user wants the photos and videos out of their dated subfolders, preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --flatten --dry-run`, then after confirming run it without `--dry-run`. Every file that has a Date Taken moves up into `$ARGUMENTS` itself and the emptied subfolders are deleted; undated files stay put. Also available on its own as `/flatten-media`.
 
 8. **Cleanup.** Remind the user: `skills/media-date-organizer/scripts/Cleanup-Pictures.ps1 -Path "$ARGUMENTS"` removes duplicate base-name files and empty folders.
 
-## Ad images (optional, any time)
+## Ad images and videos (optional, any time)
 
-If the folder holds ad images (names like `0c4cda27-b4cc-4e92-a446-d6b780f24a64`, `bed51b94a_1595`, `gmsnet2`, `news_images%2F1714658759372` or `UnityAdsCache-<hash>`), preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --quarantine-ads --dry-run`, share the list, then after confirming run it without `--dry-run`. Files with an ad-style name and no camera Make/Model move into `$ARGUMENTS/_ads` for the user to review and delete; nothing is deleted. Name matches that have camera info are kept. Best done before step 3.
+If the folder holds ad images or videos (names like `0c4cda27-b4cc-4e92-a446-d6b780f24a64`, `bed51b94a_1595`, `gmsnet2`, `news_images%2F1714658759372` or `UnityAdsCache-<hash>`), preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --quarantine-ads --dry-run`, share the list, then after confirming run it without `--dry-run`. Files with an ad-style name and no camera Make/Model move into `$ARGUMENTS/_ads` for the user to review and delete; nothing is deleted. Name matches that have camera info are kept. Best done before step 3.
 
 ## All in one go
 
@@ -42,4 +42,4 @@ Once the user has confirmed steps 3–6 together, they can be run in one command
 ## Deliverables
 
 - `media_audit_<date>.xlsx` at the root of `$ARGUMENTS`. Every step above, the two PowerShell scripts and dry runs included, appends what it did to its Run log and Run counts sheets. The workbook must be closed in Excel while a step runs, or that step is not recorded.
-- Summary message with counts (extensions corrected, dates written, files converted, files moved, timestamps synced, files flattened and folders removed, ad images quarantined) plus the Cleanup-Pictures.ps1 reminder.
+- Summary message with counts (extensions corrected, dates written, files converted, files moved, timestamps synced, files flattened and folders removed, ad files quarantined) plus the Cleanup-Pictures.ps1 reminder.

@@ -1,11 +1,11 @@
 ---
-description: Move every dated photo up out of its subfolder into the photo folder itself, then delete the subfolders left empty.
-argument-hint: <path-to-photo-folder>
+description: Move every dated photo and video up out of its subfolder into the media folder itself, then delete the subfolders left empty.
+argument-hint: <path-to-media-folder>
 ---
 
 # /flatten-media
 
-Move the dated photos in `$ARGUMENTS` up one level, out of their subfolders, and remove the folders that end up empty.
+Move the dated photos and videos in `$ARGUMENTS` up one level, out of their subfolders, and remove the folders that end up empty.
 
 ## Steps
 
