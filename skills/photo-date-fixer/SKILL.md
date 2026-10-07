@@ -34,7 +34,7 @@ Scanning still works without `openpyxl` — only the XLSX report is skipped. Wri
 
 ## Workflow
 
-Each phase below can be run on its own, or several can be given on one command line. `python scripts/organize.py --root "<PhotoRoot>" --all` runs Phases 3–6 (`--fill-blanks --convert-png --apply-moves --sync-timestamps`); add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those. Phases always run in this order whatever order the flags are typed in: move-no-data, quarantine-ads, fill-blanks, convert-png, apply-moves, sync-timestamps, flatten. A multi-phase run ends with a `Summary of this run` block listing every phase's counts and the problem lines (`FAILED`, `SKIPPED`, `COLLISION`, `NOTE`) it reported, up to 50 per phase. Use it only after the user has confirmed every phase it includes; `--report-only` cannot be combined with other phases.
+Each phase below can be run on its own, or several can be given on one command line. `python scripts/organize.py --root "<PhotoRoot>" --all` deletes `.AAE` sidecars and then runs Phases 3–6 (`--delete-aae --fill-blanks --convert-png --apply-moves --sync-timestamps`); add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those. Phases always run in this order whatever order the flags are typed in: delete-aae, move-no-data, quarantine-ads, fill-blanks, convert-png, apply-moves, sync-timestamps, flatten. A multi-phase run ends with a `Summary of this run` block listing every phase's counts and the problem lines (`FAILED`, `SKIPPED`, `COLLISION`, `NOTE`) it reported, up to 50 per phase. Use it only after the user has confirmed every phase it includes; `--report-only` cannot be combined with other phases.
 
 ### Phase 1 — Fix extensions
 `scripts/Fix-Extensions.ps1 -Path "<PhotoRoot>"`. Reads magic bytes and renames files whose extensions lie about the actual format. Preview with `-WhatIf` first.
@@ -88,6 +88,9 @@ Best run before Phase 3 so ads are not dated and moved with the real photos. The
 ### Move files with no image data (optional, any time)
 `python scripts/organize.py --root "<PhotoRoot>" --move-no-data`. Moves media files that are 0 bytes, or contain nothing but null bytes (the remains of a failed copy or phone transfer), out of `<PhotoRoot>` and every subfolder into `<PhotoRoot>/_no-image-data`, keeping their subfolder path. Nothing is deleted. Preview first with `--move-no-data --dry-run`. The other phases ignore `_no-image-data`. These files cannot be repaired; the names tell the user what to re-copy from the phone or a backup.
 
+### Delete AAE sidecars (optional, any time; part of `--all`)
+`python scripts/organize.py --root "<PhotoRoot>" --delete-aae`. Permanently deletes every `.AAE` file in `<PhotoRoot>` and every subfolder. These are the edit-instruction sidecars an iPhone exports next to a photo (`IMG_1234.AAE`); they contain no image and nothing on Windows reads them. Preview first with `--delete-aae --dry-run`. This is a real delete, not a move — confirm with the user before running it or `--all`.
+
 ### Cleanup
 Remind the user to run `scripts/Cleanup-Pictures.ps1 -Path "<PhotoRoot>"` at the end. It removes duplicate base-name files (keeps the preferred format: HEIC > JPG > MOV > … > PNG) and empty folders.
 
@@ -106,6 +109,7 @@ Every scan writes `photo-audit.xlsx` to the root folder with Summary, Plan, and 
 - Never rename or move files outside `<PhotoRoot>`.
 - When converting PNG → JPEG, never delete the original PNG in the same step — leave removal to `Cleanup-Pictures.ps1` so the user sees it.
 - Date-writing is destructive to EXIF; back up before Phase 3 on precious photo libraries.
+- `--delete-aae` (and so `--all`) permanently deletes `.AAE` sidecars; it is the only phase of `organize.py` that deletes files.
 - Files with no image data are moved to `_no-image-data`, never deleted.
 - Ad images are quarantined in `_ads`, never deleted. Deleting that folder is the user's call after they have looked through it.
 - Timestamp sync only touches files that pass the unedited-heuristic. Edited files are skipped and reported, never silently overwritten.

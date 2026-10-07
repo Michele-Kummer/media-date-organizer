@@ -18,7 +18,7 @@ Works on any photo source. The author built it from a cleanup on a mixed folder 
 8. **Quarantines ad images, if you want.** `organize.py --quarantine-ads` moves images that have an ad-style name (a UUID, `bed51b94a_1595`, `gmsnet2`) and no camera Make/Model into an `_ads` folder for you to review and delete. Preview with `--dry-run` first.
 9. **Sets aside files with no image data, if you want.** `organize.py --move-no-data` moves media files that are 0 bytes or all null bytes (a failed copy or transfer) into a `_no-image-data` folder, keeping their subfolder path. Nothing is deleted. Preview with `--dry-run` first.
 
-Several steps can run in one command: `organize.py --root <folder> --all` runs steps 3–5 plus the timestamp sync, and prints one summary of every step's counts and problems at the end. Add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those.
+Several steps can run in one command: `organize.py --root <folder> --all` deletes `.AAE` sidecars (iPhone edit-instruction files; also available alone as `--delete-aae`, with `--dry-run` to preview), runs steps 3–5 plus the timestamp sync, and prints one summary of every step's counts and problems at the end. Add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those.
 
 End state: every photo has a Date Taken, is in a folder matching that date, has a correct file extension, and shows up correctly in Windows Explorer.
 

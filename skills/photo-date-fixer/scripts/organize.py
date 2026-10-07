@@ -5,9 +5,14 @@ by real Date Taken.
 
 Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
-    --all               Shorthand for --fill-blanks --convert-png --apply-moves
-                        --sync-timestamps. Add --move-no-data, --quarantine-ads
-                        or --flatten to include those too.
+    --all               Shorthand for --delete-aae --fill-blanks --convert-png
+                        --apply-moves --sync-timestamps. Add --move-no-data,
+                        --quarantine-ads or --flatten to include those too.
+    --delete-aae        Permanently delete every .AAE file in the root folder
+                        and every subfolder. These are the edit-instruction
+                        sidecars iPhones export next to a photo; they hold no
+                        image and nothing on Windows reads them. Add --dry-run
+                        to list them without deleting anything.
     --report-only       Scan and write audit XLSX; make no changes.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
                         are missing Date Taken. Uses a date embedded in the
@@ -889,6 +894,32 @@ def move_no_data(root: str, dry_run: bool = False) -> dict:
     return dict(counts)
 
 
+# ---------------- Delete AAE sidecars ----------------
+
+def delete_aae(root: str, dry_run: bool = False) -> dict:
+    """Delete every .AAE file (iPhone edit sidecar) in root and every
+    subfolder. Emptied folders are left for --flatten or the cleanup script."""
+    counts = Counter()
+    verb = 'WOULD DELETE' if dry_run else 'DELETED'
+    for dirpath, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            if pathlib.Path(name).suffix.lower() != '.aae':
+                continue
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, root)
+            if not dry_run:
+                try:
+                    os.remove(full)
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED {rel}: {e}", file=sys.stderr)
+                    continue
+            counts['deleted'] += 1
+            print(f"{verb}: {rel}")
+    return dict(counts)
+
+
 # ---------------- Reporting ----------------
 
 def write_xlsx(root: str, plan: list, output: str) -> None:
@@ -958,10 +989,10 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
 # Order phases run in when several are given on one command line: clear out
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
-PHASE_ORDER = ('move_no_data', 'quarantine_ads', 'fill_blanks', 'convert_png',
+PHASE_ORDER = ('delete_aae', 'move_no_data', 'quarantine_ads', 'fill_blanks', 'convert_png',
                'apply_moves', 'sync_timestamps', 'flatten')
-ALL_PHASES = ('fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
-DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_no_data')
+ALL_PHASES = ('delete_aae', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
+DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_no_data', 'delete_aae')
 
 # Most problem lines repeated per phase in the closing summary
 MAX_SUMMARY_ISSUES = 50
@@ -987,6 +1018,8 @@ class _IssueTee:
 
 
 def _run_phase(phase: str, args) -> dict:
+    if phase == 'delete_aae':
+        return delete_aae(args.root, args.dry_run)
     if phase == 'move_no_data':
         return move_no_data(args.root, args.dry_run)
     if phase == 'quarantine_ads':
@@ -1033,7 +1066,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
     ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
-    ap.add_argument('--all', action='store_true', help='Run --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
+    ap.add_argument('--all', action='store_true', help='Run --delete-aae, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
     ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
@@ -1041,7 +1074,8 @@ def main(argv=None):
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images (ad-style filename AND no camera Make/Model) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-no-data', action='store_true', help='Move media files that hold no image data (0 bytes or all null bytes) from the root and every subfolder into a _no-image-data folder. Nothing is deleted.')
-    ap.add_argument('--dry-run', action='store_true', help='With --flatten, --quarantine-ads or --move-no-data: list what would be moved or removed without changing anything.')
+    ap.add_argument('--delete-aae', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar) in the root and every subfolder.')
+    ap.add_argument('--dry-run', action='store_true', help='With --flatten, --quarantine-ads, --move-no-data or --delete-aae: list what would be moved, removed or deleted without changing anything.')
     ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
     args = ap.parse_args(argv)
 
@@ -1054,7 +1088,7 @@ def main(argv=None):
     if not phases:
         ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
     if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
-        ap.error('--dry-run is only supported with --flatten, --quarantine-ads and --move-no-data')
+        ap.error('--dry-run is only supported with --flatten, --quarantine-ads, --move-no-data and --delete-aae')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)

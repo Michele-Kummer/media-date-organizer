@@ -37,7 +37,7 @@ If the folder holds ad images (names like `0c4cda27-b4cc-4e92-a446-d6b780f24a64`
 
 ## All in one go
 
-Once the user has confirmed steps 3–6 together, they can be run in one command: `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --all` (add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those). It ends with a `Summary of this run` block covering every phase's counts and problems; share that block with the user.
+Once the user has confirmed steps 3–6 together, they can be run in one command: `python skills/photo-date-fixer/scripts/organize.py --root "$ARGUMENTS" --all` (add `--move-no-data`, `--quarantine-ads` or `--flatten` to include those). `--all` also permanently deletes `.AAE` sidecar files first, so tell the user and get their OK; `--delete-aae --dry-run` lists them. It ends with a `Summary of this run` block covering every phase's counts and problems; share that block with the user.
 
 ## Deliverables
 
