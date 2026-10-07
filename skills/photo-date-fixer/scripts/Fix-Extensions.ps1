@@ -5,8 +5,8 @@
 
 .DESCRIPTION
     Scans every file under the target folder (recursively) and reads the
-    first 16 bytes to identify PNG, JPEG, HEIC/HEIF, MP4/MOV/QuickTime,
-    3GP/3G2, GIF, WEBP, TIFF, and BMP. If the current extension doesn't match
+    first 200 bytes to identify PNG, JPEG, HEIC/HEIF, MP4/MOV/QuickTime,
+    3GP/3G2, M2TS/MTS, GIF, WEBP, TIFF, and BMP. If the current extension doesn't match
     the detected type, the file is renamed to use the correct extension.
     Empty (0-byte) files are listed as EMPTY and left alone.
 
@@ -31,8 +31,8 @@ function Get-FileType {
 
     try {
         $fs = [System.IO.File]::OpenRead($FilePath)
-        $buf = New-Object byte[] 16
-        $read = $fs.Read($buf, 0, 16)
+        $buf = New-Object byte[] 200
+        $read = $fs.Read($buf, 0, 200)
         $fs.Close()
     } catch {
         return $null
@@ -79,6 +79,11 @@ function Get-FileType {
         $buf[8] -eq 0x57 -and $buf[9] -eq 0x45 -and $buf[10] -eq 0x42 -and $buf[11] -eq 0x50) {
         return '.webp'
     }
+    # AVCHD camcorder video (M2TS): 192-byte packets, sync byte 0x47 after a
+    # 4-byte timecode
+    if ($read -ge 197 -and $buf[4] -eq 0x47 -and $buf[196] -eq 0x47) {
+        return '.m2ts'
+    }
     return $null
 }
 
@@ -89,6 +94,7 @@ $equivalents = @{
     '.tiff' = @('.tif','.tiff')
     '.heic' = @('.heic','.heif')
     '.heif' = @('.heic','.heif')
+    '.m2ts' = @('.m2ts','.mts')
 }
 
 $files = Get-ChildItem -Path $Path -File -Recurse
@@ -98,18 +104,24 @@ $unknown = 0
 $empty = 0
 $plan = @()
 
+# Everything reported is also recorded in the audit workbook at the end
+. (Join-Path $PSScriptRoot 'Write-AuditLog.ps1')
+$audit = [System.Collections.Generic.List[string]]::new()
+
 foreach ($f in $files) {
     if ($f.Extension -ieq '.xlsx' -or $f.Extension -ieq '.ps1') { continue }
     if ($f.Length -eq 0) {
         # A failed copy or transfer: nothing to detect a format from
         $empty++
         Write-Host ("EMPTY    : " + $f.FullName) -ForegroundColor DarkYellow
+        $audit.Add("EMPTY: " + $f.FullName)
         continue
     }
     $detected = Get-FileType $f.FullName
     if (-not $detected) {
         $unknown++
         Write-Host ("UNKNOWN  : " + $f.FullName) -ForegroundColor DarkYellow
+        $audit.Add("UNKNOWN: " + $f.FullName)
         continue
     }
     $curExt = $f.Extension.ToLower()
@@ -133,6 +145,9 @@ foreach ($f in $files) {
         Rename-Item -LiteralPath $f.FullName -NewName (Split-Path $newPath -Leaf)
         $changed++
         Write-Host ("RENAMED  : " + $f.Name + "  ->  " + (Split-Path $newPath -Leaf)) -ForegroundColor Green
+        $audit.Add("RENAMED: " + $f.FullName + " -> " + (Split-Path $newPath -Leaf))
+    } elseif ($WhatIfPreference) {
+        $audit.Add("WOULD RENAME: " + $f.FullName + " -> " + (Split-Path $newPath -Leaf))
     }
 }
 
@@ -145,3 +160,6 @@ Write-Host ("  Empty (0 bytes)   : " + $empty)
 if ($plan.Count -gt 0 -and -not $PSBoundParameters.ContainsKey('WhatIf')) {
     $plan | Format-Table -AutoSize
 }
+
+$audit.Add("SUMMARY: correct extension $ok, renamed $changed, unknown format $unknown, empty $empty")
+Write-AuditLog -Path $Path -Phase 'fix_extensions' -Lines $audit -DryRun:$WhatIfPreference

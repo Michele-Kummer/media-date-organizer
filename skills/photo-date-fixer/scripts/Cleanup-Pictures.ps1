@@ -32,6 +32,10 @@ for ($i = 0; $i -lt $PreferredExtOrder.Count; $i++) {
     $preferRank[$PreferredExtOrder[$i].ToLower()] = $i
 }
 
+# Everything reported is also recorded in the audit workbook at the end
+. (Join-Path $PSScriptRoot 'Write-AuditLog.ps1')
+$audit = [System.Collections.Generic.List[string]]::new()
+
 # ---- Pass 1: remove duplicate base-name files ----
 $files = Get-ChildItem -Path $Path -File -Recurse |
     Where-Object { $_.Extension -notin '.ps1', '.xlsx' }
@@ -53,6 +57,9 @@ foreach ($g in $groups) {
         if ($PSCmdlet.ShouldProcess($d.FullName, 'Remove duplicate')) {
             Remove-Item -LiteralPath $d.FullName -Force
             $deletedDupes++
+            $audit.Add("DELETED (duplicate of " + $keep.Name + "): " + $d.FullName)
+        } elseif ($WhatIfPreference) {
+            $audit.Add("WOULD DELETE (duplicate of " + $keep.Name + "): " + $d.FullName)
         }
     }
 }
@@ -60,18 +67,28 @@ foreach ($g in $groups) {
 # ---- Pass 2: remove empty folders (iterate until stable) ----
 $deletedFolders = 0
 do {
+    $removedThisPass = 0
     $empties = Get-ChildItem -Path $Path -Directory -Recurse |
                Where-Object { $_.GetFileSystemInfos().Count -eq 0 }
     foreach ($e in $empties) {
         if ($PSCmdlet.ShouldProcess($e.FullName, 'Remove empty folder')) {
             Remove-Item -LiteralPath $e.FullName -Force
             $deletedFolders++
+            $removedThisPass++
             Write-Host ("REMOVED EMPTY: " + $e.FullName) -ForegroundColor DarkYellow
+            $audit.Add("REMOVED EMPTY: " + $e.FullName)
+        } elseif ($WhatIfPreference) {
+            $audit.Add("WOULD REMOVE EMPTY: " + $e.FullName)
         }
     }
-} while ($empties.Count -gt 0)
+    # Stop once a pass removes nothing: under -WhatIf the same empty folders
+    # would otherwise be found forever
+} while ($removedThisPass -gt 0)
 
 Write-Host ""
 Write-Host "Cleanup summary:" -ForegroundColor Cyan
 Write-Host ("  Duplicate files removed : " + $deletedDupes)
 Write-Host ("  Empty folders removed   : " + $deletedFolders)
+
+$audit.Add("SUMMARY: duplicate files removed $deletedDupes, empty folders removed $deletedFolders")
+Write-AuditLog -Path $Path -Phase 'cleanup' -Lines $audit -DryRun:$WhatIfPreference

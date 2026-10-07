@@ -5,15 +5,19 @@ by real Date Taken.
 
 Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
-    --all               Shorthand for --delete-aae --move-incomplete
+    --all               Shorthand for --delete-junk --move-incomplete
                         --fill-blanks --convert-png --apply-moves
                         --sync-timestamps. Add --quarantine-ads or --flatten
                         to include those too.
-    --delete-aae        Permanently delete every .AAE file in the root folder
-                        and every subfolder. These are the edit-instruction
-                        sidecars iPhones export next to a photo; they hold no
-                        image and nothing on Windows reads them. Add --dry-run
-                        to list them without deleting anything.
+    --delete-junk       Permanently delete every Windows thumbnail cache
+                        (Thumbs.db, ehthumbs.db, ehthumbs_vista.db; matched by
+                        whole name, so photos with "thumb" in the name are
+                        safe) and every .AAE file in the root folder
+                        and every subfolder. AAE files are the
+                        edit-instruction sidecars iPhones export next to a
+                        photo; they hold no image and nothing on Windows
+                        reads them. Add --dry-run to list them without
+                        deleting anything.
     --report-only       Scan and write audit XLSX; make no changes.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
                         are missing Date Taken. Uses a date embedded in the
@@ -59,8 +63,14 @@ and a summary of every phase's counts and problems is printed at the end):
                         suffix. Exception: inside the _ads folder every file
                         moves up from its subfolder into _ads itself, with or
                         without a Date Taken (a name clash gets a
-                        _<subfolder-name> suffix). Add --dry-run to preview
-                        without changing anything.
+                        _<subfolder-name> suffix). Camcorder videos (.m2ts,
+                        .mts), which no other phase handles, are moved too,
+                        going by the date in the filename (20180116122434);
+                        ones with no date in the name, or holding no data,
+                        stay. A file's .modd/.moff sidecars move with it. A
+                        .modd/.moff in the root or one of its subfolders
+                        whose file is not beside it is permanently deleted.
+                        Add --dry-run to preview without changing anything.
     --quarantine-ads    Move ad images into an _ads folder inside the root,
                         keeping their subfolder path, for the user to review
                         and delete. A file is an ad only if BOTH hold: its
@@ -73,8 +83,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         dimensions and ending in ___ plus a 6-character id
                         (Update_Now_Video_V2_720x1280_15s___fudxlv), or, for
                         videos only, 20 lowercase letters and digits
-                        (32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv) or a
-                        name ending -<width>x<height>-Q2 or
+                        (32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv), a
+                        32-character hex hash, or a name ending -<width>x<height>-Q2 or
                         -<width>x<height>-h264-Q2; AND it
                         carries no camera Make/Model. Name matches that do
                         have camera info are kept and listed. Looks in the
@@ -93,6 +103,13 @@ and a summary of every phase's counts and problems is printed at the end):
                         folder alone. --move-no-data is the old name for this
                         flag and still works. Add --dry-run to preview
                         without moving anything.
+
+Every run appends what it reported to the "Run log" and "Run counts" sheets
+of the audit workbook, dry runs included, so the workbook is a history of
+everything done to the folder. It is media_audit_<date>.xlsx in the root,
+<date> being the day of the run (media_audit_2026-10-07.xlsx): runs on the
+same day share a workbook, a new day starts a new one. Close it in Excel
+before running, or the run cannot be recorded.
 
 Dependencies: Pillow (`pip install pillow`) and, for the audit workbook,
 openpyxl (`pip install openpyxl`). Scanning works without openpyxl — the XLSX
@@ -385,8 +402,19 @@ def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
         dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
 
 
-def iter_media(root: str):
-    """Yield (folder_name, filename, full_path) for every media file under root."""
+# AVCHD camcorder video. Not in MEDIA_EXTS: its dates cannot be read or
+# written here, so only --flatten handles it, going by the filename date.
+CAMCORDER_EXTS = ('.m2ts', '.mts')
+
+# Index files Sony's import software writes next to a file, named
+# <file name>.modd / <file name>.moff. --flatten moves them with their file.
+SIDECAR_EXTS = ('.modd', '.moff')
+
+
+def iter_media(root: str, exts=None):
+    """Yield (folder_name, filename, full_path) for every media file under
+    root, or every file with one of exts if given."""
+    exts = MEDIA_EXTS if exts is None else exts
     for folder in sorted(os.listdir(root)):
         fp = os.path.join(root, folder)
         if not os.path.isdir(fp) or folder in HOLDING_DIRS:
@@ -396,7 +424,7 @@ def iter_media(root: str):
             if not os.path.isfile(full):
                 continue
             ext = pathlib.Path(name).suffix.lower()
-            if ext not in MEDIA_EXTS:
+            if ext not in exts:
                 continue
             yield folder, name, full
 
@@ -895,10 +923,22 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         prefix = QUARANTINE_DIR + '/' if in_ads else ''
         # Names already claimed in base, lowercased (Windows is case-insensitive)
         taken = {n.lower() for n in os.listdir(base)}
-        for folder, name, full in iter_media(base):
+        exts = MEDIA_EXTS if in_ads else MEDIA_EXTS | set(CAMCORDER_EXTS)
+        for folder, name, full in iter_media(base, exts):
             if in_ads:
                 # The subfolder name is the only date an ad has
                 suffix = folder
+            elif pathlib.Path(name).suffix.lower() in CAMCORDER_EXTS:
+                dt = _filename_date(pathlib.Path(name).stem)
+                if dt is None:
+                    counts['left-undated'] += 1
+                    print(f"LEFT (no date in filename): {folder}/{name}")
+                    continue
+                if _has_no_data(full):
+                    counts['left-no-data'] += 1
+                    print(f"LEFT (no video data): {folder}/{name}", file=sys.stderr)
+                    continue
+                suffix = f"{dt:%Y-%m-%d}"
             else:
                 ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
                 dt = read_metadata(full, ftype)['date_taken']
@@ -927,6 +967,52 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             gone.add(full)
             counts['ads-moved' if in_ads else 'moved'] += 1
             print(f"{verb}: {prefix}{folder}/{name} -> {prefix}{new_name}")
+            for ext in SIDECAR_EXTS:
+                # Sidecars follow their file, taking its new name if it changed
+                side = full + ext
+                if not os.path.isfile(side):
+                    continue
+                side_dst = os.path.join(base, new_name + ext)
+                if (new_name + ext).lower() in taken:
+                    counts['collision'] += 1
+                    print(f"COLLISION, skipping: {prefix}{folder}/{name}{ext}", file=sys.stderr)
+                    continue
+                if not dry_run:
+                    try:
+                        shutil.move(side, side_dst)
+                    except OSError as e:
+                        counts['failed'] += 1
+                        print(f"FAILED {prefix}{folder}/{name}{ext}: {e}", file=sys.stderr)
+                        continue
+                taken.add((new_name + ext).lower())
+                gone.add(side)
+                counts['sidecars-moved'] += 1
+
+    # A sidecar is only any use beside the file it describes: delete the ones
+    # in root and its subfolders whose file is not there
+    verb = 'WOULD DELETE' if dry_run else 'DELETED'
+    subfolders = sorted(d for d in os.listdir(root)
+                        if os.path.isdir(os.path.join(root, d)) and d not in HOLDING_DIRS)
+    for folder in [''] + subfolders:
+        fp = os.path.join(root, folder)
+        for name in sorted(os.listdir(fp)):
+            p = pathlib.Path(name)
+            full = os.path.join(fp, name)
+            if p.suffix.lower() not in SIDECAR_EXTS or full in gone or not os.path.isfile(full):
+                continue
+            if os.path.exists(os.path.join(fp, p.stem)):
+                continue
+            rel = f"{folder}/{name}" if folder else name
+            if not dry_run:
+                try:
+                    os.remove(full)
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED {rel}: {e}", file=sys.stderr)
+                    continue
+            gone.add(full)
+            counts['orphan-sidecars-deleted'] += 1
+            print(f"{verb} (sidecar with no file): {rel}")
 
     verb = 'WOULD REMOVE EMPTY' if dry_run else 'REMOVED EMPTY'
     # Incomplete files stay in their dated folders: the name is their only date
@@ -976,14 +1062,17 @@ _AD_NAME_RE = re.compile(
 
 
 # Stems that mark a video (only) as an ad, with the same optional suffixes:
-#   32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv
-#       20 lowercase letters and digits with at least one of each. Lowercase
+#   32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv, agqnsutqkbwulksalejd
+#       20 lowercase letters and digits with at least one letter. Lowercase
 #       only, so camera names such as VID20231220142355123 are safe.
 #   313e81d7...daa11f.mp4-720x1280-h264-Q2, peacock_..._rev-720x1280-Q2
 #       ends in -<width>x<height>-Q2 or -<width>x<height>-h264-Q2, the
 #       transcode tag ad networks append
+#   d5a210d011c47b8300bb8034048719a9
+#       32-character lowercase hex hash
 _AD_VIDEO_NAME_RE = re.compile(
-    r'(?:(?=[a-z]*\d)(?=\d*[a-z])[0-9a-z]{20}'
+    r'(?:(?=\d*[a-z])[0-9a-z]{20}'
+    r'|[0-9a-f]{32}'
     r'|.*-\d{3,4}x\d{3,4}(?:-h264)?-Q2)'
     r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?')
 
@@ -1142,28 +1231,43 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
     return dict(counts)
 
 
-# ---------------- Delete AAE sidecars ----------------
+# ---------------- Delete junk files ----------------
 
-def delete_aae(root: str, dry_run: bool = False) -> dict:
-    """Delete every .AAE file (iPhone edit sidecar) in root and every
-    subfolder. Emptied folders are left for --flatten or the cleanup script."""
+# Thumbnail caches Windows leaves in picture folders (usually hidden). Whole
+# names, not a pattern: "west sucking thumb.jpg" is a photo.
+THUMBS_NAMES = ('thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db')
+
+
+def delete_junk(root: str, dry_run: bool = False) -> dict:
+    """Delete every .AAE file (iPhone edit sidecar) and Windows thumbnail
+    cache (Thumbs.db) in root and every subfolder. Emptied folders are left
+    for --flatten or the cleanup script."""
     counts = Counter()
     verb = 'WOULD DELETE' if dry_run else 'DELETED'
     for dirpath, dirs, files in os.walk(root):
         dirs.sort()
         for name in sorted(files):
-            if pathlib.Path(name).suffix.lower() != '.aae':
+            if pathlib.Path(name).suffix.lower() == '.aae':
+                kind = 'deleted'
+            elif name.lower() in THUMBS_NAMES:
+                kind = 'deleted-thumbs'
+            else:
                 continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
             if not dry_run:
                 try:
-                    os.remove(full)
+                    try:
+                        os.remove(full)
+                    except PermissionError:
+                        # Thumbs.db is often read-only as well as hidden
+                        os.chmod(full, 0o666)
+                        os.remove(full)
                 except OSError as e:
                     counts['failed'] += 1
                     print(f"FAILED {rel}: {e}", file=sys.stderr)
                     continue
-            counts['deleted'] += 1
+            counts[kind] += 1
             print(f"{verb}: {rel}")
     return dict(counts)
 
@@ -1172,13 +1276,17 @@ def delete_aae(root: str, dry_run: bool = False) -> dict:
 
 def write_xlsx(root: str, plan: list, output: str) -> None:
     try:
-        from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
         print("openpyxl not installed; skipping XLSX report. (pip install openpyxl)", file=sys.stderr)
         return
-    wb = Workbook()
+    # Keep the run log sheets of an existing workbook; only the scan sheets
+    # are rebuilt
+    wb = _open_audit(output)
+    for title in ('Summary', 'Plan', 'Only moves'):
+        if title in wb.sheetnames:
+            del wb[title]
     header_fill = PatternFill('solid', start_color='305496')
     header_font = Font(name='Arial', bold=True, color='FFFFFF', size=11)
     body_font = Font(name='Arial', size=10)
@@ -1203,8 +1311,7 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
         for i, w in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
-    ws = wb.active
-    ws.title = 'Summary'
+    ws = wb.create_sheet('Summary', 0)
     ws.append(['Metric', 'Value'])
     ws.append(['Files scanned', len(plan)])
     ws.append(['Keep in place', sum(1 for r in plan if r['action'] == 'keep')])
@@ -1212,7 +1319,7 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
     ws.append(['Blank Date Taken (would fill)', sum(1 for r in plan if r['action'] == 'fill-blank')])
     style(ws, 2, [44, 10])
 
-    ws2 = wb.create_sheet('Plan')
+    ws2 = wb.create_sheet('Plan', 1)
     cols = ['Current folder', 'Current name', 'Detected type', 'Date Taken',
             'Target folder', 'New name', 'Action']
     ws2.append(cols)
@@ -1221,7 +1328,7 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
                     r['date_taken'], r['target_folder'], r['new_name'], r['action']])
     style(ws2, len(cols), [14, 32, 10, 22, 14, 32, 24])
 
-    ws3 = wb.create_sheet('Only moves')
+    ws3 = wb.create_sheet('Only moves', 2)
     ws3.append(['From folder', 'Current name', 'Date Taken', 'Target folder', 'New name'])
     for r in plan:
         if r['action'] == 'move':
@@ -1229,7 +1336,78 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
                         r['target_folder'], r['new_name']])
     style(ws3, 5, [14, 32, 22, 14, 32])
 
-    wb.save(output)
+    _save_audit(wb, output)
+
+
+# Sheets every run appends to, so the workbook is a history of what was done
+LOG_SHEET = 'Run log'
+COUNTS_SHEET = 'Run counts'
+
+# A reported line: its action is the leading run of capitalised words
+# ("MOVED", "WOULD WRITE", "FAILED"), the rest is the detail
+_AUDIT_LINE_RE = re.compile(r'^([A-Z]{2,}(?: [A-Z]{2,})*)\b[ ,:]*(.*)$')
+_XLSX_BAD_CHARS = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+
+def _open_audit(path: str):
+    """Load the audit workbook, or start an empty one if there is none."""
+    from openpyxl import Workbook, load_workbook
+    if os.path.isfile(path):
+        try:
+            return load_workbook(path)
+        except Exception as e:
+            print(f"Could not read {path} ({e}); starting a new audit workbook.", file=sys.stderr)
+    wb = Workbook()
+    wb.remove(wb.active)
+    return wb
+
+
+def _save_audit(wb, path: str) -> bool:
+    try:
+        wb.save(path)
+        return True
+    except PermissionError:
+        print(f"Could not write {path}: close it in Excel and run again. "
+              "This run is NOT recorded in the audit workbook.", file=sys.stderr)
+        return False
+
+
+def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
+    """Append what each phase reported to the audit workbook. runs is a list
+    of (phase, dry_run, counts, lines); every line that starts with an action
+    word becomes a row of the Run log sheet, every count a row of Run counts."""
+    try:
+        from openpyxl.styles import Font
+    except ImportError:
+        print("openpyxl not installed; run not recorded in the audit workbook. (pip install openpyxl)", file=sys.stderr)
+        return
+    wb = _open_audit(xlsx)
+
+    def sheet(title, header, widths):
+        if title in wb.sheetnames:
+            return wb[title]
+        ws = wb.create_sheet(title)
+        ws.append(header)
+        for cell in ws[1]:
+            cell.font = Font(name='Arial', bold=True)
+        ws.freeze_panes = 'A2'
+        for col, w in zip('ABCDE', widths):
+            ws.column_dimensions[col].width = w
+        return ws
+
+    log = sheet(LOG_SHEET, ['Run started', 'Phase', 'Dry run', 'Action', 'Detail'], [20, 18, 9, 22, 110])
+    tally = sheet(COUNTS_SHEET, ['Run started', 'Phase', 'Dry run', 'Count', 'Value'], [20, 18, 9, 34, 10])
+    when = started.strftime('%Y-%m-%d %H:%M:%S')
+    for phase, dry_run, counts, lines in runs:
+        dry = 'yes' if dry_run else 'no'
+        for k, v in counts.items():
+            tally.append([when, phase, dry, k, v])
+        for ln in lines:
+            m = _AUDIT_LINE_RE.match(ln.strip())
+            if m:
+                log.append([when, phase, dry, m[1], _XLSX_BAD_CHARS.sub('?', m[2])])
+    if _save_audit(wb, xlsx):
+        print(f"Audit workbook: {xlsx}")
 
 
 # ---------------- CLI ----------------
@@ -1237,25 +1415,33 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
 # Order phases run in when several are given on one command line: clear out
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
-PHASE_ORDER = ('delete_aae', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
+PHASE_ORDER = ('delete_junk', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
                'apply_moves', 'sync_timestamps', 'flatten')
-ALL_PHASES = ('delete_aae', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
-DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_aae', 'fill_blanks')
+ALL_PHASES = ('delete_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
+DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_junk', 'fill_blanks')
 
 # Most problem lines repeated per phase in the closing summary
 MAX_SUMMARY_ISSUES = 50
 
 
 class _IssueTee:
-    """Pass stderr through unchanged while keeping a copy of each line, so
-    the problems a phase reported can be repeated in the closing summary."""
+    """Pass a stream through unchanged while keeping a copy of each line, so
+    the problems a phase reported can be repeated in the closing summary and
+    everything it reported can be recorded in the audit workbook."""
 
-    def __init__(self, stream):
+    def __init__(self, stream, log=None):
         self.stream = stream
         self.text = ''
+        # Shared list that completed lines are also appended to, in the
+        # order written, for the audit workbook
+        self.log = log
+        self._partial = ''
 
     def write(self, s):
         self.text += s
+        if self.log is not None:
+            *done, self._partial = (self._partial + s).split('\n')
+            self.log.extend(ln for ln in done if ln.strip())
         return self.stream.write(s)
 
     def flush(self):
@@ -1266,8 +1452,8 @@ class _IssueTee:
 
 
 def _run_phase(phase: str, args) -> dict:
-    if phase == 'delete_aae':
-        return delete_aae(args.root, args.dry_run)
+    if phase == 'delete_junk':
+        return delete_junk(args.root, args.dry_run)
     if phase == 'move_incomplete':
         return move_incomplete(args.root, args.dry_run)
     if phase == 'quarantine_ads':
@@ -1284,7 +1470,6 @@ def _run_phase(phase: str, args) -> dict:
     plan = scan(args.root)
     out_xlsx = os.path.join(args.root, args.xlsx)
     write_xlsx(args.root, plan, out_xlsx)
-    print(f"Audit workbook: {out_xlsx}")
     if phase == 'apply_moves':
         return apply_moves(args.root, plan)
     return dict(Counter(r['action'] for r in plan))
@@ -1295,7 +1480,7 @@ def _print_summary(results: list) -> None:
     several phases can be read from the end of the output."""
     print()
     print('=' * 24 + ' Summary of this run ' + '=' * 24)
-    for key, counts, issues in results:
+    for key, counts, issues, _log in results:
         print(f"\n{key}")
         if not counts:
             print("    nothing to do")
@@ -1314,7 +1499,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
     ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
-    ap.add_argument('--all', action='store_true', help='Run --delete-aae, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
+    ap.add_argument('--all', action='store_true', help='Run --delete-junk, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
     ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos (at any depth) whose Media Created is blank, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
@@ -1322,10 +1507,21 @@ def main(argv=None):
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images (ad-style filename AND no camera Make/Model) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
-    ap.add_argument('--delete-aae', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar) in the root and every subfolder.')
-    ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete or --delete-aae: list what would be written, moved, removed or deleted without changing anything.')
-    ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
+    ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar) and Windows thumbnail cache (Thumbs.db) in the root and every subfolder.')
+    ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete or --delete-junk: list what would be written, moved, removed or deleted without changing anything.')
+    ap.add_argument('--xlsx', default=f'media_audit_{datetime.date.today():%Y-%m-%d}.xlsx', help='Audit workbook filename (relative to root). Defaults to media_audit_<today>.xlsx, so each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
+    ap.add_argument('--audit-log', metavar='NAME', help='Record lines read from standard input in the audit workbook as phase NAME, then exit. Used by Fix-Extensions.ps1 and Cleanup-Pictures.ps1.')
     args = ap.parse_args(argv)
+    started = datetime.datetime.now()
+    out_xlsx = os.path.join(args.root, args.xlsx)
+
+    if args.audit_log:
+        if not os.path.isdir(args.root):
+            print(f"Not a directory: {args.root}", file=sys.stderr)
+            return 2
+        lines = sys.stdin.buffer.read().decode('utf-8-sig', 'replace').splitlines()
+        append_audit_log(out_xlsx, started, [(args.audit_log, args.dry_run, {}, lines)])
+        return 0
 
     phases = [p for p in PHASE_ORDER
               if getattr(args, p) or (args.all and p in ALL_PHASES)]
@@ -1336,7 +1532,7 @@ def main(argv=None):
     if not phases:
         ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
     if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
-        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete and --delete-aae')
+        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete and --delete-junk')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)
@@ -1347,16 +1543,21 @@ def main(argv=None):
         key = phase + '_dry_run' if args.dry_run else phase
         if len(phases) > 1:
             print(f"\n----- {key} -----")
-        tee = _IssueTee(sys.stderr)
-        sys.stderr = tee
+        log = []
+        tee = _IssueTee(sys.stderr, log)
+        out = _IssueTee(sys.stdout, log)
+        sys.stderr, sys.stdout = tee, out
         try:
             counts = _run_phase(phase, args)
         finally:
-            sys.stderr = tee.stream
+            sys.stderr, sys.stdout = tee.stream, out.stream
         print(json.dumps({key: counts}, indent=2))
-        results.append((key, counts, tee.lines()))
+        results.append((key, counts, tee.lines(), log))
     if len(phases) > 1:
         _print_summary(results)
+    append_audit_log(out_xlsx, started,
+                     [(phase, args.dry_run, counts, log)
+                      for phase, (_key, counts, _issues, log) in zip(phases, results)])
     return 0
 
 
