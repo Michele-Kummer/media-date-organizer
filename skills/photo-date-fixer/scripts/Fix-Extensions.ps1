@@ -5,9 +5,10 @@
 
 .DESCRIPTION
     Scans every file under the target folder (recursively) and reads the
-    first 16 bytes to identify PNG, JPEG, HEIC/HEIF, MP4/MOV/QuickTime, GIF,
-    WEBP, TIFF, and BMP. If the current extension doesn't match the detected
-    type, the file is renamed to use the correct extension.
+    first 16 bytes to identify PNG, JPEG, HEIC/HEIF, MP4/MOV/QuickTime,
+    3GP/3G2, GIF, WEBP, TIFF, and BMP. If the current extension doesn't match
+    the detected type, the file is renamed to use the correct extension.
+    Empty (0-byte) files are listed as EMPTY and left alone.
 
 .PARAMETER Path
     Folder to scan. Defaults to the current directory.
@@ -67,6 +68,8 @@ function Get-FileType {
             '^qt\s*$'                { return '.mov' }
             '^mp4[12]$'              { return '.mp4' }
             '^M4V'                   { return '.m4v' }
+            '^3g2'                   { return '.3g2' }
+            '^3g'                    { return '.3gp' }
             '^isom$'                 { return '.mp4' }
             default                  { return '.mp4' }
         }
@@ -92,10 +95,17 @@ $files = Get-ChildItem -Path $Path -File -Recurse
 $changed = 0
 $ok = 0
 $unknown = 0
+$empty = 0
 $plan = @()
 
 foreach ($f in $files) {
     if ($f.Extension -ieq '.xlsx' -or $f.Extension -ieq '.ps1') { continue }
+    if ($f.Length -eq 0) {
+        # A failed copy or transfer: nothing to detect a format from
+        $empty++
+        Write-Host ("EMPTY    : " + $f.FullName) -ForegroundColor DarkYellow
+        continue
+    }
     $detected = Get-FileType $f.FullName
     if (-not $detected) {
         $unknown++
@@ -109,7 +119,7 @@ foreach ($f in $files) {
         continue
     }
     # Preserve the case style of the original extension (upper or lower)
-    $newExt = if ($f.Extension.ToUpper() -eq $f.Extension) { $detected.ToUpper() } else { $detected }
+    $newExt = if ($f.Extension.ToUpper() -ceq $f.Extension) { $detected.ToUpper() } else { $detected }
     $newPath = [System.IO.Path]::ChangeExtension($f.FullName, $newExt)
     $plan += [pscustomobject]@{
         Folder    = (Split-Path $f.FullName -Parent)
@@ -131,6 +141,7 @@ Write-Host "Summary:" -ForegroundColor Cyan
 Write-Host ("  Correct extension : " + $ok)
 Write-Host ("  Renamed           : " + $changed)
 Write-Host ("  Unknown format    : " + $unknown)
+Write-Host ("  Empty (0 bytes)   : " + $empty)
 if ($plan.Count -gt 0 -and -not $PSBoundParameters.ContainsKey('WhatIf')) {
     $plan | Format-Table -AutoSize
 }

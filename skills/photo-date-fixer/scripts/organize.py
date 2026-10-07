@@ -5,9 +5,10 @@ by real Date Taken.
 
 Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
-    --all               Shorthand for --delete-aae --fill-blanks --convert-png
-                        --apply-moves --sync-timestamps. Add --move-no-data,
-                        --quarantine-ads or --flatten to include those too.
+    --all               Shorthand for --delete-aae --move-incomplete
+                        --fill-blanks --convert-png --apply-moves
+                        --sync-timestamps. Add --quarantine-ads or --flatten
+                        to include those too.
     --delete-aae        Permanently delete every .AAE file in the root folder
                         and every subfolder. These are the edit-instruction
                         sidecars iPhones export next to a photo; they hold no
@@ -24,6 +25,16 @@ and a summary of every phase's counts and problems is printed at the end):
                         and video files are written with exiftool when it is
                         installed, else flagged. Empty (0-byte) files are
                         skipped and counted.
+                        Videos (MOV/MP4/M4V/3GP) with a blank Media Created are
+                        found in the root and every subfolder at any depth.
+                        Their date comes from the filename first; else the
+                        nearest containing folder whose name holds a full
+                        date (2019-08-30, 11-11-2019) at 12:00:00. A folder
+                        name holding only a year ("2014") is not used; such
+                        videos are listed as skipped. The time is
+                        taken as local time and stored as UTC, so Explorer
+                        shows it unchanged. Add --dry-run to list what would
+                        be written without changing anything.
     --convert-png       Re-encode PNG files as JPEG at quality 95, preserving
                         EXIF. Leaves originals in place. PNGs with any
                         transparent pixels are skipped and stay PNG, as are
@@ -45,24 +56,43 @@ and a summary of every phase's counts and problems is printed at the end):
                         Taken stay where they are (the folder name may be the
                         only record of their date), so their folders survive.
                         A name already taken in the root gets a _<date-taken>
-                        suffix. Add --dry-run to preview without changing
-                        anything.
+                        suffix. Exception: inside the _ads folder every file
+                        moves up from its subfolder into _ads itself, with or
+                        without a Date Taken (a name clash gets a
+                        _<subfolder-name> suffix). Add --dry-run to preview
+                        without changing anything.
     --quarantine-ads    Move ad images into an _ads folder inside the root,
                         keeping their subfolder path, for the user to review
                         and delete. A file is an ad only if BOTH hold: its
                         name is a UUID (0c4cda27-b4cc-4e92-a446-d6b780f24a64),
                         a 9-character hex id plus a number (bed51b94a_1595),
-                        or gmsnet plus an optional number (gmsnet2); AND it
+                        gmsnet plus an optional number (gmsnet2),
+                        news_images%2F plus a number
+                        (news_images%2F1714658759372), UnityAdsCache- plus
+                        a 64-character hex hash, a name holding pixel
+                        dimensions and ending in ___ plus a 6-character id
+                        (Update_Now_Video_V2_720x1280_15s___fudxlv), or, for
+                        videos only, 20 lowercase letters and digits
+                        (32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv) or a
+                        name ending -<width>x<height>-Q2 or
+                        -<width>x<height>-h264-Q2; AND it
                         carries no camera Make/Model. Name matches that do
                         have camera info are kept and listed. Looks in the
                         root folder and every subfolder. Nothing is deleted.
                         Add --dry-run to preview without moving anything.
-    --move-no-data      Move media files that hold no image data (0 bytes, or
-                        nothing but null bytes: the remains of a failed copy
-                        or transfer) into a "_no-image-data" folder inside the
-                        root, keeping their subfolder path. Looks in the root
-                        folder and every subfolder. Nothing is deleted. Add
-                        --dry-run to preview without moving anything.
+    --move-incomplete   Move incomplete media files into an "_incomplete"
+                        folder inside the root, keeping their subfolder path
+                        (so each stays in its dated folder). A file is
+                        incomplete if it is 0 bytes, nothing but null bytes,
+                        or a video with no video header (a stub or truncated
+                        copy that no player can open): the remains of a
+                        failed copy or transfer. Looks in the root folder and
+                        every subfolder. Nothing is deleted. An existing
+                        "_no-image-data" folder from earlier versions is
+                        folded into "_incomplete". --flatten leaves the
+                        folder alone. --move-no-data is the old name for this
+                        flag and still works. Add --dry-run to preview
+                        without moving anything.
 
 Dependencies: Pillow (`pip install pillow`) and, for the audit workbook,
 openpyxl (`pip install openpyxl`). Scanning works without openpyxl — the XLSX
@@ -124,6 +154,10 @@ def detect_type(path: str) -> Optional[str]:
             return '.mp4'
         if brand.startswith(b'M4V'):
             return '.m4v'
+        if brand.startswith(b'3g2'):
+            return '.3g2'
+        if brand.startswith(b'3g'):
+            return '.3gp'
         return '.mp4'
     if h[:4] == b'RIFF' and h[8:12] == b'WEBP':
         return '.webp'
@@ -186,12 +220,55 @@ def _parse_exif_dt(s: str) -> Optional[datetime.datetime]:
         return None
 
 
+def _utc_to_local(dt: datetime.datetime) -> datetime.datetime:
+    """Convert a naive UTC datetime to naive local time."""
+    return dt.replace(tzinfo=datetime.timezone.utc).astimezone().replace(tzinfo=None)
+
+
+def _mp4_header_atoms(path: str) -> Optional[bytes]:
+    """Return the bytes of a video's top-level moov, meta and udta atoms,
+    which hold its dates and device tags, skipping over the media data so a
+    large video is not read in full. None if no moov atom can be reached."""
+    out = b''
+    found_moov = False
+    with open(path, 'rb') as f:
+        total = os.fstat(f.fileno()).st_size
+        pos = 0
+        while pos + 8 <= total:
+            f.seek(pos)
+            hdr = f.read(8)
+            if len(hdr) < 8:
+                break
+            size, kind = struct.unpack('>I4s', hdr)
+            hlen = 8
+            if size == 1:  # 64-bit size follows the type
+                ext = f.read(8)
+                if len(ext) < 8:
+                    break
+                size = struct.unpack('>Q', ext)[0]
+                hlen = 16
+            elif size == 0:  # atom runs to the end of the file
+                size = total - pos
+            if size < hlen:
+                break
+            if kind in (b'moov', b'meta', b'udta'):
+                out += hdr + f.read(size - hlen)
+                found_moov = found_moov or kind == b'moov'
+            pos += size
+    return out if found_moov else None
+
+
 def _mp4_times(path: str) -> dict:
     """Return {creation_time, modification_time} from the mvhd atom, plus
-    {camera} when the file carries a device-make tag."""
+    {camera} when the file carries a device-make tag. The atom stores UTC;
+    the times are returned in local time, which is what Windows Explorer
+    shows as "Media created"."""
     out = {}
-    with open(path, 'rb') as f:
-        data = f.read()
+    data = _mp4_header_atoms(path)
+    if data is None:
+        # No moov atom found by walking the file: search all of it
+        with open(path, 'rb') as f:
+            data = f.read()
     for marker in (b'com.apple.quicktime.make', b'\xa9mak', b'com.android.manufacturer'):
         if marker in data:
             out['camera'] = marker.decode('latin-1')
@@ -211,7 +288,7 @@ def _mp4_times(path: str) -> dict:
         for key, v in (('creation_time', ct), ('modification_time', mt)):
             dt = epoch + datetime.timedelta(seconds=v)
             if dt.year > 1970:
-                out[key] = dt
+                out[key] = _utc_to_local(dt)
     except Exception:
         pass
     return out
@@ -261,7 +338,7 @@ def read_metadata(path: str, ftype: str) -> dict:
         out['modify_time'] = _parse_exif_dt(d.get('DateTime'))
         out['software'] = d.get('Software')
         out['camera'] = _camera(d)
-    elif ftype in ('.mov', '.mp4', '.m4v'):
+    elif ftype in VIDEO_EXTS:
         d = _mp4_times(path)
         out['date_taken'] = d.get('creation_time')
         out['modify_time'] = d.get('modification_time')
@@ -282,18 +359,24 @@ def read_metadata(path: str, ftype: str) -> dict:
 
 # ---------------- Core workflow ----------------
 
-MEDIA_EXTS = {'.png', '.jpg', '.jpeg', '.heic', '.heif', '.mov', '.mp4', '.m4v',
+VIDEO_EXTS = ('.mov', '.mp4', '.m4v', '.3gp', '.3g2')
+
+MEDIA_EXTS = {'.png', '.jpg', '.jpeg', '.heic', '.heif', *VIDEO_EXTS,
               '.tif', '.tiff', '.gif', '.bmp', '.webp'}
 
 # Folder inside root that --quarantine-ads moves ad images into. Every phase
 # ignores it.
 QUARANTINE_DIR = '_ads'
 
-# Folder inside root that --move-no-data moves empty / null-filled files into.
-# Every phase ignores it.
-NO_DATA_DIR = '_no-image-data'
+# Folder inside root that --move-incomplete moves empty, null-filled and
+# headerless files into. Every phase ignores it.
+INCOMPLETE_DIR = '_incomplete'
 
-HOLDING_DIRS = (QUARANTINE_DIR, NO_DATA_DIR)
+# What INCOMPLETE_DIR was called before it also took headerless videos.
+# --move-incomplete folds it into INCOMPLETE_DIR; every phase ignores it.
+LEGACY_NO_DATA_DIR = '_no-image-data'
+
+HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR)
 
 
 def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
@@ -355,6 +438,42 @@ def _fallback_date(name: str, folder: str) -> tuple:
     m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
     if m:
         return datetime.datetime(int(m[1]), int(m[2]), int(m[3]), 12, 0, 0), 'folder'
+    return None, None
+
+
+# M-D-YYYY folder names, e.g. "11-11-2019" or "1-30-2018"
+_FOLDER_MDY_RE = re.compile(r'(?<!\d)(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})(?!\d)')
+
+
+def _folder_name_date(folder: str) -> Optional[datetime.datetime]:
+    """Return the full date in a folder name at 12:00:00, or None. Accepts
+    the forms _filename_date does (2019-08-30, 20190830) plus M-D-YYYY."""
+    dt = _filename_date(folder)
+    if dt is not None:
+        return dt.replace(hour=12, minute=0, second=0)
+    for m in _FOLDER_MDY_RE.finditer(folder):
+        try:
+            d = datetime.date(int(m[3]), int(m[1]), int(m[2]))
+        except ValueError:
+            continue
+        if 1990 <= d.year and d <= datetime.date.today():
+            return datetime.datetime.combine(d, datetime.time(12, 0, 0))
+    return None
+
+
+def _video_fallback_date(name: str, folders: list) -> tuple:
+    """Return (datetime, source) to use when a video's Media Created is
+    blank. folders are the names of the folders containing the file, nearest
+    first. Priority: the date in the filename; else the nearest folder whose
+    name holds a full date. A folder name holding only a year ("2014",
+    "2013 West") is not a date and is never used."""
+    dt = _filename_date(pathlib.Path(name).stem)
+    if dt is not None:
+        return dt, 'filename'
+    for folder in folders:
+        dt = _folder_name_date(folder)
+        if dt is not None:
+            return dt, 'folder'
     return None, None
 
 
@@ -513,16 +632,15 @@ def _find_exiftool() -> Optional[str]:
     return None
 
 
-VIDEO_EXTS = ('.mov', '.mp4', '.m4v')
-
-
 def _write_date_exiftool(exiftool: str, path: str, ftype: str, dt: datetime.datetime) -> None:
     """Write Date Taken with exiftool, for formats Pillow cannot write
     (HEIC, video). The file is rewritten in place; image data is not
     re-encoded."""
     ds = dt.strftime("%Y:%m:%d %H:%M:%S")
     if ftype in VIDEO_EXTS:
-        tags = ['-QuickTime:CreateDate=' + ds, '-QuickTime:ModifyDate=' + ds,
+        # QuickTimeUTC: dt is local time, the container stores UTC
+        tags = ['-api', 'QuickTimeUTC=1',
+                '-QuickTime:CreateDate=' + ds, '-QuickTime:ModifyDate=' + ds,
                 '-TrackCreateDate=' + ds, '-MediaCreateDate=' + ds]
     else:
         tags = ['-AllDates=' + ds]
@@ -534,49 +652,91 @@ def _write_date_exiftool(exiftool: str, path: str, ftype: str, dt: datetime.date
         raise RuntimeError(msg[-1] if msg else f"exiftool exited {r.returncode}")
 
 
-def fill_blanks(root: str) -> dict:
+def _iter_fill_candidates(root: str):
+    """Yield (label, name, full_path, ftype, folders) for every file
+    --fill-blanks considers: photos one level below root, like the other
+    phases, and videos in root and every subfolder at any depth. folders are
+    the names of the containing folders, nearest first, ending with root's
+    own name."""
+    root_name = os.path.basename(os.path.abspath(root))
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(root, dirpath, dirs)
+        dirs.sort()
+        rel = os.path.relpath(dirpath, root)
+        parts = [] if rel == '.' else rel.split(os.sep)
+        for name in sorted(files):
+            ext = pathlib.Path(name).suffix.lower()
+            if ext not in MEDIA_EXTS:
+                continue
+            if len(parts) != 1 and ext not in VIDEO_EXTS:
+                # Deeper files are taken at their extension's word, to avoid
+                # opening every photo in a large tree
+                continue
+            full = os.path.join(dirpath, name)
+            ftype = detect_type(full) or ext
+            if len(parts) != 1 and ftype not in VIDEO_EXTS:
+                continue
+            yield '/'.join(parts + [name]), name, full, ftype, parts[::-1] + [root_name]
+
+
+def fill_blanks(root: str, dry_run: bool = False) -> dict:
     counts = Counter()
     exiftool = _find_exiftool()
-    for folder, name, full in iter_media(root):
+    verb = 'WOULD WRITE' if dry_run else 'WROTE'
+    for label, name, full, ftype, folders in _iter_fill_candidates(root):
         if os.path.getsize(full) == 0:
             # A failed copy or transfer: there is no image to write a date into
             counts['empty-file'] += 1
             continue
-        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
-        meta = read_metadata(full, ftype)
+        try:
+            meta = read_metadata(full, ftype)
+        except (OSError, MemoryError) as e:
+            counts['read-failed'] += 1
+            print(f"FAILED to read {label}: {e or type(e).__name__}", file=sys.stderr)
+            continue
         if meta['date_taken'] is not None:
             counts['already-dated'] += 1
             continue
-        fill_dt, source = _fallback_date(name, folder)
+        if ftype in VIDEO_EXTS:
+            field = 'Media Created'
+            fill_dt, source = _video_fallback_date(name, folders)
+        else:
+            field = 'Date Taken'
+            fill_dt, source = _fallback_date(name, folders[0])
         if fill_dt is None:
             counts['no-date-source'] += 1
+            if ftype in VIDEO_EXTS:
+                print(f"SKIPPED (no date in filename or folder names): {label}", file=sys.stderr)
             continue
+        wrote = f"{verb} {field} {fill_dt:%Y-%m-%d %H:%M:%S} (from {source}"
         if ftype in ('.jpg', '.jpeg', '.png', '.tif', '.tiff'):
             try:
-                try:
-                    _write_exif_date_image(full, fill_dt)
-                except Exception:
-                    # e.g. a TIFF variant Pillow cannot open
-                    if not exiftool:
-                        raise
-                    _write_date_exiftool(exiftool, full, ftype, fill_dt)
+                if not dry_run:
+                    try:
+                        _write_exif_date_image(full, fill_dt)
+                    except Exception:
+                        # e.g. a TIFF variant Pillow cannot open
+                        if not exiftool:
+                            raise
+                        _write_date_exiftool(exiftool, full, ftype, fill_dt)
                 counts['written-from-' + source] += 1
-                print(f"WROTE Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} (from {source}): {folder}/{name}")
+                print(f"{wrote}): {label}")
             except Exception as e:
                 counts['write-failed'] += 1
-                print(f"FAILED to write {folder}/{name}: {e}", file=sys.stderr)
+                print(f"FAILED to write {label}: {e}", file=sys.stderr)
         elif ftype in ('.heic', '.heif') + VIDEO_EXTS:
             if not exiftool:
                 counts['heic-mov-needs-exiftool'] += 1
-                print(f"SKIPPED (needs exiftool): {folder}/{name}", file=sys.stderr)
+                print(f"SKIPPED (needs exiftool): {label}", file=sys.stderr)
                 continue
             try:
-                _write_date_exiftool(exiftool, full, ftype, fill_dt)
+                if not dry_run:
+                    _write_date_exiftool(exiftool, full, ftype, fill_dt)
                 counts['written-from-' + source] += 1
-                print(f"WROTE Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} (from {source}, exiftool): {folder}/{name}")
+                print(f"{wrote}, exiftool): {label}")
             except Exception as e:
                 counts['write-failed'] += 1
-                print(f"FAILED to write {folder}/{name}: {e}", file=sys.stderr)
+                print(f"FAILED to write {label}: {e}", file=sys.stderr)
         else:
             # GIF, BMP, WEBP: no Date Taken field this script can write
             counts['unsupported-format'] += 1
@@ -721,44 +881,58 @@ def sync_timestamps(root: str) -> dict:
 
 def flatten(root: str, dry_run: bool = False) -> dict:
     """Move dated files up from their subfolder into root, then remove the
-    subfolders that end up empty. Undated files are left in place."""
+    subfolders that end up empty. Undated files are left in place, except
+    inside the _ads folder: ads rarely have a Date Taken, so there every file
+    moves up from its subfolder into _ads itself, dated or not."""
     counts = Counter()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
-    # Names already claimed in root, lowercased (Windows is case-insensitive)
-    taken = {n.lower() for n in os.listdir(root)}
     gone = set()  # paths moved or removed, so a dry run can tell what empties
-    for folder, name, full in iter_media(root):
-        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
-        dt = read_metadata(full, ftype)['date_taken']
-        if dt is None:
-            counts['left-undated'] += 1
-            print(f"LEFT (no Date Taken): {folder}/{name}")
+    ads = os.path.join(root, QUARANTINE_DIR)
+    for base in (root, ads):
+        if not os.path.isdir(base):
             continue
-        new_name = name
-        if new_name.lower() in taken:
-            p = pathlib.Path(name)
-            new_name = f"{p.stem}_{dt:%Y-%m-%d}{p.suffix}"
+        in_ads = base == ads
+        prefix = QUARANTINE_DIR + '/' if in_ads else ''
+        # Names already claimed in base, lowercased (Windows is case-insensitive)
+        taken = {n.lower() for n in os.listdir(base)}
+        for folder, name, full in iter_media(base):
+            if in_ads:
+                # The subfolder name is the only date an ad has
+                suffix = folder
+            else:
+                ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+                dt = read_metadata(full, ftype)['date_taken']
+                if dt is None:
+                    counts['left-undated'] += 1
+                    print(f"LEFT (no Date Taken): {folder}/{name}")
+                    continue
+                suffix = f"{dt:%Y-%m-%d}"
+            new_name = name
             if new_name.lower() in taken:
-                counts['collision'] += 1
-                print(f"COLLISION, skipping: {folder}/{name}", file=sys.stderr)
-                continue
-            counts['renamed'] += 1
-        if not dry_run:
-            try:
-                shutil.move(full, os.path.join(root, new_name))
-            except OSError as e:
-                counts['failed'] += 1
-                print(f"FAILED {folder}/{name}: {e}", file=sys.stderr)
-                continue
-        taken.add(new_name.lower())
-        gone.add(full)
-        counts['moved'] += 1
-        print(f"{verb}: {folder}/{name} -> {new_name}")
+                p = pathlib.Path(name)
+                new_name = f"{p.stem}_{suffix}{p.suffix}"
+                if new_name.lower() in taken:
+                    counts['collision'] += 1
+                    print(f"COLLISION, skipping: {prefix}{folder}/{name}", file=sys.stderr)
+                    continue
+                counts['renamed'] += 1
+            if not dry_run:
+                try:
+                    shutil.move(full, os.path.join(base, new_name))
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED {prefix}{folder}/{name}: {e}", file=sys.stderr)
+                    continue
+            taken.add(new_name.lower())
+            gone.add(full)
+            counts['ads-moved' if in_ads else 'moved'] += 1
+            print(f"{verb}: {prefix}{folder}/{name} -> {prefix}{new_name}")
 
     verb = 'WOULD REMOVE EMPTY' if dry_run else 'REMOVED EMPTY'
-    holding = tuple(os.path.join(root, d) + os.sep for d in HOLDING_DIRS)
+    # Incomplete files stay in their dated folders: the name is their only date
+    kept = tuple(os.path.join(root, d) + os.sep for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR))
     for dirpath, _dirs, _files in os.walk(root, topdown=False):
-        if dirpath == root or (dirpath + os.sep).startswith(holding):
+        if dirpath in (root, ads) or (dirpath + os.sep).startswith(kept):
             continue
         if any(os.path.join(dirpath, e) not in gone for e in os.listdir(dirpath)):
             counts['folders-kept'] += 1
@@ -783,18 +957,42 @@ def flatten(root: str, dry_run: bool = False) -> dict:
 #   bed51b94a_1595                         9-char hex id (with a letter, so
 #                                          20231220_142355 is safe) + number
 #   gmsnet2                                gmsnet + optional number
+#   news_images%2F1714658759372            news_images + URL-encoded "/" + number
+#   UnityAdsCache-3d4c8e33...b18d2091      UnityAdsCache- + 64-char hex hash
+#   Update_Now_Video_V2_720x1280_15s___fudxlv
+#                                          pixel dimensions somewhere in the
+#                                          name, ending ___ + 6-char id
 # optionally followed by the _YYYY-MM-DD suffix --flatten adds on a name
 # clash, or a " (2)" copy marker.
 _AD_NAME_RE = re.compile(
     r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
     r'|(?=\d*[a-f])[0-9a-f]{9}_\d+'
-    r'|gmsnet\d*)'
+    r'|gmsnet\d*'
+    r'|news_images%2F\d+'
+    r'|UnityAdsCache-[0-9a-f]{64}'
+    r'|.*(?<!\d)\d{3,4}x\d{3,4}(?!\d).*___[0-9a-z]{6})'
     r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?',
     re.IGNORECASE)
 
 
+# Stems that mark a video (only) as an ad, with the same optional suffixes:
+#   32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv
+#       20 lowercase letters and digits with at least one of each. Lowercase
+#       only, so camera names such as VID20231220142355123 are safe.
+#   313e81d7...daa11f.mp4-720x1280-h264-Q2, peacock_..._rev-720x1280-Q2
+#       ends in -<width>x<height>-Q2 or -<width>x<height>-h264-Q2, the
+#       transcode tag ad networks append
+_AD_VIDEO_NAME_RE = re.compile(
+    r'(?:(?=[a-z]*\d)(?=\d*[a-z])[0-9a-z]{20}'
+    r'|.*-\d{3,4}x\d{3,4}(?:-h264)?-Q2)'
+    r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?')
+
+
 def is_ad_name(name: str) -> bool:
-    return _AD_NAME_RE.fullmatch(pathlib.Path(name).stem) is not None
+    p = pathlib.Path(name)
+    if _AD_NAME_RE.fullmatch(p.stem):
+        return True
+    return p.suffix.lower() in VIDEO_EXTS and _AD_VIDEO_NAME_RE.fullmatch(p.stem) is not None
 
 
 def quarantine_ads(root: str, dry_run: bool = False) -> dict:
@@ -840,7 +1038,7 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
     return dict(counts)
 
 
-# ---------------- Move files with no image data ----------------
+# ---------------- Move incomplete files ----------------
 
 def _has_no_data(path: str) -> bool:
     """True when a file is 0 bytes or contains nothing but null bytes."""
@@ -853,13 +1051,63 @@ def _has_no_data(path: str) -> bool:
                 return False
 
 
-def move_no_data(root: str, dry_run: bool = False) -> dict:
-    """Move media files holding no image data from root and every subfolder
-    into root/_no-image-data, keeping their relative path (the dated folder
-    name may be the only record of when they were taken). Emptied folders are
-    left for --flatten or the cleanup script."""
+def _incomplete_kind(path: str) -> Optional[str]:
+    """Return why a media file is incomplete, or None if it is not: 'empty'
+    (0 bytes), 'null-filled' (nothing but null bytes), or 'no-video-header'
+    (a video with no moov atom: a stub or a truncated copy, which no player
+    can open)."""
+    if os.path.getsize(path) == 0:
+        return 'empty'
+    if pathlib.Path(path).suffix.lower() in VIDEO_EXTS:
+        if _mp4_header_atoms(path) is not None:
+            return None
+        if _has_no_data(path):
+            return 'null-filled'
+        # A photo wearing a video extension is misnamed, not incomplete
+        return 'no-video-header' if detect_type(path) in (None,) + VIDEO_EXTS else None
+    return 'null-filled' if _has_no_data(path) else None
+
+
+def _fold_legacy_no_data(root: str, dry_run: bool, counts: Counter) -> None:
+    """Move what an earlier version put in root/_no-image-data into
+    root/_incomplete, keeping relative paths."""
+    legacy = os.path.join(root, LEGACY_NO_DATA_DIR)
+    if not os.path.isdir(legacy):
+        return
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    for dirpath, dirs, files in os.walk(legacy, topdown=False):
+        for name in sorted(files):
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, legacy)
+            dst = os.path.join(root, INCOMPLETE_DIR, rel)
+            if os.path.exists(dst):
+                counts['collision'] += 1
+                print(f"COLLISION, skipping: {LEGACY_NO_DATA_DIR}{os.sep}{rel}", file=sys.stderr)
+                continue
+            if not dry_run:
+                try:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.move(full, dst)
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED {LEGACY_NO_DATA_DIR}{os.sep}{rel}: {e}", file=sys.stderr)
+                    continue
+            counts['moved-from-' + LEGACY_NO_DATA_DIR] += 1
+        if not dry_run and not os.listdir(dirpath):
+            os.rmdir(dirpath)
+    n = counts['moved-from-' + LEGACY_NO_DATA_DIR]
+    if n:
+        print(f"{verb}: {n} file(s) from {LEGACY_NO_DATA_DIR} into {INCOMPLETE_DIR}")
+
+
+def move_incomplete(root: str, dry_run: bool = False) -> dict:
+    """Move incomplete media files (see _incomplete_kind) from root and every
+    subfolder into root/_incomplete, keeping their relative path (the dated
+    folder name may be the only record of when they were taken). Emptied
+    folders are left for --flatten or the cleanup script."""
     counts = Counter()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    _fold_legacy_no_data(root, dry_run, counts)
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(root, dirpath, dirs)
         dirs.sort()
@@ -869,14 +1117,14 @@ def move_no_data(root: str, dry_run: bool = False) -> dict:
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
             try:
-                if not _has_no_data(full):
-                    continue
+                kind = _incomplete_kind(full)
             except OSError as e:
                 counts['failed'] += 1
                 print(f"FAILED {rel}: {e}", file=sys.stderr)
                 continue
-            kind = 'empty' if os.path.getsize(full) == 0 else 'null-filled'
-            dst = os.path.join(root, NO_DATA_DIR, rel)
+            if kind is None:
+                continue
+            dst = os.path.join(root, INCOMPLETE_DIR, rel)
             if os.path.exists(dst):
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {rel}", file=sys.stderr)
@@ -989,10 +1237,10 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
 # Order phases run in when several are given on one command line: clear out
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
-PHASE_ORDER = ('delete_aae', 'move_no_data', 'quarantine_ads', 'fill_blanks', 'convert_png',
+PHASE_ORDER = ('delete_aae', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
                'apply_moves', 'sync_timestamps', 'flatten')
-ALL_PHASES = ('delete_aae', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
-DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_no_data', 'delete_aae')
+ALL_PHASES = ('delete_aae', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
+DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_aae', 'fill_blanks')
 
 # Most problem lines repeated per phase in the closing summary
 MAX_SUMMARY_ISSUES = 50
@@ -1020,12 +1268,12 @@ class _IssueTee:
 def _run_phase(phase: str, args) -> dict:
     if phase == 'delete_aae':
         return delete_aae(args.root, args.dry_run)
-    if phase == 'move_no_data':
-        return move_no_data(args.root, args.dry_run)
+    if phase == 'move_incomplete':
+        return move_incomplete(args.root, args.dry_run)
     if phase == 'quarantine_ads':
         return quarantine_ads(args.root, args.dry_run)
     if phase == 'fill_blanks':
-        return fill_blanks(args.root)
+        return fill_blanks(args.root, args.dry_run)
     if phase == 'convert_png':
         return convert_pngs(args.root)
     if phase == 'sync_timestamps':
@@ -1066,16 +1314,16 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
     ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
-    ap.add_argument('--all', action='store_true', help='Run --delete-aae, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
-    ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, using the date in the filename, else the folder date.')
+    ap.add_argument('--all', action='store_true', help='Run --delete-aae, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
+    ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos (at any depth) whose Media Created is blank, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
-    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders.')
+    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images (ad-style filename AND no camera Make/Model) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
-    ap.add_argument('--move-no-data', action='store_true', help='Move media files that hold no image data (0 bytes or all null bytes) from the root and every subfolder into a _no-image-data folder. Nothing is deleted.')
+    ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
     ap.add_argument('--delete-aae', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar) in the root and every subfolder.')
-    ap.add_argument('--dry-run', action='store_true', help='With --flatten, --quarantine-ads, --move-no-data or --delete-aae: list what would be moved, removed or deleted without changing anything.')
+    ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete or --delete-aae: list what would be written, moved, removed or deleted without changing anything.')
     ap.add_argument('--xlsx', default='photo-audit.xlsx', help='Audit workbook filename (relative to root).')
     args = ap.parse_args(argv)
 
@@ -1088,7 +1336,7 @@ def main(argv=None):
     if not phases:
         ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
     if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
-        ap.error('--dry-run is only supported with --flatten, --quarantine-ads, --move-no-data and --delete-aae')
+        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete and --delete-aae')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)

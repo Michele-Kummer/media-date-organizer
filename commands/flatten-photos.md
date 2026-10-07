@@ -17,9 +17,10 @@ Move the dated photos in `$ARGUMENTS` up one level, out of their subfolders, and
 
 - Every file one level down that has a Date Taken moves into `$ARGUMENTS` itself.
 - Files with no Date Taken stay where they are, so their folders are kept. Run `/fix-photo-dates` first if the user wants those dated and moved too.
+- Exception: inside `$ARGUMENTS/_ads`, every file moves up from its subfolder into `_ads` itself, with or without a Date Taken. A name already taken there gets a `_<subfolder-name>` suffix.
 - A name already taken in the root gets a `_<date-taken>` suffix; if that is taken as well, the file is skipped and reported.
 - Subfolders left empty are deleted. Folders still holding anything are kept.
 
 ## Deliverables
 
-- Summary message with counts (moved, renamed, left undated, folders removed, folders kept).
+- Summary message with counts (moved, ads moved, renamed, left undated, folders removed, folders kept).

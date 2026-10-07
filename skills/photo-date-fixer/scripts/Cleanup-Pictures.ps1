@@ -24,7 +24,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$Path = (Get-Location).Path,
-    [string[]]$PreferredExtOrder = @('.heic', '.heif', '.jpg', '.jpeg', '.mov', '.mp4', '.m4v', '.tif', '.tiff', '.gif', '.bmp', '.webp', '.png')
+    [string[]]$PreferredExtOrder = @('.heic', '.heif', '.jpg', '.jpeg', '.mov', '.mp4', '.m4v', '.3gp', '.3g2', '.tif', '.tiff', '.gif', '.bmp', '.webp', '.png')
 )
 
 $preferRank = @{}
