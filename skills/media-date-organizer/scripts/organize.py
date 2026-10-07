@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-organize.py — read photo metadata (EXIF, MOV mvhd, HEIC TIFF) and sort files
-by real Date Taken.
+organize.py — read photo and video metadata (EXIF, MOV mvhd, HEIC TIFF) and
+sort files by real Date Taken.
 
 Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
@@ -54,42 +54,44 @@ and a summary of every phase's counts and problems is printed at the end):
                         and no editor-software tag is present). Date Created
                         is only settable on Windows; elsewhere just Date
                         Modified is synced.
-    --flatten           Move every file that has a Date Taken out of its
-                        subfolder and up into the root folder itself, then
-                        delete the subfolders left empty. Files with no Date
-                        Taken stay where they are (the folder name may be the
-                        only record of their date), so their folders survive.
-                        A name already taken in the root gets a _<date-taken>
-                        suffix. Exception: inside the _ads folder every file
-                        moves up from its subfolder into _ads itself, with or
-                        without a Date Taken (a name clash gets a
-                        _<subfolder-name> suffix). Camcorder videos (.m2ts,
-                        .mts), which no other phase handles, are moved too,
-                        going by the date in the filename (20180116122434);
-                        ones with no date in the name, or holding no data,
-                        stay. A file's .modd/.moff sidecars move with it. A
-                        .modd/.moff in the root or one of its subfolders
-                        whose file is not beside it is permanently deleted.
-                        Add --dry-run to preview without changing anything.
-    --quarantine-ads    Move ad images into an _ads folder inside the root,
-                        keeping their subfolder path, for the user to review
-                        and delete. A file is an ad only if BOTH hold: its
-                        name is a UUID (0c4cda27-b4cc-4e92-a446-d6b780f24a64),
-                        a 9-character hex id plus a number (bed51b94a_1595),
-                        gmsnet plus an optional number (gmsnet2),
-                        news_images%2F plus a number
-                        (news_images%2F1714658759372), UnityAdsCache- plus
-                        a 64-character hex hash, a name holding pixel
-                        dimensions and ending in ___ plus a 6-character id
+    --flatten           Move every file that has a Date Taken or Media Created
+                        out of its subfolder and up into the root folder
+                        itself, then delete the subfolders left empty. Files
+                        with no Date Taken or Media Created stay where they are
+                        (the folder name may be the only record of their date),
+                        so their folders survive. A name already taken in the
+                        root gets a _<date-taken> suffix. Exception: inside the
+                        _ads folder every file moves up from its subfolder into
+                        _ads itself, with or without a Date Taken (a name clash
+                        gets a _<subfolder-name> suffix). Camcorder videos
+                        (.m2ts, .mts), which no other phase handles, are moved
+                        too, going by the date in the filename
+                        (20180116122434); ones with no date in the name, or
+                        holding no data, stay. A file's .modd/.moff sidecars
+                        move with it. A .modd/.moff in the root or one of its
+                        subfolders whose file is not beside it is permanently
+                        deleted. Add --dry-run to preview without changing
+                        anything.
+    --quarantine-ads    Move ad images and videos into an _ads folder inside
+                        the root, keeping their subfolder path, for the user to
+                        review and delete. A file is an ad only if BOTH hold:
+                        its name is a UUID
+                        (0c4cda27-b4cc-4e92-a446-d6b780f24a64), a 9-character
+                        hex id plus a number (bed51b94a_1595), gmsnet plus an
+                        optional number (gmsnet2), news_images%2F plus a number
+                        (news_images%2F1714658759372), UnityAdsCache- plus a
+                        64-character hex hash, a name holding pixel dimensions
+                        and ending in ___ plus a 6-character id
                         (Update_Now_Video_V2_720x1280_15s___fudxlv), or, for
                         videos only, 20 lowercase letters and digits
                         (32129eda9b8e718c5277, vuyyzy0brvod5gcaocnv), a
-                        32-character hex hash, or a name ending -<width>x<height>-Q2 or
-                        -<width>x<height>-h264-Q2; AND it
-                        carries no camera Make/Model. Name matches that do
-                        have camera info are kept and listed. Looks in the
-                        root folder and every subfolder. Nothing is deleted.
-                        Add --dry-run to preview without moving anything.
+                        32-character hex hash, or a name ending
+                        -<width>x<height>-Q2 or -<width>x<height>-h264-Q2; AND
+                        it carries no camera info (EXIF Make/Model for a photo,
+                        a device-make tag for a video). Name matches that do
+                        have camera info are kept and listed. Looks in the root
+                        folder and every subfolder. Nothing is deleted. Add
+                        --dry-run to preview without moving anything.
     --move-incomplete   Move incomplete media files into an "_incomplete"
                         folder inside the root, keeping their subfolder path
                         (so each stays in its dated folder). A file is
@@ -1036,9 +1038,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     return dict(counts)
 
 
-# ---------------- Quarantine ad images ----------------
+# ---------------- Quarantine ad images and videos ----------------
 
-# Filename stems that ad images are saved under:
+# Filename stems that ad images and videos are saved under:
 #   0c4cda27-b4cc-4e92-a446-d6b780f24a64   UUID
 #   bed51b94a_1595                         9-char hex id (with a letter, so
 #                                          20231220_142355 is safe) + number
@@ -1085,9 +1087,10 @@ def is_ad_name(name: str) -> bool:
 
 
 def quarantine_ads(root: str, dry_run: bool = False) -> dict:
-    """Move ad images from root and every subfolder into root/_ads, keeping
-    their relative path. A file is an ad only if its name matches AND it has
-    no camera Make/Model; name matches with camera info are kept and listed.
+    """Move ad images and videos from root and every subfolder into root/_ads,
+    keeping their relative path. A file is an ad only if its name matches AND
+    it has no camera info (EXIF Make/Model for a photo, a device-make tag for
+    a video); name matches with camera info are kept and listed.
     Emptied folders are left for --flatten or the cleanup script."""
     counts = Counter()
     if not HAS_PIL:
@@ -1505,7 +1508,7 @@ def main(argv=None):
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
-    ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images (ad-style filename AND no camera Make/Model) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
+    ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
     ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar) and Windows thumbnail cache (Thumbs.db) in the root and every subfolder.')
     ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete or --delete-junk: list what would be written, moved, removed or deleted without changing anything.')
