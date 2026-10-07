@@ -1,5 +1,5 @@
 {
-  "name": "photo-date-fixer",
+  "name": "media-date-organizer",
   "version": "1.0.0",
   "description": "Ensures all photos have a Date Taken, by converting to JPG and adding the metadata.",
   "author": {
@@ -7,7 +7,7 @@
     "email": "michele.shelly.kummer@gmail.com"
   },
   "license": "MIT",
-  "homepage": "https://github.com/your-handle/photo-date-fixer",
+  "homepage": "https://github.com/Michele-Kummer/media-date-organizer",
   "keywords": [
     "photos",
     "exif",
@@ -19,10 +19,10 @@
     "claude-code"
   ],
   "skills": [
-    "skills/photo-date-fixer"
+    "skills/media-date-organizer"
   ],
   "commands": [
-    "commands/fix-photo-dates.md",
-    "commands/flatten-photos.md"
+    "commands/fix-media-dates.md",
+    "commands/flatten-media.md"
   ]
 }

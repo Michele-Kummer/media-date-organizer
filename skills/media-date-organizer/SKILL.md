@@ -1,9 +1,9 @@
 ---
-name: photo-date-fixer
+name: media-date-organizer
 description: Use this skill when the user wants every photo in a folder to have a readable Date Taken. Triggers include "fix the dates on my photos," "make sure all my pictures have Date Taken," "my photos don't show Date Taken in Explorer," "convert these PNGs so I can see the date," "sort my photos by when they were taken," or any mention of blank/missing/wrong Date Taken on image files. The skill reads real EXIF and container metadata (HEIC/HEIF, MOV/MP4, PNG/JPEG) without external tools, writes Date Taken where it is missing, converts PNG to JPEG when the user needs Windows Explorer to surface the date, moves files to date-matched folders, optionally syncs Windows file timestamps to Date Taken for unedited files, and produces an XLSX audit. Works on photos from any source. Do NOT use for RAW camera files or video libraries larger than a few thousand items — the sandbox parse would be slow.
 ---
 
-# photo-date-fixer
+# media-date-organizer
 
 Ensures every photo has a Date Taken. Seven phases, each independently runnable.
 

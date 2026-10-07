@@ -1,6 +1,6 @@
 # Case study: ensuring Date Taken on a messy photo folder
 
-A real example of using photo-date-fixer on a mixed folder of 35 photos and short videos. The folder was organized by import date into subfolders named `YYYY-MM-DD`, but the files inside were a mix of HEIC images, Live Photo MOV clips, and PNG screenshots — and many had the wrong extension. "Make sure every photo has a Date Taken" turned out to require working through four interlocking problems.
+A real example of using media-date-organizer on a mixed folder of 35 photos and short videos. The folder was organized by import date into subfolders named `YYYY-MM-DD`, but the files inside were a mix of HEIC images, Live Photo MOV clips, and PNG screenshots — and many had the wrong extension. "Make sure every photo has a Date Taken" turned out to require working through four interlocking problems.
 
 ## The ask
 

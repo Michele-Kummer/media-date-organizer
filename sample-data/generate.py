@@ -1,4 +1,4 @@
-"""Generate a tiny synthetic photo set for testing photo-date-fixer."""
+"""Generate a tiny synthetic photo set for testing media-date-organizer."""
 import pathlib
 from PIL import Image
 
