@@ -1,2 +1,4 @@
 pillow>=10.0
 openpyxl>=3.1
+# Only for --visual-compare on videos (bundles ffmpeg):
+imageio-ffmpeg>=0.5

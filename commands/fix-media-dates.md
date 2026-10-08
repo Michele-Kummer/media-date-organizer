@@ -33,7 +33,7 @@ pip install -r requirements.txt
 
 ## Ad images and videos (optional, any time)
 
-If the folder holds ad images or videos (names like `0c4cda27-b4cc-4e92-a446-d6b780f24a64`, `bed51b94a_1595`, `gmsnet2`, `news_images%2F1714658759372` or `UnityAdsCache-<hash>`), preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --quarantine-ads --dry-run`, share the list, then after confirming run it without `--dry-run`. Files with an ad-style name and no camera Make/Model move into `$ARGUMENTS/_ads` for the user to review and delete; nothing is deleted. Name matches that have camera info are kept. Best done before step 3.
+If the folder holds ad images or videos (names like `0c4cda27-b4cc-4e92-a446-d6b780f24a64`, `bed51b94a_1595`, `gmsnet2`, `news_images%2F1714658759372`, `UnityAdsCache-<hash>` or `54ac2fda0a6755305200011c-b30-600`), preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --quarantine-ads --dry-run`, share the list, then after confirming run it without `--dry-run`. Files with an ad-style name and no camera Make/Model move into `$ARGUMENTS/_ads` for the user to review and delete; nothing is deleted. Name matches that have camera info are kept. Best done before step 3.
 
 ## All in one go
 

@@ -34,7 +34,7 @@ Scanning still works without `openpyxl` — only the XLSX report is skipped. Wri
 
 ## Workflow
 
-Each phase below can be run on its own, or several can be given on one command line. `python scripts/organize.py --root "<MediaRoot>" --all` deletes `.AAE` sidecars, moves incomplete files into `_incomplete` and then runs Phases 3–6 (`--delete-junk --move-incomplete --fill-blanks --convert-png --apply-moves --sync-timestamps`); add `--quarantine-ads` or `--flatten` to include those. Phases always run in this order whatever order the flags are typed in: delete-junk, move-incomplete, quarantine-ads, fill-blanks, convert-png, apply-moves, sync-timestamps, flatten. A multi-phase run ends with a `Summary of this run` block listing every phase's counts and the problem lines (`FAILED`, `SKIPPED`, `COLLISION`, `NOTE`) it reported, up to 50 per phase. Use it only after the user has confirmed every phase it includes; `--report-only` cannot be combined with other phases.
+Each phase below can be run on its own, or several can be given on one command line. `python scripts/organize.py --root "<MediaRoot>" --all` deletes `.AAE` sidecars, moves incomplete files into `_incomplete` and then runs Phases 3–6 (`--delete-junk --move-incomplete --fill-blanks --convert-png --apply-moves --sync-timestamps`); add `--quarantine-ads` or `--flatten` to include those. Phases always run in this order whatever order the flags are typed in: delete-junk, move-incomplete, quarantine-ads, fill-blanks, convert-png, apply-moves, compare-collisions, visual-compare, sync-timestamps, flatten. A multi-phase run ends with a `Summary of this run` block listing every phase's counts and the problem lines (`FAILED`, `SKIPPED`, `COLLISION`, `NOTE`) it reported, up to 50 per phase. Use it only after the user has confirmed every phase it includes; `--report-only` cannot be combined with other phases.
 
 ### Phase 1 — Fix extensions
 `scripts/Fix-Extensions.ps1 -Path "<MediaRoot>"`. Reads magic bytes and renames files whose extensions lie about the actual format. Preview with `-WhatIf` first. 3GP/3G2 videos keep their own extension (they are not renamed to `.mp4`). AVCHD camcorder files (`.m2ts`/`.mts`) are recognised and left as they are; `organize.py` never dates or converts them, and only `--flatten` moves them. Empty (0-byte) files are listed as `EMPTY` and left alone; `UNKNOWN` means a non-empty file in a format the script does not recognise.
@@ -68,6 +68,17 @@ Writes `media_audit_<date>.xlsx` summarizing which files have Date Taken, which 
 ### Phase 5 — Move to date-matched folders
 `python scripts/organize.py --root "<MediaRoot>" --apply-moves`. Any file whose Date Taken differs from its current folder's `YYYY-MM-DD` name is moved to a sibling folder named for its real date, creating that folder if needed.
 
+### Compare collisions (report only, any time after Phase 5; not part of `--all`)
+`python scripts/organize.py --root "<MediaRoot>" --compare-collisions`. Phase 5 skips a file as `COLLISION` when its name is already taken in the folder for its real date. This compares each skipped file byte for byte with the file holding that name and lists the pair as `IDENTICAL` (a true duplicate) or `DIFFERENT` (with both sizes and both dates). It works after Phase 7 too: a file `--flatten` renamed with a `_<date-taken>` suffix is compared with the file that had its name in the root, and a file `--flatten` left in its subfolder as a `COLLISION` is compared with both. Nothing is moved, renamed or deleted; share the counts with the user and let them decide what to do with the duplicates.
+
+### Visual duplicate check (dry run only; not part of `--all`)
+`python scripts/organize.py --root "<MediaRoot>" --visual-compare --dry-run`. Compares the pixels of each pair of possible duplicates and reports `DUPLICATE`, `DIFFERENT` or `UNSURE` with a confidence level (`high`, `medium`, `low`) and the measured difference. Nothing is moved, renamed or deleted, and `--dry-run` is required: there is no mode that acts on the verdicts yet. It runs entirely on this computer; nothing is sent anywhere and it costs nothing.
+- Pairs checked: every collision pair `--compare-collisions` covers, plus files in one folder that share a name and differ only in extension (`IMG_1.jpg` / `IMG_1.png`, the pairs `Cleanup-Pictures.ps1` would delete from).
+- Byte-identical pairs are `IDENTICAL (confidence certain)` with no comparison needed. For the rest, a photo is compared as one picture; a video by its length and by four frames taken at the same points in each file, judged on the least alike frame.
+- The pixel difference is a percentage (0 = same picture). Up to 1% is `DUPLICATE` high, up to 2% `DUPLICATE` medium, up to 10% `UNSURE` low, up to 15% `DIFFERENT` medium, above that `DIFFERENT` high. Different video lengths or picture shapes are `DIFFERENT` high outright. Two shots taken a fraction of a second apart can score under 2%, so a `DUPLICATE` verdict on files that never shared a name deserves a look.
+- Videos need ffmpeg: on PATH, or `pip install imageio-ffmpeg`.
+- The audit workbook's Run log has a **Confidence** column filled in for these rows. HEIC photos cannot be compared (Pillow cannot open them) and are listed as `FAILED`.
+
 ### Phase 6 — Sync file-system timestamps (optional)
 `python scripts/organize.py --root "<MediaRoot>" --sync-timestamps`. Sets each file's "Date Modified" and "Date Created" to its EXIF Date Taken, **but only for files that look unedited**. An "unedited" file is one whose EXIF `DateTime` tag (file-level modify time) equals `DateTimeOriginal` (or is missing) AND whose EXIF `Software` tag does not match a known editor (Photoshop, Lightroom, Camera Raw, GIMP, Affinity, Luminar, Pixelmator, Snapseed, VSCO, Instagram). Files that fail the check are skipped and listed — neither timestamp is touched. "Date Created" is set through the Win32 `SetFileTime` API, so on non-Windows systems only "Date Modified" is synced (reported as `created-unsupported`).
 
@@ -91,6 +102,7 @@ Run this last: once files are in the root, the other phases no longer see them (
    - `gmsnet` plus an optional number, e.g. `gmsnet2`
    - `news_images%2F` plus a number, e.g. `news_images%2F1714658759372`
    - `UnityAdsCache-` plus a 64-character hex hash, e.g. `UnityAdsCache-3d4c8e33a716c48d4cf7daad6049cb87960c0ef042c3c6014d7ba81eb18d2091`
+   - a 24-character hex id plus one or more parts joined by `-` or `_`, e.g. `54ac2fda0a6755305200011c-b30-600`, `55d58970f6cd4574f635d6e3_568-1443241239`
    - a name that contains pixel dimensions and ends in `___` plus a 6-character id, e.g. `Update_Now_Video_V2_720x1280_15s___fudxlv`, `720x1280_ENDCARD___fo9w1l`
    - for videos only: 20 lowercase letters and digits with at least one letter, e.g. `32129eda9b8e718c5277`, `vuyyzy0brvod5gcaocnv`, `agqnsutqkbwulksalejd`
    - for videos only: a 32-character lowercase hex hash, e.g. `d5a210d011c47b8300bb8034048719a9`

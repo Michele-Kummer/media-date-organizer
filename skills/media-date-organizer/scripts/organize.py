@@ -48,6 +48,30 @@ and a summary of every phase's counts and problems is printed at the end):
                         date. Renames use the clean iPhone-native stem; a
                         _<folder-date> suffix is appended only if Date Taken is
                         blank AND the folder is a dated folder.
+    --compare-collisions
+                        Report only; not part of --all. For every file
+                        --apply-moves skips as a COLLISION (its name is
+                        already taken in the folder for its real date),
+                        compare it byte for byte with the file holding that
+                        name and list the pair as IDENTICAL or DIFFERENT, with
+                        both sizes and dates. Also covers --flatten: a file
+                        it renamed with a _<date-taken> suffix, or left in
+                        its subfolder, because its name was taken in the
+                        root. Nothing is moved or deleted.
+    --visual-compare    Dry run only (give --dry-run with it); not part of
+                        --all. Compare the pixels of each pair of possible
+                        duplicates and report DUPLICATE, DIFFERENT or UNSURE
+                        with a confidence level (high, medium, low) and the
+                        measured difference. Pairs are the collisions above
+                        plus files in one folder that share a name and differ
+                        only in extension (IMG_1.jpg / IMG_1.png). Byte-
+                        identical pairs are IDENTICAL with no comparison
+                        needed. A photo is compared as one picture, a video
+                        by four frames and its length. Runs entirely on this
+                        computer; videos need ffmpeg (pip install
+                        imageio-ffmpeg). The confidence level gets its own
+                        column in the audit workbook's Run log. Nothing is
+                        moved or deleted.
     --sync-timestamps   Set each file's "Date Modified" and "Date Created" to
                         its EXIF Date Taken, BUT only for files that appear to
                         be unedited (EXIF ModifyDate equals DateTimeOriginal
@@ -80,7 +104,11 @@ and a summary of every phase's counts and problems is printed at the end):
                         hex id plus a number (bed51b94a_1595), gmsnet plus an
                         optional number (gmsnet2), news_images%2F plus a number
                         (news_images%2F1714658759372), UnityAdsCache- plus a
-                        64-character hex hash, a name holding pixel dimensions
+                        64-character hex hash, a 24-character hex id plus
+                        parts joined by - or _
+                        (54ac2fda0a6755305200011c-b30-600,
+                        55d58970f6cd4574f635d6e3_568-1443241239), a name
+                        holding pixel dimensions
                         and ending in ___ plus a 6-character id
                         (Update_Now_Video_V2_720x1280_15s___fudxlv), or, for
                         videos only, 20 lowercase letters and digits
@@ -123,6 +151,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import filecmp
+import io
 import json
 import os
 import pathlib
@@ -135,7 +165,7 @@ from collections import Counter
 from typing import Optional
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageChops, ImageStat
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -320,23 +350,23 @@ def _pil_meta(path: str) -> dict:
     if not HAS_PIL:
         return out
     try:
-        img = Image.open(path)
-        exif = img.getexif()
-        v = exif.get_ifd(0x8769).get(0x9003)
-        if v:
-            out['DateTimeOriginal'] = v
-        v = exif.get(0x0132)
-        if v:
-            out['DateTime'] = v
-        v = exif.get(0x0131)
-        if v:
-            out['Software'] = v
-        v = exif.get(0x010F)
-        if v:
-            out['Make'] = v
-        v = exif.get(0x0110)
-        if v:
-            out['Model'] = v
+        with Image.open(path) as img:
+            exif = img.getexif()
+            v = exif.get_ifd(0x8769).get(0x9003)
+            if v:
+                out['DateTimeOriginal'] = v
+            v = exif.get(0x0132)
+            if v:
+                out['DateTime'] = v
+            v = exif.get(0x0131)
+            if v:
+                out['Software'] = v
+            v = exif.get(0x010F)
+            if v:
+                out['Make'] = v
+            v = exif.get(0x0110)
+            if v:
+                out['Model'] = v
     except Exception:
         pass
     return out
@@ -584,6 +614,231 @@ def apply_moves(root: str, plan: list) -> dict:
     return dict(counts)
 
 
+# ---------------- Compare collisions ----------------
+
+# The _<date-taken> suffix --flatten gives a file whose name is taken in root
+_FLATTEN_SUFFIX_RE = re.compile(r'^(.+)_\d{4}-\d{2}-\d{2}$')
+
+
+def _compare_pair(root: str, src: str, dst: str, counts: Counter) -> None:
+    """Compare two colliding files byte for byte and report the result."""
+    pair = f"{os.path.relpath(src, root)} | {os.path.relpath(dst, root)}"
+    try:
+        src_size, dst_size = os.path.getsize(src), os.path.getsize(dst)
+        same = src_size == dst_size and filecmp.cmp(src, dst, shallow=False)
+    except OSError as e:
+        counts['failed'] += 1
+        print(f"FAILED {pair}: {e}", file=sys.stderr)
+        return
+    if same:
+        counts['identical'] += 1
+        print(f"IDENTICAL ({src_size:,} bytes): {pair}")
+        return
+    dates = []
+    for path in (src, dst):
+        dt = read_metadata(path, detect_type(path) or pathlib.Path(path).suffix.lower())['date_taken']
+        dates.append(dt.strftime('%Y-%m-%d %H:%M:%S') if dt else 'blank')
+    taken = f"taken {dates[0]} vs {dates[1]}"
+    if src_size == dst_size:
+        counts['different-content'] += 1
+        print(f"DIFFERENT (same size {src_size:,} bytes, content differs; {taken}): {pair}")
+    else:
+        counts['different-size'] += 1
+        print(f"DIFFERENT ({src_size:,} vs {dst_size:,} bytes; {taken}): {pair}")
+
+
+def _collision_pairs(root: str, plan: list):
+    """Yield (file, file holding its name) for the three kinds of collision:
+    a file --apply-moves skips because its name is taken in the folder for
+    its real date; a file --flatten left in its subfolder because its name
+    is taken in root; and a file --flatten renamed with a _<date-taken>
+    suffix because its name was taken in root."""
+    for r in plan:
+        if r['action'] not in ('move', 'keep'):
+            continue
+        src = os.path.join(root, r['current_folder'], r['current_name'])
+        dst = os.path.join(root, r['target_folder'], r['new_name'])
+        if src == dst or not os.path.isfile(src) or not os.path.exists(dst) or os.path.samefile(src, dst):
+            continue
+        yield src, dst
+
+    # Media files in root, grouped by name with any flatten suffix removed,
+    # lowercased (Windows is case-insensitive)
+    exts = MEDIA_EXTS | set(CAMCORDER_EXTS)
+    plain, suffixed = {}, {}
+    for name in sorted(os.listdir(root)):
+        p = pathlib.Path(name)
+        if p.suffix.lower() not in exts or not os.path.isfile(os.path.join(root, name)):
+            continue
+        m = _FLATTEN_SUFFIX_RE.match(p.stem)
+        if m:
+            suffixed.setdefault((m[1] + p.suffix).lower(), []).append(name)
+        plain[name.lower()] = name
+    for key, names in suffixed.items():
+        if key in plain:
+            for name in names:
+                yield os.path.join(root, name), os.path.join(root, plain[key])
+    for _folder, name, full in iter_media(root, exts):
+        key = name.lower()
+        for peer in ([plain[key]] if key in plain else []) + suffixed.get(key, []):
+            yield full, os.path.join(root, peer)
+
+
+def compare_collisions(root: str, plan: list) -> dict:
+    """Report whether colliding files (see _collision_pairs) are duplicates,
+    comparing each pair byte for byte. Changes nothing."""
+    counts = Counter()
+    for src, dst in _collision_pairs(root, plan):
+        _compare_pair(root, src, dst, counts)
+    return dict(counts)
+
+
+# ---------------- Visual duplicate check ----------------
+
+# Frames taken from each video, as fractions of its length
+VISUAL_FRAME_POSITIONS = (0.1, 0.35, 0.6, 0.85)
+# Both pictures are shrunk to a square this many pixels wide before their
+# pixels are compared, which hides compression noise but not content
+VISUAL_COMPARE_EDGE = 128
+# Most that two pictures' width/height ratios, or two videos' lengths, may
+# differ and still be the same picture or recording
+VISUAL_SHAPE_TOLERANCE = 0.03
+# Pixel difference (percent of full scale, averaged over the picture) up to
+# which a pair gets each verdict, tightest first; anything above the last is
+# DIFFERENT with high confidence. Measured on real files: a re-saved or
+# re-compressed copy scores under 0.5, video frames a tenth of a second apart
+# 0.6 to 5, the same scene seconds apart 4 to 20, unrelated pictures over 18.
+VISUAL_VERDICTS = ((1.0, 'duplicate', 'high'), (2.0, 'duplicate', 'medium'),
+                   (10.0, 'unsure', 'low'), (15.0, 'different', 'medium'))
+
+
+def _format_pairs(root: str):
+    """Yield pairs of media files in one folder (root or a subfolder) that
+    share a name and differ only in extension, e.g. IMG_1.jpg and IMG_1.png:
+    the files the cleanup script treats as duplicates."""
+    folders = [''] + sorted(d for d in os.listdir(root)
+                            if os.path.isdir(os.path.join(root, d)) and d not in HOLDING_DIRS)
+    for folder in folders:
+        fp = os.path.join(root, folder)
+        groups = {}
+        for name in sorted(os.listdir(fp)):
+            p = pathlib.Path(name)
+            if p.suffix.lower() in MEDIA_EXTS and os.path.isfile(os.path.join(fp, name)):
+                groups.setdefault(p.stem.lower(), []).append(name)
+        for names in groups.values():
+            for other in names[1:]:
+                yield os.path.join(fp, other), os.path.join(fp, names[0])
+
+
+def _find_ffmpeg() -> Optional[str]:
+    exe = shutil.which('ffmpeg')
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _video_frames(ffmpeg: str, path: str) -> tuple:
+    """Return (length in seconds, [PIL images]) for frames taken at
+    VISUAL_FRAME_POSITIONS through the video."""
+    probe = subprocess.run([ffmpeg, '-hide_banner', '-i', path], capture_output=True, text=True, errors='replace')
+    m = re.search(r'Duration: (\d+):(\d+):(\d+(?:\.\d+)?)', probe.stderr)
+    if not m:
+        raise ValueError('ffmpeg could not read the video length')
+    length = int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3])
+    frames = []
+    for pos in VISUAL_FRAME_POSITIONS:
+        out = subprocess.run(
+            [ffmpeg, '-hide_banner', '-loglevel', 'error', '-ss', f"{length * pos:.3f}", '-i', path,
+             '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '2', '-'],
+            capture_output=True)
+        if not out.stdout:
+            raise ValueError(f"ffmpeg could not extract the frame at {length * pos:.1f}s")
+        frames.append(Image.open(io.BytesIO(out.stdout)))
+    return length, frames
+
+
+def _visual_pictures(ffmpeg: Optional[str], path: str) -> tuple:
+    """Return (video length or None, [PIL images]) to compare a file by: the
+    picture itself for a photo, sampled frames for a video."""
+    ftype = detect_type(path) or pathlib.Path(path).suffix.lower()
+    if ftype in VIDEO_EXTS:
+        if ffmpeg is None:
+            raise ValueError('ffmpeg is needed to compare videos (pip install imageio-ffmpeg)')
+        return _video_frames(ffmpeg, path)
+    with Image.open(path) as img:
+        return None, [img.convert('RGB')]
+
+
+def _pixel_difference(a, b) -> float:
+    """Return how far apart two pictures are, 0 (same) to 100 (opposite):
+    the mean difference of their pixels once both are shrunk to one size."""
+    size = (VISUAL_COMPARE_EDGE, VISUAL_COMPARE_EDGE)
+    diff = ImageChops.difference(a.convert('RGB').resize(size), b.convert('RGB').resize(size))
+    return sum(ImageStat.Stat(diff).mean) / 3 / 255 * 100
+
+
+def _visual_verdict(ffmpeg: Optional[str], src: str, dst: str) -> tuple:
+    """Return (verdict, confidence, reason) for whether two files show the
+    same picture or recording."""
+    src_len, src_pics = _visual_pictures(ffmpeg, src)
+    dst_len, dst_pics = _visual_pictures(ffmpeg, dst)
+    if (src_len is None) != (dst_len is None):
+        return 'different', 'high', 'one is a photo, the other a video'
+    if src_len is not None and abs(src_len - dst_len) > max(0.2, VISUAL_SHAPE_TOLERANCE * max(src_len, dst_len)):
+        return 'different', 'high', f"video lengths differ, {src_len:.1f}s vs {dst_len:.1f}s"
+    a, b = src_pics[0], dst_pics[0]
+    if abs(a.width / a.height - b.width / b.height) > VISUAL_SHAPE_TOLERANCE * (a.width / a.height):
+        return 'different', 'high', f"shapes differ, {a.width}x{a.height} vs {b.width}x{b.height}"
+    # Judge a video by its least alike pair of frames
+    worst = max(_pixel_difference(x, y) for x, y in zip(src_pics, dst_pics))
+    what = f"pixel difference {worst:.1f}%"
+    if src_len is not None:
+        what += f" at the least alike of {len(src_pics)} frames, both {src_len:.1f}s long"
+    if (a.width, a.height) != (b.width, b.height):
+        what += f", sizes {a.width}x{a.height} vs {b.width}x{b.height}"
+    for limit, verdict, confidence in VISUAL_VERDICTS:
+        if worst <= limit:
+            return verdict, confidence, what
+    return 'different', 'high', what
+
+
+def visual_compare(root: str, plan: list) -> dict:
+    """Dry run only: judge whether pairs of files are duplicates by comparing
+    their pixels, and report a verdict with a confidence level. Changes
+    nothing and sends nothing anywhere. Covers every collision pair (see
+    _collision_pairs) and every pair of same-named files in different formats
+    (see _format_pairs). Byte-identical pairs need no pixel comparison."""
+    counts = Counter()
+    if not HAS_PIL:
+        print("FAILED: Pillow is needed to compare pictures (pip install pillow)", file=sys.stderr)
+        return {'failed': 1}
+    ffmpeg = _find_ffmpeg()
+    seen = set()
+    for src, dst in list(_collision_pairs(root, plan)) + list(_format_pairs(root)):
+        key = frozenset((os.path.normcase(src), os.path.normcase(dst)))
+        if key in seen:
+            continue
+        seen.add(key)
+        pair = f"{os.path.relpath(src, root)} | {os.path.relpath(dst, root)}"
+        try:
+            if os.path.getsize(src) == os.path.getsize(dst) and filecmp.cmp(src, dst, shallow=False):
+                counts['identical'] += 1
+                print(f"IDENTICAL (confidence certain, byte for byte): {pair}")
+                continue
+            verdict, confidence, reason = _visual_verdict(ffmpeg, src, dst)
+        except Exception as e:
+            counts['failed'] += 1
+            print(f"FAILED {pair}: {e}", file=sys.stderr)
+            continue
+        counts[f"{verdict}-{confidence}"] += 1
+        print(f"{verdict.upper()} (confidence {confidence}): {pair} - {reason}")
+    return dict(counts)
+
+
 # ---------------- Fill blank Date Taken ----------------
 
 def _jpeg_set_exif(path: str, exif_bytes: bytes) -> None:
@@ -806,16 +1061,14 @@ def convert_pngs(root: str) -> dict:
             if os.path.exists(new):
                 counts['already-converted'] += 1
                 continue
-            img = Image.open(p)
-            img.load()
-            if _has_transparency(img):
-                # JPEG has no transparency; flattening would change the picture
-                counts['skipped-transparent'] += 1
-                continue
-            exif_bytes = img.info.get('exif', b'')
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            img.save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
+            with Image.open(p) as img:
+                img.load()
+                if _has_transparency(img):
+                    # JPEG has no transparency; flattening would change the picture
+                    counts['skipped-transparent'] += 1
+                    continue
+                exif_bytes = img.info.get('exif', b'')
+                img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
             counts['converted'] += 1
     return dict(counts)
 
@@ -1047,6 +1300,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
 #   gmsnet2                                gmsnet + optional number
 #   news_images%2F1714658759372            news_images + URL-encoded "/" + number
 #   UnityAdsCache-3d4c8e33...b18d2091      UnityAdsCache- + 64-char hex hash
+#   54ac2fda0a6755305200011c-b30-600       24-char hex id + one or more
+#   55d58970f6cd4574f635d6e3_568-1443241239
+#                                          -/_ separated letter-digit parts
 #   Update_Now_Video_V2_720x1280_15s___fudxlv
 #                                          pixel dimensions somewhere in the
 #                                          name, ending ___ + 6-char id
@@ -1058,6 +1314,7 @@ _AD_NAME_RE = re.compile(
     r'|gmsnet\d*'
     r'|news_images%2F\d+'
     r'|UnityAdsCache-[0-9a-f]{64}'
+    r'|(?=\d*[a-f])[0-9a-f]{24}(?:[-_][0-9a-z]+)+'
     r'|.*(?<!\d)\d{3,4}x\d{3,4}(?!\d).*___[0-9a-z]{6})'
     r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?',
     re.IGNORECASE)
@@ -1349,6 +1606,8 @@ COUNTS_SHEET = 'Run counts'
 # A reported line: its action is the leading run of capitalised words
 # ("MOVED", "WOULD WRITE", "FAILED"), the rest is the detail
 _AUDIT_LINE_RE = re.compile(r'^([A-Z]{2,}(?: [A-Z]{2,})*)\b[ ,:]*(.*)$')
+# The confidence level --visual-compare gives its verdicts, for its own column
+_AUDIT_CONFIDENCE_RE = re.compile(r'^\(confidence (\w+)')
 _XLSX_BAD_CHARS = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 
 
@@ -1394,11 +1653,15 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
         for cell in ws[1]:
             cell.font = Font(name='Arial', bold=True)
         ws.freeze_panes = 'A2'
-        for col, w in zip('ABCDE', widths):
+        for col, w in zip('ABCDEF', widths):
             ws.column_dimensions[col].width = w
         return ws
 
-    log = sheet(LOG_SHEET, ['Run started', 'Phase', 'Dry run', 'Action', 'Detail'], [20, 18, 9, 22, 110])
+    log = sheet(LOG_SHEET, ['Run started', 'Phase', 'Dry run', 'Action', 'Detail', 'Confidence'], [20, 18, 9, 22, 110, 12])
+    if log.cell(row=1, column=6).value is None:
+        # A workbook started before --visual-compare existed
+        log.cell(row=1, column=6, value='Confidence').font = Font(name='Arial', bold=True)
+        log.column_dimensions['F'].width = 12
     tally = sheet(COUNTS_SHEET, ['Run started', 'Phase', 'Dry run', 'Count', 'Value'], [20, 18, 9, 34, 10])
     when = started.strftime('%Y-%m-%d %H:%M:%S')
     for phase, dry_run, counts, lines in runs:
@@ -1408,7 +1671,8 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
         for ln in lines:
             m = _AUDIT_LINE_RE.match(ln.strip())
             if m:
-                log.append([when, phase, dry, m[1], _XLSX_BAD_CHARS.sub('?', m[2])])
+                conf = _AUDIT_CONFIDENCE_RE.match(m[2])
+                log.append([when, phase, dry, m[1], _XLSX_BAD_CHARS.sub('?', m[2]), conf[1] if conf else None])
     if _save_audit(wb, xlsx):
         print(f"Audit workbook: {xlsx}")
 
@@ -1419,9 +1683,9 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
 PHASE_ORDER = ('delete_junk', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
-               'apply_moves', 'sync_timestamps', 'flatten')
+               'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten')
 ALL_PHASES = ('delete_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
-DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_junk', 'fill_blanks')
+DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_junk', 'fill_blanks', 'visual_compare')
 
 # Most problem lines repeated per phase in the closing summary
 MAX_SUMMARY_ISSUES = 50
@@ -1469,6 +1733,10 @@ def _run_phase(phase: str, args) -> dict:
         return sync_timestamps(args.root)
     if phase == 'flatten':
         return flatten(args.root, args.dry_run)
+    if phase == 'compare_collisions':
+        return compare_collisions(args.root, scan(args.root))
+    if phase == 'visual_compare':
+        return visual_compare(args.root, scan(args.root))
     # report-only and apply-moves both need the scanned plan
     plan = scan(args.root)
     out_xlsx = os.path.join(args.root, args.xlsx)
@@ -1506,6 +1774,8 @@ def main(argv=None):
     ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos (at any depth) whose Media Created is blank, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
+    ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
+    ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install imageio-ffmpeg). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
@@ -1535,7 +1805,9 @@ def main(argv=None):
     if not phases:
         ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
     if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
-        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete and --delete-junk')
+        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete, --delete-junk and --visual-compare')
+    if args.visual_compare and not args.dry_run:
+        ap.error('--visual-compare only reports for now: add --dry-run')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)
