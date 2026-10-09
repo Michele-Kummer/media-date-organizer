@@ -97,6 +97,66 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('shot.jpg', names(day))
         self.assertEqual(date_taken(day / 'shot.jpg'), datetime.datetime(2020, 1, 1, 8, 0, 0))
 
+    def test_mac_sidecars_do_not_stop_convert_and_are_deleted_as_junk(self):
+        day = self.root / '2020-01-01'
+        make_image(day / 'shot.png')
+        (day / '._shot.png').write_bytes(organize.APPLEDOUBLE_MAGIC + b'\x00' * 60)
+        make_image(day / '._real.png')                         # a picture, despite the name
+
+        code, out = run(self.root, '--convert-png')
+        self.assertEqual(code, 0)
+        self.assertIn('FAILED to convert', out)
+        self.assertIn('shot.jpg', os.listdir(day), 'the new JPEG gets a lowercase extension')
+        self.assertNotIn('._shot.jpg', names(day))
+
+        code, _ = run(self.root, '--delete-junk', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertIn('._shot.png', names(day), 'a dry run must not delete anything')
+
+        code, _ = run(self.root, '--delete-junk')
+        self.assertEqual(code, 0)
+        self.assertNotIn('._shot.png', names(day))
+        self.assertIn('._real.png', names(day))
+        self.assertIn('shot.png', names(day))
+
+    def test_apply_moves_suffixes_only_undated_files_and_strips_nothing(self):
+        day = self.root / '2020-01-01'
+        make_image(day / 'dated_2019-05-05.jpg', taken=datetime.datetime(2020, 1, 1, 10, 0, 0))
+        make_image(day / 'undated.jpg')
+        make_image(day / 'already_2020-01-01.jpg')
+        make_image(day / 'stray.jpeg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))
+
+        code, _ = run(self.root, '--apply-moves')
+
+        self.assertEqual(code, 0)
+        # Exact names: the extension keeps its spelling and its case
+        self.assertEqual(sorted(os.listdir(day)),
+                         ['already_2020-01-01.jpg', 'dated_2019-05-05.jpg', 'undated_2020-01-01.jpg'])
+        self.assertEqual(os.listdir(self.root / '2020-02-02'), ['stray.jpeg'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Date Created can only be set on Windows')
+    def test_sync_sets_date_created_on_edited_files_but_keeps_their_modified(self):
+        taken = datetime.datetime(2020, 1, 1, 10, 0, 0)
+        plain = self.root / '2020-01-01' / 'plain.jpg'
+        edited = self.root / '2020-01-01' / 'edited.jpg'
+        make_image(plain, taken=taken)
+        make_image(edited, taken=taken)
+        with Image.open(edited) as img:
+            exif = img.getexif()
+            exif[0x0132] = '2021-06-06 08:00:00'.replace('-', ':')   # EXIF DateTime: edited later
+            img.save(edited, exif=exif)
+        self.assertEqual(date_taken(edited), taken)
+        modified = os.stat(edited).st_mtime
+
+        code, out = run(self.root, '--sync-timestamps')
+
+        self.assertEqual(code, 0)
+        self.assertIn('created only (edited)', out)
+        for p in (plain, edited):
+            self.assertEqual(datetime.datetime.fromtimestamp(os.stat(p).st_birthtime), taken)
+        self.assertEqual(datetime.datetime.fromtimestamp(os.stat(plain).st_mtime), taken)
+        self.assertEqual(os.stat(edited).st_mtime, modified)
+
     def test_quarantine_ads_moves_only_ad_names(self):
         day = self.root / '2020-01-01'
         ads = ['0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg',
@@ -122,9 +182,17 @@ class SmokeTests(unittest.TestCase):
                    taken=datetime.datetime(2020, 1, 2, 10, 0, 0))
         make_image(self.root / 'misc' / 'undated.jpg')
 
-        code, _ = run(self.root, '--flatten')
+        (self.root / 'clip.mp4').write_bytes(b'not read: only the extension is counted')
+
+        code, out = run(self.root, '--flatten', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertIn('OPPOSITE TYPE: 1 video(s) in this photo folder (2 photo(s)) once flattened', out)
+
+        code, out = run(self.root, '--flatten')
 
         self.assertEqual(code, 0)
+        self.assertIn('OPPOSITE TYPE: 1 video(s) in this photo folder (2 photo(s))', out)
+        self.assertIn('"videos-in-photo-folder": 1', out)
         # Same name from two days: the second gets its date as a suffix
         self.assertIn('a.jpg', names(self.root))
         self.assertIn('a_2020-01-02.jpg', names(self.root))

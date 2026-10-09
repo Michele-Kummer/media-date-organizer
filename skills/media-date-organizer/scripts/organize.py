@@ -16,8 +16,12 @@ and a summary of every phase's counts and problems is printed at the end):
                         and every subfolder. AAE files are the
                         edit-instruction sidecars iPhones export next to a
                         photo; they hold no image and nothing on Windows
-                        reads them. Add --dry-run to list them without
-                        deleting anything.
+                        reads them. Also deletes macOS "._" sidecars
+                        (._IMG_0001.png beside IMG_0001.png), which a Mac
+                        writes when copying to a non-Mac drive; a file is
+                        only treated as one when its contents carry the
+                        AppleDouble signature as well as the name. Add
+                        --dry-run to list them without deleting anything.
     --report-only       Scan and write audit XLSX; make no changes.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
                         are missing Date Taken. Uses a date embedded in the
@@ -42,12 +46,19 @@ and a summary of every phase's counts and problems is printed at the end):
     --convert-png       Re-encode PNG files as JPEG at quality 95, preserving
                         EXIF. Leaves originals in place. PNGs with any
                         transparent pixels are skipped and stay PNG, as are
-                        "-overlay" PNGs (Snapchat caption layers).
+                        "-overlay" PNGs (Snapchat caption layers). A PNG that
+                        cannot be read as a picture is reported, counted as
+                        read-failed and left alone; the rest still convert.
     --apply-moves       Move files whose Date Taken does not match their current
                         folder name into a sibling folder named for the real
-                        date. Renames use the clean iPhone-native stem; a
-                        _<folder-date> suffix is appended only if Date Taken is
-                        blank AND the folder is a dated folder.
+                        date. A file with no Date Taken or Media Created is
+                        not moved, but in a YYYY-MM-DD folder it gets a
+                        _<folder-date> suffix, unless its name holds a date
+                        already, so the folder's date survives in the name.
+                        A suffix is never added to a file that has a date
+                        and never stripped from any file. Extensions are
+                        left exactly as they are, case included; correcting
+                        them is Fix-Extensions.ps1's job.
     --compare-collisions
                         Report only; not part of --all. For every file
                         --apply-moves skips as a COLLISION (its name is
@@ -72,12 +83,14 @@ and a summary of every phase's counts and problems is printed at the end):
                         imageio-ffmpeg). The confidence level gets its own
                         column in the audit workbook's Run log. Nothing is
                         moved or deleted.
-    --sync-timestamps   Set each file's "Date Modified" and "Date Created" to
-                        its EXIF Date Taken, BUT only for files that appear to
-                        be unedited (EXIF ModifyDate equals DateTimeOriginal
-                        and no editor-software tag is present). Date Created
-                        is only settable on Windows; elsewhere just Date
-                        Modified is synced.
+    --sync-timestamps   Set each file's "Date Created" to its EXIF Date Taken,
+                        and its "Date Modified" too BUT only for files that
+                        appear to be unedited (EXIF ModifyDate equals
+                        DateTimeOriginal and no editor-software tag is
+                        present). An edited file keeps its Date Modified and
+                        is counted as created-only-edited. Date Created is
+                        only settable on Windows; elsewhere just Date
+                        Modified is synced, and edited files are skipped.
     --flatten           Move every file that has a Date Taken or Media Created
                         out of its subfolder and up into the root folder
                         itself, then delete the subfolders left empty. Files
@@ -88,14 +101,19 @@ and a summary of every phase's counts and problems is printed at the end):
                         _ads folder every file moves up from its subfolder into
                         _ads itself, with or without a Date Taken (a name clash
                         gets a _<subfolder-name> suffix). Camcorder videos
-                        (.m2ts, .mts), which no other phase handles, are moved
+                        (.m2ts, .mts) and older MPEG, Windows Media and AVI
+                        videos (.mpg, .mpeg, .wmv, .avi), which no other phase handles, are moved
                         too, going by the date in the filename
                         (20180116122434); ones with no date in the name, or
                         holding no data, stay. A file's .modd/.moff sidecars
                         move with it. A .modd/.moff in the root or one of its
                         subfolders whose file is not beside it is permanently
-                        deleted. Add --dry-run to preview without changing
-                        anything.
+                        deleted. Ends with an OPPOSITE TYPE line: how many
+                        files of the less common kind the root itself then
+                        holds (videos in a photo folder, or photos in a video
+                        folder), also counted as videos-in-photo-folder or
+                        photos-in-video-folder. Add --dry-run to preview
+                        without changing anything.
     --quarantine-ads    Move ad images and videos into an _ads folder inside
                         the root, keeping their subfolder path, for the user to
                         review and delete. A file is an ad only if BOTH hold:
@@ -434,9 +452,11 @@ def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
         dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
 
 
-# AVCHD camcorder video. Not in MEDIA_EXTS: its dates cannot be read or
-# written here, so only --flatten handles it, going by the filename date.
-CAMCORDER_EXTS = ('.m2ts', '.mts')
+# AVCHD camcorder video, and the older MPEG, Windows Media and AVI video that
+# cameras and phones saved before MP4. Not in MEDIA_EXTS: their dates cannot
+# be read or written here, so only --flatten handles them, going by the
+# filename date.
+CAMCORDER_EXTS = ('.m2ts', '.mts', '.mpg', '.mpeg', '.wmv', '.avi')
 
 # Index files Sony's import software writes next to a file, named
 # <file name>.modd / <file name>.moff. --flatten moves them with their file.
@@ -546,10 +566,9 @@ def scan(root: str) -> list:
         ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
         meta = read_metadata(full, ftype)
         dt = meta['date_taken']
-        stem = pathlib.Path(name).stem
-        base = re.match(r'^(.+?)_\d{4}-\d{2}-\d{2}$', stem)
-        base = base.group(1) if base else stem
-        ext_canonical = ftype.upper() if ftype else pathlib.Path(name).suffix
+        # The name is kept as it is: a _YYYY-MM-DD ending is never stripped,
+        # and the extension is Fix-Extensions.ps1's business
+        p = pathlib.Path(name)
         fallback_source = _fallback_date(name, folder)[1] if dt is None else None
         if fallback_source == 'filename':
             action = 'fill-blank'
@@ -558,7 +577,10 @@ def scan(root: str) -> list:
         elif fallback_source == 'folder':
             action = 'fill-blank'
             target_folder = folder
-            new_name = f"{base}_{folder_date.isoformat()}{ext_canonical}"
+            # No date inside the file: the folder's date goes into the name,
+            # once, so it survives the file leaving the folder
+            dated = f"_{folder_date.isoformat()}"
+            new_name = name if p.stem.endswith(dated) else f"{p.stem}{dated}{p.suffix}"
         elif dt is None:
             action = 'skip-no-folder-date'
             target_folder = folder
@@ -566,11 +588,11 @@ def scan(root: str) -> list:
         elif folder_date is None or dt.date() == folder_date:
             action = 'keep'
             target_folder = folder
-            new_name = f"{base}{ext_canonical}"
+            new_name = name
         else:
             action = 'move'
             target_folder = dt.date().isoformat()
-            new_name = f"{base}{ext_canonical}"
+            new_name = name
         rows.append({
             'current_folder': folder,
             'current_name': name,
@@ -586,14 +608,27 @@ def scan(root: str) -> list:
 # ---------------- Apply moves ----------------
 
 def apply_moves(root: str, plan: list) -> dict:
-    """Execute moves and renames. Skips 'fill-blank' rows — those are handled
-    by --fill-blanks separately."""
+    """Execute moves and renames. A 'fill-blank' row is not moved (its date
+    is for --fill-blanks to write), but one still undated here gets the
+    _<folder-date> suffix the plan gave it."""
     counts = Counter()
     for r in plan:
+        src = os.path.join(root, r['current_folder'], r['current_name'])
+        if r['action'] == 'fill-blank' and r['new_name'] != r['current_name']:
+            dst = os.path.join(root, r['current_folder'], r['new_name'])
+            if not os.path.isfile(src):
+                counts['missing'] += 1
+            elif os.path.exists(dst):
+                counts['collision'] += 1
+                print(f"COLLISION, skipping: {dst}", file=sys.stderr)
+            else:
+                shutil.move(src, dst)
+                counts['suffixed-undated'] += 1
+                print(f"RENAMED (no date in file): {r['current_folder']}/{r['current_name']} -> {r['new_name']}")
+            continue
         if r['action'] not in ('move', 'keep'):
             counts['skipped-' + r['action']] += 1
             continue
-        src = os.path.join(root, r['current_folder'], r['current_name'])
         if not os.path.isfile(src):
             counts['missing'] += 1
             continue
@@ -603,9 +638,7 @@ def apply_moves(root: str, plan: list) -> dict:
         if src == dst:
             counts['unchanged'] += 1
             continue
-        # A case-only rename (IMG_1.jpg -> IMG_1.JPG) "exists" on Windows but
-        # is the same file, not a collision
-        if os.path.exists(dst) and not os.path.samefile(src, dst):
+        if os.path.exists(dst):
             counts['collision'] += 1
             print(f"COLLISION, skipping: {dst}", file=sys.stderr)
             continue
@@ -1057,18 +1090,28 @@ def convert_pngs(root: str) -> dict:
                 counts['skipped-overlay'] += 1
                 continue
             p = os.path.join(dirpath, name)
-            new = str(pathlib.Path(p).with_suffix('.JPG'))
+            new = str(pathlib.Path(p).with_suffix('.jpg'))
             if os.path.exists(new):
                 counts['already-converted'] += 1
                 continue
-            with Image.open(p) as img:
-                img.load()
-                if _has_transparency(img):
-                    # JPEG has no transparency; flattening would change the picture
-                    counts['skipped-transparent'] += 1
-                    continue
-                exif_bytes = img.info.get('exif', b'')
-                img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
+            try:
+                with Image.open(p) as img:
+                    img.load()
+                    if _has_transparency(img):
+                        # JPEG has no transparency; flattening would change the picture
+                        counts['skipped-transparent'] += 1
+                        continue
+                    exif_bytes = img.info.get('exif', b'')
+                    img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
+            except (OSError, SyntaxError, ValueError, MemoryError) as e:
+                # Not a picture despite the name (a macOS "._" sidecar, a
+                # truncated download): report it and carry on with the rest
+                counts['read-failed'] += 1
+                print(f"FAILED to convert {os.path.relpath(p, root)}: {e or type(e).__name__}", file=sys.stderr)
+                if os.path.exists(new):
+                    # A half-written JPEG would pass for a finished conversion
+                    os.remove(new)
+                continue
             counts['converted'] += 1
     return dict(counts)
 
@@ -1135,7 +1178,9 @@ def _set_creation_time(path: str, ts: float) -> bool:
 
 
 def sync_timestamps(root: str) -> dict:
-    """Set Date Modified and Date Created to Date Taken on unedited files."""
+    """Set Date Created to Date Taken on every dated file, and Date Modified
+    too on unedited ones. An edited file keeps its Date Modified, which is
+    when it was edited."""
     counts = Counter()
     for folder, name, full in iter_media(root):
         ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
@@ -1143,11 +1188,19 @@ def sync_timestamps(root: str) -> dict:
         if meta['date_taken'] is None:
             counts['no-date-taken'] += 1
             continue
-        if not _is_unedited(meta):
-            counts['skipped-edited'] += 1
-            print(f"SKIP (edited): {folder}/{name}")
-            continue
         ts = meta['date_taken'].timestamp()
+        if not _is_unedited(meta):
+            try:
+                if _set_creation_time(full, ts):
+                    counts['created-only-edited'] += 1
+                    print(f"SYNCED created only (edited) {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {folder}/{name}")
+                else:
+                    counts['skipped-edited'] += 1
+                    print(f"SKIP (edited): {folder}/{name}")
+            except Exception as e:
+                counts['failed'] += 1
+                print(f"FAILED {folder}/{name}: {e}", file=sys.stderr)
+            continue
         try:
             os.utime(full, (ts, ts))
             if not _set_creation_time(full, ts):
@@ -1178,6 +1231,8 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         prefix = QUARANTINE_DIR + '/' if in_ads else ''
         # Names already claimed in base, lowercased (Windows is case-insensitive)
         taken = {n.lower() for n in os.listdir(base)}
+        if not in_ads:
+            root_names = taken
         exts = MEDIA_EXTS if in_ads else MEDIA_EXTS | set(CAMCORDER_EXTS)
         for folder, name, full in iter_media(base, exts):
             if in_ads:
@@ -1242,6 +1297,22 @@ def flatten(root: str, dry_run: bool = False) -> dict:
                 taken.add((new_name + ext).lower())
                 gone.add(side)
                 counts['sidecars-moved'] += 1
+
+    # Videos in a photo folder (or photos in a video folder) are easy to lose
+    # sight of once everything is in one place: say how many of the less
+    # common kind root itself holds after the moves
+    kinds = Counter()
+    for n in root_names:
+        ext = pathlib.Path(n).suffix
+        if ext in VIDEO_EXTS + CAMCORDER_EXTS:
+            kinds['video'] += 1
+        elif ext in MEDIA_EXTS:
+            kinds['photo'] += 1
+    if kinds:
+        major, minor = ('photo', 'video') if kinds['photo'] >= kinds['video'] else ('video', 'photo')
+        counts[f'{minor}s-in-{major}-folder'] = kinds[minor]
+        print(f"OPPOSITE TYPE: {kinds[minor]:,} {minor}(s) in this {major} folder "
+              f"({kinds[major]:,} {major}(s)){' once flattened' if dry_run else ''}")
 
     # A sidecar is only any use beside the file it describes: delete the ones
     # in root and its subfolders whose file is not there
@@ -1497,23 +1568,43 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
 # names, not a pattern: "west sucking thumb.jpg" is a photo.
 THUMBS_NAMES = ('thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db')
 
+# First four bytes of an AppleDouble file, the "._name" sidecar macOS writes
+# beside every file it copies to a non-Mac drive
+APPLEDOUBLE_MAGIC = b'\x00\x05\x16\x07'
+
+
+def _is_appledouble(full: str) -> bool:
+    """True for a macOS "._" sidecar. The name alone is not trusted: the file
+    must also open with the AppleDouble signature, so a picture that merely
+    starts with "._" is kept."""
+    if not os.path.basename(full).startswith('._'):
+        return False
+    try:
+        with open(full, 'rb') as f:
+            return f.read(4) == APPLEDOUBLE_MAGIC
+    except OSError:
+        return False
+
 
 def delete_junk(root: str, dry_run: bool = False) -> dict:
-    """Delete every .AAE file (iPhone edit sidecar) and Windows thumbnail
-    cache (Thumbs.db) in root and every subfolder. Emptied folders are left
-    for --flatten or the cleanup script."""
+    """Delete every .AAE file (iPhone edit sidecar), Windows thumbnail cache
+    (Thumbs.db) and macOS "._" sidecar in root and every subfolder. Emptied
+    folders are left for --flatten or the cleanup script."""
     counts = Counter()
     verb = 'WOULD DELETE' if dry_run else 'DELETED'
     for dirpath, dirs, files in os.walk(root):
         dirs.sort()
         for name in sorted(files):
-            if pathlib.Path(name).suffix.lower() == '.aae':
+            full = os.path.join(dirpath, name)
+            # Checked first: "._IMG_0001.AAE" is a sidecar, not an AAE file
+            if _is_appledouble(full):
+                kind = 'deleted-mac-sidecars'
+            elif pathlib.Path(name).suffix.lower() == '.aae':
                 kind = 'deleted'
             elif name.lower() in THUMBS_NAMES:
                 kind = 'deleted-thumbs'
             else:
                 continue
-            full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
             if not dry_run:
                 try:
@@ -1776,11 +1867,11 @@ def main(argv=None):
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install imageio-ffmpeg). Changes nothing. Not part of --all.')
-    ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Modified/Created to Date Taken for files that have not been edited.')
+    ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
-    ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar) and Windows thumbnail cache (Thumbs.db) in the root and every subfolder.')
+    ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder.')
     ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete or --delete-junk: list what would be written, moved, removed or deleted without changing anything.')
     ap.add_argument('--xlsx', default=f'media_audit_{datetime.date.today():%Y-%m-%d}.xlsx', help='Audit workbook filename (relative to root). Defaults to media_audit_<today>.xlsx, so each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
     ap.add_argument('--audit-log', metavar='NAME', help='Record lines read from standard input in the audit workbook as phase NAME, then exit. Used by Fix-Extensions.ps1 and Cleanup-Pictures.ps1.')

@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 5. **Move to date-matched folders.** `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --apply-moves`. Files whose Date Taken doesn't match the folder name are moved to a sibling folder named for their real date.
 
-6. **Sync Date Modified and Date Created (optional).** If the user wants Explorer's "Date Modified" and "Date Created" to show the real capture time, run `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --sync-timestamps`. Only files that look unedited (EXIF ModifyDate matches DateTimeOriginal and no editor-software tag) are touched; edited files are skipped and listed.
+6. **Sync Date Modified and Date Created (optional).** If the user wants Explorer's "Date Modified" and "Date Created" to show the real capture time, run `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --sync-timestamps`. Date Modified is set only on files that look unedited (EXIF ModifyDate matches DateTimeOriginal and no editor-software tag); edited files keep their Date Modified, get Date Created set, and are listed.
 
 7. **Flatten into the root folder (optional).** If the user wants the photos and videos out of their dated subfolders, preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --flatten --dry-run`, then after confirming run it without `--dry-run`. Every file that has a Date Taken moves up into `$ARGUMENTS` itself and the emptied subfolders are deleted; undated files stay put. Also available on its own as `/flatten-media`.
 
@@ -37,7 +37,7 @@ If the folder holds ad images or videos (names like `0c4cda27-b4cc-4e92-a446-d6b
 
 ## All in one go
 
-Once the user has confirmed steps 3–6 together, they can be run in one command: `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --all` (add `--quarantine-ads` or `--flatten` to include those). `--all` also permanently deletes `.AAE` sidecar files and `Thumbs.db` thumbnail caches first, so tell the user and get their OK; `--delete-junk --dry-run` lists them. It also moves incomplete files into `$ARGUMENTS/_incomplete`; `--move-incomplete --dry-run` lists them. It ends with a `Summary of this run` block covering every phase's counts and problems; share that block with the user.
+Once the user has confirmed steps 3–6 together, they can be run in one command: `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --all` (add `--quarantine-ads` or `--flatten` to include those). `--all` also permanently deletes `.AAE` sidecar files, `Thumbs.db` thumbnail caches and macOS `._` sidecars first, so tell the user and get their OK; `--delete-junk --dry-run` lists them. It also moves incomplete files into `$ARGUMENTS/_incomplete`; `--move-incomplete --dry-run` lists them. It ends with a `Summary of this run` block covering every phase's counts and problems; share that block with the user.
 
 ## Deliverables
 

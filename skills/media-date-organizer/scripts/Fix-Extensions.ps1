@@ -6,9 +6,10 @@
 .DESCRIPTION
     Scans every file under the target folder (recursively) and reads the
     first 200 bytes to identify PNG, JPEG, HEIC/HEIF, MP4/MOV/QuickTime,
-    3GP/3G2, M2TS/MTS, GIF, WEBP, TIFF, and BMP. If the current extension doesn't match
+    3GP/3G2, M2TS/MTS, MPEG (MPG), Windows Media (WMV), AVI, GIF, WEBP, TIFF, and BMP. If the current extension doesn't match
     the detected type, the file is renamed to use the correct extension.
-    Empty (0-byte) files are listed as EMPTY and left alone.
+    Empty (0-byte) files are listed as EMPTY and left alone. Sony sidecar
+    files (.modd, .moff) are known and counted, not reported as UNKNOWN.
 
 .PARAMETER Path
     Folder to scan. Defaults to the current directory.
@@ -79,10 +80,26 @@ function Get-FileType {
         $buf[8] -eq 0x57 -and $buf[9] -eq 0x45 -and $buf[10] -eq 0x42 -and $buf[11] -eq 0x50) {
         return '.webp'
     }
+    # RIFF/AVI
+    if ($buf[0] -eq 0x52 -and $buf[1] -eq 0x49 -and $buf[2] -eq 0x46 -and $buf[3] -eq 0x46 -and
+        $buf[8] -eq 0x41 -and $buf[9] -eq 0x56 -and $buf[10] -eq 0x49 -and $buf[11] -eq 0x20) {
+        return '.avi'
+    }
     # AVCHD camcorder video (M2TS): 192-byte packets, sync byte 0x47 after a
     # 4-byte timecode
     if ($read -ge 197 -and $buf[4] -eq 0x47 -and $buf[196] -eq 0x47) {
         return '.m2ts'
+    }
+    # MPEG-1/2 video: a program stream opens with a pack header (00 00 01 BA),
+    # a bare video stream with a sequence header (00 00 01 B3)
+    if ($buf[0] -eq 0x00 -and $buf[1] -eq 0x00 -and $buf[2] -eq 0x01 -and
+        ($buf[3] -eq 0xBA -or $buf[3] -eq 0xB3)) {
+        return '.mpg'
+    }
+    # Windows Media (ASF container): header GUID 30 26 B2 75 8E 66 CF 11
+    if ($buf[0] -eq 0x30 -and $buf[1] -eq 0x26 -and $buf[2] -eq 0xB2 -and $buf[3] -eq 0x75 -and
+        $buf[4] -eq 0x8E -and $buf[5] -eq 0x66 -and $buf[6] -eq 0xCF -and $buf[7] -eq 0x11) {
+        return '.wmv'
     }
     return $null
 }
@@ -95,13 +112,23 @@ $equivalents = @{
     '.heic' = @('.heic','.heif')
     '.heif' = @('.heic','.heif')
     '.m2ts' = @('.m2ts','.mts')
+    # DVD (.vob) and JVC/Panasonic camcorder (.mod) files are MPEG too
+    '.mpg'  = @('.mpg','.mpeg','.mpe','.vob','.mod')
+    # The same container holds Windows Media audio
+    '.wmv'  = @('.wmv','.asf','.wma')
+    '.avi'  = @('.avi','.divx')
 }
+
+# Index files Sony's import software writes next to a video. They have no
+# signature to check, so the extension is taken as it stands.
+$sidecarExts = @('.modd', '.moff')
 
 $files = Get-ChildItem -Path $Path -File -Recurse
 $changed = 0
 $ok = 0
 $unknown = 0
 $empty = 0
+$sidecar = 0
 $plan = @()
 
 # Everything reported is also recorded in the audit workbook at the end
@@ -110,6 +137,7 @@ $audit = [System.Collections.Generic.List[string]]::new()
 
 foreach ($f in $files) {
     if ($f.Extension -ieq '.xlsx' -or $f.Extension -ieq '.ps1') { continue }
+    if ($sidecarExts -contains $f.Extension.ToLower()) { $sidecar++; continue }
     if ($f.Length -eq 0) {
         # A failed copy or transfer: nothing to detect a format from
         $empty++
@@ -155,11 +183,12 @@ Write-Host ""
 Write-Host "Summary:" -ForegroundColor Cyan
 Write-Host ("  Correct extension : " + $ok)
 Write-Host ("  Renamed           : " + $changed)
+Write-Host ("  Sony sidecars     : " + $sidecar)
 Write-Host ("  Unknown format    : " + $unknown)
 Write-Host ("  Empty (0 bytes)   : " + $empty)
 if ($plan.Count -gt 0 -and -not $PSBoundParameters.ContainsKey('WhatIf')) {
     $plan | Format-Table -AutoSize
 }
 
-$audit.Add("SUMMARY: correct extension $ok, renamed $changed, unknown format $unknown, empty $empty")
+$audit.Add("SUMMARY: correct extension $ok, renamed $changed, Sony sidecars $sidecar, unknown format $unknown, empty $empty")
 Write-AuditLog -Path $Path -Phase 'fix_extensions' -Lines $audit -DryRun:$WhatIfPreference
