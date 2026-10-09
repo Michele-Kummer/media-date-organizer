@@ -45,7 +45,7 @@ Each phase below can be run on its own, or several can be given on one command l
 - MOV/MP4/M4V/3GP/3G2 → `mvhd` atom `creation_time` (Explorer's "Media created"), converted from UTC to local time
 - PNG/JPEG/TIFF → standard EXIF via Pillow
 
-Writes `media_audit_<date>.xlsx` summarizing which files have Date Taken, which don't, and which are in a folder that doesn't match their date. Share the summary with the user before Phase 3.
+Writes the audit workbook (`<root folder name>_<photos|videos>_media_audit_<date>.xlsx`) summarizing which files have Date Taken, which don't, and which are in a folder that doesn't match their date. Share the summary with the user before Phase 3.
 
 ### Phase 3 — Write Date Taken where it's missing
 `python scripts/organize.py --root "<MediaRoot>" --fill-blanks`. For every file whose Date Taken is blank:
@@ -86,7 +86,7 @@ Writes `media_audit_<date>.xlsx` summarizing which files have Date Taken, which 
 `python scripts/organize.py --root "<MediaRoot>" --flatten`. Moves every file that has a Date Taken up one level, out of its `YYYY-MM-DD` subfolder and into `<MediaRoot>` itself, then deletes the subfolders left empty. Preview first with `--flatten --dry-run`, which lists every move and folder removal without touching anything.
 - Files with no Date Taken are left where they are — the folder name may be the only record of their date — so their folders are kept.
 - Exception: inside `<MediaRoot>/_ads`, every file moves up from its subfolder into `_ads` itself whether or not it has a Date Taken (ads rarely do), counted as `ads-moved`. A name already taken in `_ads` gets a `_<subfolder-name>` suffix, which keeps the date the ad was filed under.
-- Camcorder videos (`.m2ts`, `.mts`) and older MPEG, Windows Media and AVI videos (`.mpg`, `.mpeg`, `.wmv`, `.avi`) are flattened too, going by the date in the filename (`20180116122434.m2ts`, `WP_20130807_002.mpg`), since their internal date is not read. One with no date in its name is `LEFT (no date in filename)`; one that is empty or all null bytes is `LEFT (no video data)`.
+- Camcorder videos (`.m2ts`, `.mts`) and older MPEG, Windows Media and AVI videos (`.mpg`, `.mpeg`, `.wmv`, `.avi`) are flattened too, going by the date in the filename (`20180116122434.m2ts`, `WP_20130807_002.mpg`), since their internal date is not read. One with no date in its name goes by the date in its subfolder's name (`2018-01-16`, `7-17-2014`) and has that date appended as it moves (`7-17-2014/SDC13837.AVI` → `SDC13837_2014-07-17.AVI`), counted as `dated-from-folder`, so the date survives the folder being removed. One with neither is `LEFT (no date in filename or folder name)`; one that is empty or all null bytes is `LEFT (no video data)`.
 - Sony sidecar files named `<file name>.modd` / `<file name>.moff` (usually hidden) move with their file and take its new name if it was renamed; counted as `sidecars-moved`. The user has Sony's software, so sidecars are kept wherever their file is.
 - A `.modd`/`.moff` in `<MediaRoot>` or one of its subfolders whose file is not beside it is permanently deleted (`DELETED (sidecar with no file)`, counted as `orphan-sidecars-deleted`). `_ads` and `_incomplete` are not touched. This is a real delete: show the `--dry-run` list and confirm first.
 - Folders that still hold anything else (undated files, non-media files) are kept.
@@ -94,6 +94,13 @@ Writes `media_audit_<date>.xlsx` summarizing which files have Date Taken, which 
 - It reports how many files of the opposite kind `<MediaRoot>` itself holds once flattened: `OPPOSITE TYPE: 37 video(s) in this photo folder (9,120 photo(s))`, counted as `videos-in-photo-folder` (or `photos-in-video-folder` when videos are the majority). Whichever kind there is more of decides what the folder is; `_ads`, `_incomplete` and files left in subfolders are not counted. Share the number with the user; nothing is moved because of it.
 
 Run this last: once files are in the root, the other phases no longer see them (they only look inside subfolders).
+
+### Opposite type report (report only, any time; not part of `--all`)
+`python scripts/organize.py --root "<FolderOfYearFolders>" --opposite-type`. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Here `--root` is the folder that holds the year folders (`D:\Videos`), not one year; to check photos and videos both, run it once for each. Also available as `/report-opposite-type`.
+- Whichever kind the root holds more of decides what it is. Each file of the other kind is listed as `PHOTO IN VIDEO FOLDER: 2014/7-17-2014/IMG_0001.jpg` (or `VIDEO IN PHOTO FOLDER: ...`), then one line per year folder (`2014: 3 photo(s), 412 video(s)`) and an `OPPOSITE TYPE` total. Counted as `photos-in-video-folders` (or `videos-in-photo-folders`), `year-folders`, `year-folders-with-photos`, and one count per year folder.
+- A year folder is any folder whose name starts with a year (`2014`, `2013 West`); each is searched at every depth. Other folders in the root, and files loose in it, are not looked at. `_ads` and `_incomplete` are not counted. A root with no year folders is reported as one folder.
+- A file's kind goes by its extension, so run Phase 1 first if extensions may be wrong.
+- Nothing is moved, renamed or deleted; share the counts and the list with the user and let them decide what to move.
 
 ### Quarantine ad images and videos (optional, any time)
 `python scripts/organize.py --root "<MediaRoot>" --quarantine-ads`. Moves ad images and videos out of `<MediaRoot>` and every subfolder into `<MediaRoot>/_ads`, keeping their subfolder path, so the user can look through them and delete the folder themselves. Nothing is deleted. Preview first with `--quarantine-ads --dry-run`. A file is treated as an ad only when both hold:
@@ -127,7 +134,7 @@ Remind the user to run `scripts/Cleanup-Pictures.ps1 -Path "<MediaRoot>"` at the
 
 ## Output
 
-Everything writes to one audit workbook per day, `media_audit_<date>.xlsx` in the root folder, where `<date>` is the day of the run (`media_audit_2026-10-07.xlsx`). Runs on the same day share a workbook; the first run on a new day starts a new one, and earlier days' workbooks are left as they are.
+Everything writes to one audit workbook per day, `<root folder name>_<photos|videos>_media_audit_<date>.xlsx` in the root folder (`2014_videos_media_audit_2026-10-07.xlsx`), where `<date>` is the day of the run and `photos` or `videos` is whichever kind the root holds more of. A workbook from earlier the same day under the old name, `media_audit_<date>.xlsx`, is renamed to the new one; older ones are renamed by the final-check-report skill. Runs on the same day share a workbook; the first run on a new day starts a new one, and earlier days' workbooks are left as they are.
 
 - Every scan (`--report-only`, `--apply-moves`) rebuilds the Summary, Plan and Only-moves sheets.
 - Every run of every phase of `organize.py`, and every run of `Fix-Extensions.ps1` and `Cleanup-Pictures.ps1`, appends to two history sheets that are never cleared: **Run log** (one row per reported line: run time, phase, dry run yes/no, action such as `MOVED`, `WROTE`, `DELETED`, `FAILED`, and the detail) and **Run counts** (each phase's counts). Dry runs and `-WhatIf` previews are recorded too, marked `yes` in the Dry run column.

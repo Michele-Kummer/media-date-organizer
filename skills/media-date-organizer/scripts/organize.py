@@ -104,8 +104,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         (.m2ts, .mts) and older MPEG, Windows Media and AVI
                         videos (.mpg, .mpeg, .wmv, .avi), which no other phase handles, are moved
                         too, going by the date in the filename
-                        (20180116122434); ones with no date in the name, or
-                        holding no data, stay. A file's .modd/.moff sidecars
+                        (20180116122434), else by the date in the subfolder
+                        name (2018-01-16, 7-17-2014), which is then appended
+                        to the filename; ones with neither, or holding no
+                        data, stay. A file's .modd/.moff sidecars
                         move with it. A .modd/.moff in the root or one of its
                         subfolders whose file is not beside it is permanently
                         deleted. Ends with an OPPOSITE TYPE line: how many
@@ -114,6 +116,37 @@ and a summary of every phase's counts and problems is printed at the end):
                         folder), also counted as videos-in-photo-folder or
                         photos-in-video-folder. Add --dry-run to preview
                         without changing anything.
+    --opposite-type     Report only; not part of --all. Give the folder that
+                        holds the year folders as --root (D:\\Videos, not
+                        D:\\Videos\\2014). Lists every photo filed among the
+                        videos, or video among the photos, then a count for
+                        each year folder (2014, "2013 West") and a total.
+                        Whichever kind the root holds more of decides what
+                        it is. Each year folder is searched at every depth;
+                        _ads and _incomplete are not counted. A root with no
+                        year folders is reported as one folder. Nothing is
+                        moved or deleted.
+    --final-check       Not part of --all. Give the folder that holds the
+                        year folders as --root. For each year folder,
+                        reports what the other phases left behind: files
+                        still in an _ads folder (IN ADS), files still in an
+                        _incomplete folder (INCOMPLETE), photos among videos
+                        or videos among photos (as --opposite-type lists
+                        them), subfolders still there after --flatten (NOT
+                        FLATTENED, with how many files each holds), name
+                        collisions --flatten met (COLLISION, one line per
+                        pair, saying whether the two files are identical or
+                        different and whether the file was renamed with a
+                        date or left in its subfolder) and audit
+                        workbooks (AUDIT FILE). Ends with one line per year
+                        folder and a FINAL CHECK total. A root with no year
+                        folders is reported as one folder. Its one change:
+                        an audit workbook not yet named for its folder and
+                        media type is renamed so that it is
+                        (2014/media_audit_2026-10-07.xlsx becomes
+                        2014_videos_media_audit_2026-10-07.xlsx). Nothing
+                        else is moved, renamed or deleted. Add --dry-run to
+                        list the renames without making them.
     --quarantine-ads    Move ad images and videos into an _ads folder inside
                         the root, keeping their subfolder path, for the user to
                         review and delete. A file is an ad only if BOTH hold:
@@ -154,8 +187,10 @@ and a summary of every phase's counts and problems is printed at the end):
 
 Every run appends what it reported to the "Run log" and "Run counts" sheets
 of the audit workbook, dry runs included, so the workbook is a history of
-everything done to the folder. It is media_audit_<date>.xlsx in the root,
-<date> being the day of the run (media_audit_2026-10-07.xlsx): runs on the
+everything done to the folder. It is
+<root folder name>_<photos|videos>_media_audit_<date>.xlsx in the root
+(2014_videos_media_audit_2026-10-07.xlsx), <date> being the day of the run
+and photos or videos whichever kind the root holds more of: runs on the
 same day share a workbook, a new day starts a new one. Close it in Excel
 before running, or the run cannot be recorded.
 
@@ -1235,14 +1270,20 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             root_names = taken
         exts = MEDIA_EXTS if in_ads else MEDIA_EXTS | set(CAMCORDER_EXTS)
         for folder, name, full in iter_media(base, exts):
+            from_folder = False
             if in_ads:
                 # The subfolder name is the only date an ad has
                 suffix = folder
             elif pathlib.Path(name).suffix.lower() in CAMCORDER_EXTS:
                 dt = _filename_date(pathlib.Path(name).stem)
                 if dt is None:
+                    # The folder's date goes into the name, so it survives
+                    # the file leaving the folder
+                    dt = _folder_name_date(folder)
+                    from_folder = dt is not None
+                if dt is None:
                     counts['left-undated'] += 1
-                    print(f"LEFT (no date in filename): {folder}/{name}")
+                    print(f"LEFT (no date in filename or folder name): {folder}/{name}")
                     continue
                 if _has_no_data(full):
                     counts['left-no-data'] += 1
@@ -1258,14 +1299,14 @@ def flatten(root: str, dry_run: bool = False) -> dict:
                     continue
                 suffix = f"{dt:%Y-%m-%d}"
             new_name = name
-            if new_name.lower() in taken:
+            if from_folder or new_name.lower() in taken:
                 p = pathlib.Path(name)
                 new_name = f"{p.stem}_{suffix}{p.suffix}"
                 if new_name.lower() in taken:
                     counts['collision'] += 1
                     print(f"COLLISION, skipping: {prefix}{folder}/{name}", file=sys.stderr)
                     continue
-                counts['renamed'] += 1
+                counts['dated-from-folder' if from_folder else 'renamed'] += 1
             if not dry_run:
                 try:
                     shutil.move(full, os.path.join(base, new_name))
@@ -1359,6 +1400,227 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         gone.add(dirpath)
         counts['folders-removed'] += 1
         print(f"{verb}: {dirpath}")
+    return dict(counts)
+
+
+# ---------------- Opposite type report ----------------
+
+# A year folder: "2014", "2013 West"
+_YEAR_FOLDER_RE = re.compile(r'^(19|20)\d{2}(?!\d)')
+
+
+def _year_folders(root: str) -> list:
+    """Return (label, path) for each year folder in root, or root itself as
+    the one folder if it holds none."""
+    years = sorted(d for d in os.listdir(root)
+                   if _YEAR_FOLDER_RE.match(d) and os.path.isdir(os.path.join(root, d)))
+    return [(y, os.path.join(root, y)) for y in years] or [(os.path.basename(os.path.normpath(root)), root)]
+
+
+def _media_by_kind(root: str, tops: list) -> tuple:
+    """Return (found, major, minor): found maps each year folder to
+    {'photo': [paths relative to root], 'video': [...]}, searched at every
+    depth with holding folders left out; major is the kind there is more of
+    in all, minor the other."""
+    found = {}
+    for label, top in tops:
+        kinds = found[label] = {'photo': [], 'video': []}
+        for dirpath, dirs, files in os.walk(top):
+            dirs[:] = sorted(d for d in dirs if d not in HOLDING_DIRS)
+            for name in sorted(files):
+                ext = pathlib.Path(name).suffix.lower()
+                if ext in VIDEO_EXTS + CAMCORDER_EXTS:
+                    kind = 'video'
+                elif ext in MEDIA_EXTS:
+                    kind = 'photo'
+                else:
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, name), root)
+                kinds[kind].append(rel.replace(os.sep, '/'))
+    total = {k: sum(len(kinds[k]) for kinds in found.values()) for k in ('photo', 'video')}
+    major, minor = ('photo', 'video') if total['photo'] >= total['video'] else ('video', 'photo')
+    return found, major, minor
+
+
+def opposite_type(root: str) -> dict:
+    """Report photos filed among videos, or videos among photos, one year
+    folder at a time. Whichever kind root holds more of decides what it is.
+    Each year folder is searched at every depth, holding folders excepted.
+    With no year folders in root, root itself is reported as one folder.
+    Nothing is changed."""
+    tops = _year_folders(root)
+    found, major, minor = _media_by_kind(root, tops)
+    total = {k: sum(len(kinds[k]) for kinds in found.values()) for k in ('photo', 'video')}
+    counts = {f'{minor}s-in-{major}-folders': total[minor],
+              'year-folders': len(tops),
+              f'year-folders-with-{minor}s': sum(1 for kinds in found.values() if kinds[minor])}
+    for label, kinds in found.items():
+        for rel in kinds[minor]:
+            print(f"{minor.upper()} IN {major.upper()} FOLDER: {rel}")
+    for label, kinds in found.items():
+        counts[label] = len(kinds[minor])
+        print(f"{label}: {len(kinds[minor]):,} {minor}(s), {len(kinds[major]):,} {major}(s)")
+    print(f"OPPOSITE TYPE: {total[minor]:,} {minor}(s) among {total[major]:,} {major}(s), in "
+          f"{counts[f'year-folders-with-{minor}s']} of {len(tops)} year folder(s)")
+    return counts
+
+
+# ---------------- Final check report ----------------
+
+# An audit workbook, whatever was put before or after "media_audit"
+_AUDIT_FILE_RE = re.compile(r'media_audit.*\.xlsx$', re.IGNORECASE)
+
+def _count_files(folder: str, skip_holding: bool = False) -> int:
+    """Count the files in folder at every depth."""
+    n = 0
+    for _dirpath, dirs, files in os.walk(folder):
+        if skip_holding:
+            dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
+        n += len(files)
+    return n
+
+
+def _media_type(folder: str) -> str:
+    """Return 'photos' or 'videos', whichever kind folder holds more of at
+    any depth (holding folders left out), or '' if it holds neither."""
+    n = Counter()
+    for _dirpath, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
+        for name in files:
+            ext = pathlib.Path(name).suffix.lower()
+            if ext in VIDEO_EXTS + CAMCORDER_EXTS:
+                n['videos'] += 1
+            elif ext in MEDIA_EXTS:
+                n['photos'] += 1
+    if not n:
+        return ''
+    return 'photos' if n['photos'] >= n['videos'] else 'videos'
+
+
+def _audit_prefix(folder: str) -> str:
+    """Return the prefix an audit workbook in folder carries,
+    "<folder name>_<photos|videos>_" (2014_videos_). A drive root has no
+    name and a folder with no media no type; either part is then left out."""
+    name = os.path.basename(os.path.normpath(os.path.abspath(folder)))
+    return ''.join(f"{part}_" for part in (name, _media_type(folder)) if part)
+
+
+def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False) -> dict:
+    """Report what the other phases left behind, one year folder at a time:
+    files still in _ads, files still in _incomplete, photos among videos (or
+    videos among photos), subfolders --flatten did not remove, and audit
+    workbooks. own_xlsx is the workbook this run is recorded in, which is
+    not reported. With no year folders in root, root itself is reported as
+    one folder. The only change made: an audit workbook whose name does not
+    start with its folder's name and media type is renamed so that it does."""
+    tops = _year_folders(root)
+    found, major, minor = _media_by_kind(root, tops)
+    opposite = f'{minor}s-in-{major}-folders'
+    counts = Counter({'ads-files': 0, 'incomplete-files': 0, opposite: 0,
+                      'folders-not-flattened': 0, 'collisions': 0, 'collisions-identical': 0,
+                      'collisions-different': 0, 'audit-files': 0,
+                      'year-folders': len(tops), 'year-folders-with-oddities': 0})
+
+    def is_audit(folder: str, name: str) -> bool:
+        full = os.path.join(folder, name)
+        return (bool(_AUDIT_FILE_RE.search(name)) and os.path.isfile(full)
+                and not (own_xlsx and os.path.exists(own_xlsx) and os.path.samefile(full, own_xlsx)))
+
+    def report_audit(folder: str, name: str, tally: Counter) -> None:
+        """List one audit workbook, giving it its folder's name and media
+        type as a prefix (2014_videos_) if it has none, so workbooks from
+        different folders can be told apart once they are gathered in one
+        place."""
+        tally['audit-files'] += 1
+        rel = os.path.relpath(os.path.join(folder, name), root).replace(os.sep, '/')
+        new_name = _audit_prefix(folder) + name[name.lower().index('media_audit'):]
+        if new_name.lower() == name.lower():
+            print(f"AUDIT FILE: {rel}")
+            return
+        if os.path.exists(os.path.join(folder, new_name)):
+            tally['audit-files-not-renamed'] += 1
+            print(f"AUDIT FILE: {rel}")
+            print(f"COLLISION, not renaming: {rel} ({new_name} exists)", file=sys.stderr)
+            return
+        if not dry_run:
+            try:
+                os.rename(os.path.join(folder, name), os.path.join(folder, new_name))
+            except OSError as e:
+                tally['failed'] += 1
+                print(f"AUDIT FILE: {rel}")
+                print(f"FAILED to rename {rel}: {e}", file=sys.stderr)
+                return
+        tally['audit-files-renamed'] += 1
+        print(f"{'WOULD RENAME' if dry_run else 'RENAMED'} AUDIT FILE: {rel} -> {new_name}")
+
+    if tops[0][1] != root:
+        # Workbooks from runs on root itself sit beside the year folders
+        for name in sorted(os.listdir(root)):
+            if is_audit(root, name):
+                report_audit(root, name, counts)
+    summary = []
+    for label, top in tops:
+        year = Counter()
+        for dirpath, dirs, files in os.walk(top):
+            for name in sorted(files):
+                if is_audit(dirpath, name):
+                    report_audit(dirpath, name, year)
+            for d in sorted(dirs):
+                if d not in HOLDING_DIRS:
+                    continue
+                n = _count_files(os.path.join(dirpath, d))
+                if not n:
+                    continue
+                key = 'ads-files' if d == QUARANTINE_DIR else 'incomplete-files'
+                year[key] += n
+                rel = os.path.relpath(os.path.join(dirpath, d), root).replace(os.sep, '/')
+                print(f"{'IN ADS' if d == QUARANTINE_DIR else 'INCOMPLETE'}: {rel} ({n:,} file(s))")
+            dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
+        for rel in found[label][minor]:
+            print(f"{minor.upper()} IN {major.upper()} FOLDER: {rel}")
+        year[opposite] = len(found[label][minor])
+        # Name clashes --flatten met: no plan is given, so the ones only
+        # --apply-moves would meet (which need every file's date) are left out
+        for src, dst in _collision_pairs(top, []):
+            how = 'renamed with a date' if os.path.dirname(src) == top else 'left in its subfolder'
+            try:
+                same = os.path.getsize(src) == os.path.getsize(dst) and filecmp.cmp(src, dst, shallow=False)
+            except OSError as e:
+                year['failed'] += 1
+                print(f"FAILED to compare {os.path.relpath(src, root)}: {e}", file=sys.stderr)
+                continue
+            verdict = 'identical' if same else 'different'
+            year['collisions'] += 1
+            year[f'collisions-{verdict}'] += 1
+            pair = ' | '.join(os.path.relpath(p, root).replace(os.sep, '/') for p in (src, dst))
+            print(f"COLLISION, {verdict} files ({how}): {pair}")
+        for d in sorted(os.listdir(top)):
+            sub = os.path.join(top, d)
+            if not os.path.isdir(sub) or d in HOLDING_DIRS:
+                continue
+            # With no year folders, root's own subfolders are named as they are
+            rel = d if top == root else f"{label}/{d}"
+            year['folders-not-flattened'] += 1
+            print(f"NOT FLATTENED: {rel} ({_count_files(sub, skip_holding=True):,} file(s))")
+        counts.update(year)
+        if any(year.values()):
+            counts['year-folders-with-oddities'] += 1
+        summary.append(
+            f"{label}: {year['ads-files']:,} in _ads, {year['incomplete-files']:,} in _incomplete, "
+            f"{year[opposite]:,} {minor}(s) among {major}s, "
+            f"{year['folders-not-flattened']:,} folder(s) not flattened, "
+            f"{year['collisions']:,} collision(s), "
+            f"{year['audit-files']:,} audit file(s)" if any(year.values())
+            else f"{label}: clean")
+    for line in summary:
+        print(line)
+    print(f"FINAL CHECK: {counts['ads-files']:,} in _ads, {counts['incomplete-files']:,} in _incomplete, "
+          f"{counts[opposite]:,} {minor}(s) among {major}s, "
+          f"{counts['folders-not-flattened']:,} folder(s) not flattened, "
+          f"{counts['collisions']:,} collision(s) "
+          f"({counts['collisions-identical']:,} identical, {counts['collisions-different']:,} different), "
+          f"{counts['audit-files']:,} audit file(s); "
+          f"{counts['year-folders-with-oddities']} of {len(tops)} year folder(s) have something left")
     return dict(counts)
 
 
@@ -1774,9 +2036,36 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
 PHASE_ORDER = ('delete_junk', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
-               'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten')
+               'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
+               'opposite_type', 'final_check')
 ALL_PHASES = ('delete_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
-DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_junk', 'fill_blanks', 'visual_compare')
+DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_junk', 'fill_blanks', 'visual_compare',
+                  'final_check')
+
+
+def _default_xlsx(root: str) -> str:
+    """Return today's audit workbook name for root,
+    <root folder name>_<photos|videos>_media_audit_<date>.xlsx
+    (2014_videos_media_audit_2026-10-07.xlsx). A workbook from earlier today
+    under the old name, with no prefix, is renamed to it so the day's runs
+    stay in one workbook."""
+    plain = f'media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'
+    if not os.path.isdir(root):
+        return plain
+    # Today's workbook keeps the name it was started under, even if the
+    # folder's media type has changed since
+    folder = os.path.basename(os.path.normpath(os.path.abspath(root)))
+    for name in sorted(os.listdir(root)):
+        if folder and name.lower().startswith(f"{folder}_".lower()) and name.lower().endswith(f"_{plain}"):
+            return name
+    name = _audit_prefix(root) + plain
+    old, new = os.path.join(root, plain), os.path.join(root, name)
+    if name != plain and os.path.isfile(old) and not os.path.exists(new):
+        try:
+            os.rename(old, new)
+        except OSError:
+            pass  # open in Excel: it stays, and the final check reports it
+    return name
 
 # Most problem lines repeated per phase in the closing summary
 MAX_SUMMARY_ISSUES = 50
@@ -1824,6 +2113,10 @@ def _run_phase(phase: str, args) -> dict:
         return sync_timestamps(args.root)
     if phase == 'flatten':
         return flatten(args.root, args.dry_run)
+    if phase == 'opposite_type':
+        return opposite_type(args.root)
+    if phase == 'final_check':
+        return final_check(args.root, os.path.join(args.root, args.xlsx), args.dry_run)
     if phase == 'compare_collisions':
         return compare_collisions(args.root, scan(args.root))
     if phase == 'visual_compare':
@@ -1869,13 +2162,17 @@ def main(argv=None):
     ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install imageio-ffmpeg). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
+    ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
+    ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, files still in _incomplete, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
     ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder.')
-    ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete or --delete-junk: list what would be written, moved, removed or deleted without changing anything.')
-    ap.add_argument('--xlsx', default=f'media_audit_{datetime.date.today():%Y-%m-%d}.xlsx', help='Audit workbook filename (relative to root). Defaults to media_audit_<today>.xlsx, so each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
+    ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete, --delete-junk or --final-check: list what would be written, moved, renamed, removed or deleted without changing anything.')
+    ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
     ap.add_argument('--audit-log', metavar='NAME', help='Record lines read from standard input in the audit workbook as phase NAME, then exit. Used by Fix-Extensions.ps1 and Cleanup-Pictures.ps1.')
     args = ap.parse_args(argv)
+    if args.xlsx is None:
+        args.xlsx = _default_xlsx(args.root)
     started = datetime.datetime.now()
     out_xlsx = os.path.join(args.root, args.xlsx)
 
@@ -1896,7 +2193,7 @@ def main(argv=None):
     if not phases:
         ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
     if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
-        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete, --delete-junk and --visual-compare')
+        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete, --delete-junk, --visual-compare and --final-check')
     if args.visual_compare and not args.dry_run:
         ap.error('--visual-compare only reports for now: add --dry-run')
 

@@ -20,10 +20,12 @@
     "claude-code"
   ],
   "skills": [
-    "skills/media-date-organizer"
+    "skills/media-date-organizer",
+    "skills/final-check-report"
   ],
   "commands": [
     "commands/fix-media-dates.md",
-    "commands/flatten-media.md"
+    "commands/flatten-media.md",
+    "commands/report-opposite-type.md"
   ]
 }

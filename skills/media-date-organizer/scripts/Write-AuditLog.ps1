@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Records lines in the audit workbook (media_audit_<date>.xlsx in the target
+    Records lines in the audit workbook (<folder name>_<photos|videos>_media_audit_<date>.xlsx in the target
     folder), on the same Run log sheet organize.py writes to.
 
 .DESCRIPTION

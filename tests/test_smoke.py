@@ -69,7 +69,8 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(plan['wrong.jpg']['target_folder'], '2020-02-02')
         self.assertEqual(names(self.root / '2020-01-01'), ['right.jpg', 'wrong.jpg'])
         self.assertFalse((self.root / '2020-02-02').exists())
-        self.assertTrue(any(n.startswith('media_audit_') and n.endswith('.xlsx') for n in names(self.root)))
+        self.assertIn(f'{self.root.name}_photos_media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'.lower(),
+                      names(self.root))
 
     def test_all_cleans_dates_converts_and_moves(self):
         day = self.root / '2020-01-01'
@@ -96,6 +97,77 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('shot.png', names(day))
         self.assertIn('shot.jpg', names(day))
         self.assertEqual(date_taken(day / 'shot.jpg'), datetime.datetime(2020, 1, 1, 8, 0, 0))
+
+    def test_opposite_type_reports_photos_among_videos_by_year_folder(self):
+        for rel in ('2014/7-17-2014/a.avi', '2014/b.mp4', '2015/c.mov', '2015/2015-03-01/d.mp4'):
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'video data')
+        make_image(self.root / '2014' / '7-17-2014' / 'stray.jpg')
+        make_image(self.root / '2014' / '_ads' / 'ad.jpg')       # holding folders are not counted
+        make_image(self.root / 'Wedding' / 'guest.jpg')          # not a year folder
+        before = sorted(str(p) for p in self.root.rglob('*'))
+
+        code, out = run(self.root, '--opposite-type')
+
+        self.assertEqual(code, 0)
+        self.assertIn('PHOTO IN VIDEO FOLDER: 2014/7-17-2014/stray.jpg', out)
+        self.assertNotIn('ad.jpg', out)
+        self.assertNotIn('guest.jpg', out)
+        self.assertIn('2014: 1 photo(s), 2 video(s)', out)
+        self.assertIn('2015: 0 photo(s), 2 video(s)', out)
+        self.assertIn('"photos-in-video-folders": 1', out)
+        after = sorted(str(p) for p in self.root.rglob('*') if p.suffix != '.xlsx')
+        self.assertEqual(after, before, 'a report must not move anything')
+
+    def test_final_check_reports_what_is_left_by_year_folder(self):
+        for rel in ('2014/a.mp4', '2014/7-17-2014/b.avi', '2015/c.mov'):
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'video data')
+        make_image(self.root / '2014' / 'stray.jpg')
+        # Name clashes as --flatten leaves them: a copy renamed with its date,
+        # and another file of the same name left in its subfolder
+        (self.root / '2014' / 'a_2014-07-17.mp4').write_bytes(b'video data')
+        (self.root / '2014' / '7-17-2014' / 'a.mp4').write_bytes(b'another video')
+        make_image(self.root / '2014' / '_ads' / 'ad1.jpg')
+        make_image(self.root / '2014' / '_ads' / 'ad2.jpg')
+        (self.root / '2014' / '_incomplete' / '2014-01-01').mkdir(parents=True)
+        (self.root / '2014' / '_incomplete' / '2014-01-01' / 'empty.mp4').write_bytes(b'')
+        (self.root / '2014' / 'media_audit_2020-01-01.xlsx').write_bytes(b'an earlier audit')
+        before = sorted(str(p) for p in self.root.rglob('*'))
+
+        code, out = run(self.root, '--final-check', '--dry-run')
+
+        self.assertEqual(code, 0)
+        self.assertIn('IN ADS: 2014/_ads (2 file(s))', out)
+        self.assertIn('INCOMPLETE: 2014/_incomplete (1 file(s))', out)
+        self.assertIn('PHOTO IN VIDEO FOLDER: 2014/stray.jpg', out)
+        self.assertIn('NOT FLATTENED: 2014/7-17-2014 (2 file(s))', out)
+        renamed = 'AUDIT FILE: 2014/media_audit_2020-01-01.xlsx -> 2014_videos_media_audit_2020-01-01.xlsx'
+        self.assertIn('WOULD RENAME ' + renamed, out)
+        self.assertIn('COLLISION, identical files (renamed with a date): 2014/a_2014-07-17.mp4 | 2014/a.mp4', out)
+        self.assertIn('COLLISION, different files (left in its subfolder): 2014/7-17-2014/a.mp4 | 2014/a.mp4', out)
+        self.assertIn('2014: 2 in _ads, 1 in _incomplete, 1 photo(s) among videos, '
+                      '1 folder(s) not flattened, 3 collision(s), 1 audit file(s)', out)
+        self.assertIn('3 collision(s) (1 identical, 2 different)', out)
+        self.assertIn('2015: clean', out)
+        self.assertIn('1 of 2 year folder(s) have something left', out)
+        # This run's own workbook, in the root, is the only new file
+        after = sorted(str(p) for p in self.root.rglob('*') if p.parent != self.root)
+        self.assertEqual(after, [p for p in before if pathlib.Path(p).parent != self.root],
+                         'a dry run must not change anything')
+        own = f'{self.root.name}_videos_media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'.lower()
+        self.assertIn(own, names(self.root), 'the workbook is named for its folder and media type')
+        self.assertNotIn('audit file: ' + own, out.lower(), "this run's own workbook is not a leftover")
+
+        code, out = run(self.root, '--final-check')
+
+        # The one change a real run makes: the leftover workbook gets its prefix
+        self.assertEqual(code, 0)
+        self.assertIn('RENAMED ' + renamed, out)
+        self.assertIn('2014_videos_media_audit_2020-01-01.xlsx', names(self.root / '2014'))
+        self.assertNotIn('media_audit_2020-01-01.xlsx', names(self.root / '2014'))
 
     def test_mac_sidecars_do_not_stop_convert_and_are_deleted_as_junk(self):
         day = self.root / '2020-01-01'

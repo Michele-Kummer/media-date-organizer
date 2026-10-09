@@ -141,6 +141,12 @@ class VideoSmokeTests(unittest.TestCase):
         (cam / '20180116122434.m2ts').write_bytes(b'camcorder video data')
         (cam / '20180116122434.m2ts.modd').write_bytes(b'sidecar')
         (cam / 'holiday.m2ts').write_bytes(b'camcorder video data')      # no date in its name
+        (cam / 'holiday.m2ts.modd').write_bytes(b'sidecar')
+        mdy = self.root / '7-17-2014'
+        mdy.mkdir()
+        (mdy / 'SDC13837.AVI').write_bytes(b'RIFF\x00\x00\x00\x00AVI avi video data')
+        (self.root / 'misc').mkdir(exist_ok=True)
+        (self.root / 'misc' / 'party.avi').write_bytes(b'RIFF\x00\x00\x00\x00AVI avi video data')
         (cam / 'WP_20130807_002.mpg').write_bytes(b'\x00\x00\x01\xba mpeg video data')
         (cam / '20130828174322.wmv').write_bytes(b'windows media video data')
         (cam / 'MVI_20050612_0042.avi').write_bytes(b'RIFF\x00\x00\x00\x00AVI avi video data')
@@ -149,11 +155,15 @@ class VideoSmokeTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         for moved in ('clip.mp4', '20180116122434.m2ts', '20180116122434.m2ts.modd',
-                      'wp_20130807_002.mpg', '20130828174322.wmv', 'mvi_20050612_0042.avi'):
+                      'wp_20130807_002.mpg', '20130828174322.wmv', 'mvi_20050612_0042.avi',
+                      # no date in the name: the folder's date is appended
+                      'holiday_2018-01-16.m2ts', 'holiday_2018-01-16.m2ts.modd',
+                      'sdc13837_2014-07-17.avi'):
             self.assertIn(moved, names(self.root))
         self.assertFalse((self.root / CREATED_DAY).exists())
-        self.assertEqual(names(self.root / 'misc'), ['undated.mp4'])
-        self.assertEqual(names(cam), ['holiday.m2ts'])
+        self.assertFalse(cam.exists())
+        self.assertFalse(mdy.exists())
+        self.assertEqual(names(self.root / 'misc'), ['party.avi', 'undated.mp4'])
 
     def test_visual_compare_judges_video_pairs(self):
         # Name clashes as --flatten leaves them: <name>.mp4 and <name>_<date>.mp4
