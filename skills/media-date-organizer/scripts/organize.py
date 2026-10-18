@@ -32,10 +32,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         time. JPEGs are rewritten without re-encoding. HEIC
                         and video files are written with exiftool when it is
                         installed, else flagged. Empty (0-byte) files are
-                        skipped and counted.
-                        Videos (MOV/MP4/M4V/3GP) with a blank Media Created are
-                        found in the root and every subfolder at any depth.
-                        Their date comes from the filename first; else the
+                        skipped and counted. Photos and videos are found in
+                        the root and every subfolder at any depth.
+                        Videos (MOV/MP4/M4V/3GP) with a blank Media Created
+                        get their date from the filename first; else the
                         nearest containing folder whose name holds a full
                         date (2019-08-30, 11-11-2019) at 12:00:00. A folder
                         name holding only a year ("2014") is not used; such
@@ -91,6 +91,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         is counted as created-only-edited. Date Created is
                         only settable on Windows; elsewhere just Date
                         Modified is synced, and edited files are skipped.
+                        Files are found in the root and every subfolder at
+$root                         any depth.
     --flatten           Move every file that has a Date Taken or Media Created
                         out of its subfolder and up into the root folder
                         itself, then delete the subfolders left empty. Files
@@ -1005,12 +1007,11 @@ def _write_date_exiftool(exiftool: str, path: str, ftype: str, dt: datetime.date
         raise RuntimeError(msg[-1] if msg else f"exiftool exited {r.returncode}")
 
 
-def _iter_fill_candidates(root: str):
+def _iter_media_deep(root: str):
     """Yield (label, name, full_path, ftype, folders) for every file
-    --fill-blanks considers: photos one level below root, like the other
-    phases, and videos in root and every subfolder at any depth. folders are
-    the names of the containing folders, nearest first, ending with root's
-    own name."""
+    --fill-blanks and --sync-timestamps consider: photos and videos in root
+    and every subfolder at any depth. folders are the names of the containing folders, nearest
+    first, ending with root's own name."""
     root_name = os.path.basename(os.path.abspath(root))
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(root, dirpath, dirs)
@@ -1021,14 +1022,8 @@ def _iter_fill_candidates(root: str):
             ext = pathlib.Path(name).suffix.lower()
             if ext not in MEDIA_EXTS:
                 continue
-            if len(parts) != 1 and ext not in VIDEO_EXTS:
-                # Deeper files are taken at their extension's word, to avoid
-                # opening every photo in a large tree
-                continue
             full = os.path.join(dirpath, name)
             ftype = detect_type(full) or ext
-            if len(parts) != 1 and ftype not in VIDEO_EXTS:
-                continue
             yield '/'.join(parts + [name]), name, full, ftype, parts[::-1] + [root_name]
 
 
@@ -1036,7 +1031,7 @@ def fill_blanks(root: str, dry_run: bool = False) -> dict:
     counts = Counter()
     exiftool = _find_exiftool()
     verb = 'WOULD WRITE' if dry_run else 'WROTE'
-    for label, name, full, ftype, folders in _iter_fill_candidates(root):
+    for label, name, full, ftype, folders in _iter_media_deep(root):
         if os.path.getsize(full) == 0:
             # A failed copy or transfer: there is no image to write a date into
             counts['empty-file'] += 1
@@ -1213,12 +1208,11 @@ def _set_creation_time(path: str, ts: float) -> bool:
 
 
 def sync_timestamps(root: str) -> dict:
-    """Set Date Created to Date Taken on every dated file, and Date Modified
-    too on unedited ones. An edited file keeps its Date Modified, which is
-    when it was edited."""
+    """Set Date Created to Date Taken on every dated file in root and every
+    subfolder at any depth, and Date Modified too on unedited ones. An edited
+    file keeps its Date Modified, which is when it was edited."""
     counts = Counter()
-    for folder, name, full in iter_media(root):
-        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+    for label, name, full, ftype, _folders in _iter_media_deep(root):
         meta = read_metadata(full, ftype)
         if meta['date_taken'] is None:
             counts['no-date-taken'] += 1
@@ -1228,23 +1222,23 @@ def sync_timestamps(root: str) -> dict:
             try:
                 if _set_creation_time(full, ts):
                     counts['created-only-edited'] += 1
-                    print(f"SYNCED created only (edited) {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {folder}/{name}")
+                    print(f"SYNCED created only (edited) {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {label}")
                 else:
                     counts['skipped-edited'] += 1
-                    print(f"SKIP (edited): {folder}/{name}")
+                    print(f"SKIP (edited): {label}")
             except Exception as e:
                 counts['failed'] += 1
-                print(f"FAILED {folder}/{name}: {e}", file=sys.stderr)
+                print(f"FAILED {label}: {e}", file=sys.stderr)
             continue
         try:
             os.utime(full, (ts, ts))
             if not _set_creation_time(full, ts):
                 counts['created-unsupported'] += 1
             counts['synced'] += 1
-            print(f"SYNCED {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {folder}/{name}")
+            print(f"SYNCED {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {label}")
         except Exception as e:
             counts['failed'] += 1
-            print(f"FAILED {folder}/{name}: {e}", file=sys.stderr)
+            print(f"FAILED {label}: {e}", file=sys.stderr)
     return dict(counts)
 
 
@@ -2155,12 +2149,12 @@ def main(argv=None):
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
     ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
     ap.add_argument('--all', action='store_true', help='Run --delete-junk, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
-    ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos (at any depth) whose Media Created is blank, using the date in the filename, else the folder date.')
+    ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos whose Media Created is blank, in the root and every subfolder at any depth, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install imageio-ffmpeg). Changes nothing. Not part of --all.')
-    ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited.')
+    ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, files still in _incomplete, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')

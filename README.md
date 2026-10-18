@@ -10,7 +10,7 @@ Works on any photo or video source. The author built it from a cleanup on a mixe
 
 1. **Fixes wrong file extensions.** Reads the first 16 bytes of each file and renames anything whose extension doesn't match its real format (PNG, JPEG, HEIC/HEIF, MOV/MP4/M4V, GIF, BMP, TIFF, WEBP).
 2. **Reads the true Date Taken.** HEIC embedded TIFF/EXIF, MOV/MP4 `mvhd` creation time, JPEG/PNG standard EXIF — all parsed without external tools like `exiftool` (which is only needed, optionally, to write dates into HEIC and video files).
-3. **Writes Date Taken where it's missing.** Falls back to the containing folder's date (if the folder is named `YYYY-MM-DD`) and stamps `DateTimeOriginal` into the EXIF. Videos (MOV/MP4/M4V/3GP) with a blank **Media Created**, at any depth under the folder, get it from a date in the filename first, else from a containing folder's name holding a full date (`2019-08-30`, `11-11-2019`). A year-only folder name like `2014` is not used. Preview with `--fill-blanks --dry-run`.
+3. **Writes Date Taken where it's missing.** Looks at photos and videos in the folder and every subfolder at any depth. Falls back to the containing folder's date (if the folder is named `YYYY-MM-DD`) and stamps `DateTimeOriginal` into the EXIF. Videos (MOV/MP4/M4V/3GP) with a blank **Media Created** get it from a date in the filename first, else from a containing folder's name holding a full date (`2019-08-30`, `11-11-2019`). A year-only folder name like `2014` is not used. Preview with `--fill-blanks --dry-run`.
 4. **Converts PNG to JPEG when needed.** Windows Explorer only shows Date Taken for JPEG/HEIC/TIFF/raw; PNG dates stay invisible there. The plugin re-encodes PNG → JPEG at quality 95, preserving EXIF, so Explorer surfaces the date. PNGs with transparency are left as PNG.
 5. **Moves files to date-matched folders.** Files whose Date Taken doesn't match their current folder's name are moved to a sibling folder named for their real date.
 6. **Produces an audit workbook.** `<folder name>_<photos|videos>_media_audit_<date>.xlsx` in the media folder (`2014_videos_media_audit_2026-10-07.xlsx`) holds the scan results plus a running history: every step, including the two PowerShell scripts and every dry run, appends what it did to the Run log and Run counts sheets. Finishes with a PowerShell cleanup script that removes duplicates and empty folders.
@@ -28,21 +28,39 @@ Several steps can run in one command: `organize.py --root <folder> --all` delete
 
 `organize.py --root <folder of year folders> --final-check` is the last look: for each year folder it reports files still in `_ads`, files still in `_incomplete`, photos among videos (or videos among photos), subfolders that were not flattened and audit workbooks left behind. Its only change is renaming audit workbooks that do not yet carry their folder name and media type; `--dry-run` previews that. It is its own skill, `final-check-report`: ask Claude to "run the final check on D:\Videos".
 
+`skills/find-duplicates/scripts/find_duplicates.py --root <folder>` is a separate script that runs on its own, before or after any of the steps above. It searches the folder at every depth and reports files that are byte-for-byte `IDENTICAL`, then pairs that are likely the same picture or recording saved twice (`DUPLICATE`, or `POSSIBLE` when it is less sure), found among files that share a Date Taken, a name or a size. Nothing is moved, renamed or deleted. It is its own skill, `find-duplicates`: ask Claude to "find duplicates in D:\Pictures\2012".
+
 End state: every photo and video has a Date Taken, is in a folder matching that date, has a correct file extension, and shows up correctly in Windows Explorer.
 
 ## Install
 
 Requires [Claude Code](https://docs.anthropic.com/claude/docs/claude-code), Python 3.9+, and Windows PowerShell 5.1+ (or PowerShell 7).
 
+In Claude Code (2.1.275 or later):
+
+```
+/plugin install media-date-organizer --marketplace Michele-Kummer/media-date-organizer
+```
+
+Then install the Python packages:
+
+```bash
+pip install "pillow>=10.0" "openpyxl>=3.1"
+pip install "imageio-ffmpeg>=0.5"   # optional, only for --visual-compare on videos
+```
+
+To pick up a newer version later, run `/plugin marketplace update michele-kummer`.
+
+### Working on the plugin
+
+To try changes from a local clone without installing, start Claude Code with the plugin loaded for that session:
+
 ```bash
 git clone https://github.com/Michele-Kummer/media-date-organizer.git
 cd media-date-organizer
-pip install -r requirements.txt     # Pillow + openpyxl
-# Then in Claude Code:
-/plugin install .
+pip install -r requirements.txt
+claude --plugin-dir .
 ```
-
-Or install directly from a URL: `/plugin install https://github.com/Michele-Kummer/media-date-organizer`.
 
 ## Use
 
@@ -66,6 +84,8 @@ Claude walks through: extension fix → metadata read → date-write for blanks 
 .
 ├── .claude-plugin/plugin.json         Plugin manifest
 ├── skills/media-date-organizer/           The skill
+├── skills/final-check-report/         Skill: what is left after organizing
+├── skills/find-duplicates/            Skill: identical and likely duplicate files
 ├── commands/                          Slash commands (fix-media-dates, flatten-media, report-opposite-type)
 ├── docs/                              Case study, screenshots, example audit
 └── sample-data/                       Synthetic test photos

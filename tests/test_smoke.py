@@ -98,6 +98,29 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('shot.jpg', names(day))
         self.assertEqual(date_taken(day / 'shot.jpg'), datetime.datetime(2020, 1, 1, 8, 0, 0))
 
+    def test_fill_blanks_looks_in_root_and_every_subfolder(self):
+        stamp = datetime.datetime(2021, 3, 4, 10, 11, 12)
+        in_root = self.root / 'IMG_20210304_101112.jpg'
+        one_down = self.root / 'Trip' / 'IMG_20210304_101112.jpg'
+        deep = self.root / 'Trip' / 'Day 1' / 'Beach' / 'IMG_20210304_101112.jpg'
+        by_folder = self.root / 'Trip' / '2020-01-01' / 'undated.jpg'
+        for p in (in_root, one_down, deep, by_folder):
+            make_image(p)
+        make_image(self.root / '_ads' / 'IMG_20210304_101112.jpg')   # holding folders are left alone
+
+        code, out = run(self.root, '--fill-blanks', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertIn('WOULD WRITE', out)
+        self.assertIsNone(date_taken(deep), 'a dry run must not write anything')
+
+        code, _ = run(self.root, '--fill-blanks')
+
+        self.assertEqual(code, 0)
+        for p in (in_root, one_down, deep):
+            self.assertEqual(date_taken(p), stamp)
+        self.assertEqual(date_taken(by_folder), datetime.datetime(2020, 1, 1, 12, 0, 0))
+        self.assertIsNone(date_taken(self.root / '_ads' / 'IMG_20210304_101112.jpg'))
+
     def test_opposite_type_reports_photos_among_videos_by_year_folder(self):
         for rel in ('2014/7-17-2014/a.avi', '2014/b.mp4', '2015/c.mov', '2015/2015-03-01/d.mp4'):
             path = self.root / rel
@@ -211,8 +234,10 @@ class SmokeTests(unittest.TestCase):
         taken = datetime.datetime(2020, 1, 1, 10, 0, 0)
         plain = self.root / '2020-01-01' / 'plain.jpg'
         edited = self.root / '2020-01-01' / 'edited.jpg'
-        make_image(plain, taken=taken)
-        make_image(edited, taken=taken)
+        in_root = self.root / 'in_root.jpg'
+        deep = self.root / 'Trip' / 'Day 1' / 'Beach' / 'deep.jpg'
+        for p in (plain, edited, in_root, deep):
+            make_image(p, taken=taken)
         with Image.open(edited) as img:
             exif = img.getexif()
             exif[0x0132] = '2021-06-06 08:00:00'.replace('-', ':')   # EXIF DateTime: edited later
@@ -224,9 +249,10 @@ class SmokeTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertIn('created only (edited)', out)
-        for p in (plain, edited):
+        for p in (plain, edited, in_root, deep):
             self.assertEqual(datetime.datetime.fromtimestamp(os.stat(p).st_birthtime), taken)
-        self.assertEqual(datetime.datetime.fromtimestamp(os.stat(plain).st_mtime), taken)
+        for p in (plain, in_root, deep):
+            self.assertEqual(datetime.datetime.fromtimestamp(os.stat(p).st_mtime), taken)
         self.assertEqual(os.stat(edited).st_mtime, modified)
 
     def test_quarantine_ads_moves_only_ad_names(self):

@@ -1,0 +1,7 @@
+{
+  "name": "michele-kummer",
+  "owner": { "name": "Michele Kummer" },
+  "plugins": [
+    { "name": "media-date-organizer", "source": "./" }
+  ]
+}

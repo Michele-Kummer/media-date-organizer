@@ -48,13 +48,13 @@ Each phase below can be run on its own, or several can be given on one command l
 Writes the audit workbook (`<root folder name>_<photos|videos>_media_audit_<date>.xlsx`) summarizing which files have Date Taken, which don't, and which are in a folder that doesn't match their date. Share the summary with the user before Phase 3.
 
 ### Phase 3 — Write Date Taken where it's missing
-`python scripts/organize.py --root "<MediaRoot>" --fill-blanks`. For every file whose Date Taken is blank:
+`python scripts/organize.py --root "<MediaRoot>" --fill-blanks`. For every file in `<MediaRoot>` and every subfolder at any depth whose Date Taken is blank:
 - If the filename contains a date (e.g. Snapchat exports `2023-12-20_<id>-main.jpg`, or `IMG_20231220_142355.jpg`), write that as `DateTimeOriginal` (JPEG, PNG, TIFF), using the time from the name if present, else `12:00:00`.
 - Otherwise, if the containing folder is named `YYYY-MM-DD`, write `DateTimeOriginal = <folder-date> 12:00:00`.
 - The file's modified time is never used as a source — it usually reflects the import, not the capture.
 - JPEGs get the EXIF segment swapped in place; the image data is not re-encoded.
 - HEIC/MOV files are written with `exiftool` when it is installed (on PATH, or in winget's default folder). Without it they are flagged as `SKIPPED (needs exiftool)` — offer to install it (`winget install --id OliverBetz.ExifTool -e --source winget`), or convert HEIC → JPEG in Phase 4.
-- Videos (MOV/MP4/M4V/3GP/3G2) whose Media Created is blank are found in `<MediaRoot>` and every subfolder at any depth (photos are only looked at one level down). Media Created is written with `exiftool`, from the first of:
+- Videos (MOV/MP4/M4V/3GP/3G2) whose Media Created is blank get it written with `exiftool`, from the first of:
   1. a date in the filename (e.g. `WP_20131115_002.mp4`, `20190630_090136.mp4`), with its time if present, else `12:00:00`;
   2. the nearest containing folder whose name holds a full date (`2019-08-30`, `11-11-2019`), at `12:00:00`.
 
@@ -80,7 +80,7 @@ Writes the audit workbook (`<root folder name>_<photos|videos>_media_audit_<date
 - The audit workbook's Run log has a **Confidence** column filled in for these rows. HEIC photos cannot be compared (Pillow cannot open them) and are listed as `FAILED`.
 
 ### Phase 6 — Sync file-system timestamps (optional)
-`python scripts/organize.py --root "<MediaRoot>" --sync-timestamps`. Sets each file's "Date Created" to its EXIF Date Taken, and its "Date Modified" too **but only for files that look unedited**. An "unedited" file is one whose EXIF `DateTime` tag (file-level modify time) equals `DateTimeOriginal` (or is missing) AND whose EXIF `Software` tag does not match a known editor (Photoshop, Lightroom, Camera Raw, GIMP, Affinity, Luminar, Pixelmator, Snapseed, VSCO, Instagram). Files that fail the check keep their "Date Modified" (it records when they were edited) and get only "Date Created" set, listed as `SYNCED created only (edited)` and counted as `created-only-edited`. Files with no Date Taken are not touched. "Date Created" is set through the Win32 `SetFileTime` API, so on non-Windows systems only "Date Modified" is synced (reported as `created-unsupported`) and edited files are skipped.
+`python scripts/organize.py --root "<MediaRoot>" --sync-timestamps`. Looks at every file in `<MediaRoot>` and every subfolder at any depth. Sets each file's "Date Created" to its EXIF Date Taken, and its "Date Modified" too **but only for files that look unedited**. An "unedited" file is one whose EXIF `DateTime` tag (file-level modify time) equals `DateTimeOriginal` (or is missing) AND whose EXIF `Software` tag does not match a known editor (Photoshop, Lightroom, Camera Raw, GIMP, Affinity, Luminar, Pixelmator, Snapseed, VSCO, Instagram). Files that fail the check keep their "Date Modified" (it records when they were edited) and get only "Date Created" set, listed as `SYNCED created only (edited)` and counted as `created-only-edited`. Files with no Date Taken are not touched. "Date Created" is set through the Win32 `SetFileTime` API, so on non-Windows systems only "Date Modified" is synced (reported as `created-unsupported`) and edited files are skipped.
 
 ### Phase 7 — Flatten into the root folder (optional)
 `python scripts/organize.py --root "<MediaRoot>" --flatten`. Moves every file that has a Date Taken up one level, out of its `YYYY-MM-DD` subfolder and into `<MediaRoot>` itself, then deletes the subfolders left empty. Preview first with `--flatten --dry-run`, which lists every move and folder removal without touching anything.
