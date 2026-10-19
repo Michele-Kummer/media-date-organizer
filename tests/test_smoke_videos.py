@@ -163,6 +163,7 @@ class VideoSmokeTests(unittest.TestCase):
         self.assertFalse((self.root / CREATED_DAY).exists())
         self.assertFalse(cam.exists())
         self.assertFalse(mdy.exists())
+        self.assertEqual(names(self.root / '_empty_folders'), sorted([CREATED_DAY, cam.name, mdy.name]))
         self.assertEqual(names(self.root / 'misc'), ['party.avi', 'undated.mp4'])
 
     def test_visual_compare_judges_video_pairs(self):

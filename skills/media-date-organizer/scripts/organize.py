@@ -92,10 +92,11 @@ and a summary of every phase's counts and problems is printed at the end):
                         only settable on Windows; elsewhere just Date
                         Modified is synced, and edited files are skipped.
                         Files are found in the root and every subfolder at
-$root                         any depth.
+                        any depth.
     --flatten           Move every file that has a Date Taken or Media Created
                         out of its subfolder and up into the root folder
-                        itself, then delete the subfolders left empty. Files
+                        itself, then move the subfolders left empty into
+                        _empty_folders (nothing is deleted there). Files
                         with no Date Taken or Media Created stay where they are
                         (the folder name may be the only record of their date),
                         so their folders survive. A name already taken in the
@@ -480,7 +481,12 @@ INCOMPLETE_DIR = '_incomplete'
 # --move-incomplete folds it into INCOMPLETE_DIR; every phase ignores it.
 LEGACY_NO_DATA_DIR = '_no-image-data'
 
-HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR)
+# Folder inside root that --flatten (and Cleanup-Pictures.ps1) moves the
+# folders it leaves empty into, keeping their path, instead of deleting them.
+# Every phase ignores it.
+EMPTY_FOLDERS_DIR = '_empty_folders'
+
+HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR)
 
 
 def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
@@ -547,33 +553,61 @@ def _filename_date(stem: str) -> Optional[datetime.datetime]:
 
 def _fallback_date(name: str, folder: str) -> tuple:
     """Return (datetime, source) to use when Date Taken is blank: the date in
-    the filename, else the YYYY-MM-DD folder name at 12:00:00. The file's
+    the filename, else the date in the folder name at 12:00:00. The file's
     modified time is deliberately not consulted — imports reset it."""
     dt = _filename_date(pathlib.Path(name).stem)
     if dt is not None:
         return dt, 'filename'
-    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
-    if m:
-        return datetime.datetime(int(m[1]), int(m[2]), int(m[3]), 12, 0, 0), 'folder'
+    dt = _folder_name_date(folder)
+    if dt is not None:
+        return dt, 'folder'
     return None, None
 
 
-# M-D-YYYY folder names, e.g. "11-11-2019" or "1-30-2018"
-_FOLDER_MDY_RE = re.compile(r'(?<!\d)(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})(?!\d)')
+# M-D-YYYY folder names, e.g. "11-11-2019", "1-30-2018" or "08.19.2026"
+_FOLDER_MDY_RE = re.compile(r'(?<!\d)(\d{1,2})[-_. ](\d{1,2})[-_. ](\d{4})(?!\d)')
+
+_MONTHS = {m: i for i, m in enumerate(
+    ('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'), 1)}
+_MONTH_WORD = r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?'
+# "Aug 19 2026", "August 19, 2026", "aug-19-2026"
+_FOLDER_MONTH_DY_RE = re.compile(
+    r'(?<![a-z])' + _MONTH_WORD + r'[-_., ]+(\d{1,2})(?:st|nd|rd|th)?[-_., ]+(\d{4})(?!\d)', re.IGNORECASE)
+# "19 Aug 2026", "19 August, 2026", "19-aug-2026"
+_FOLDER_D_MONTH_Y_RE = re.compile(
+    r'(?<!\d)(\d{1,2})(?:st|nd|rd|th)?[-_., ]+' + _MONTH_WORD + r'[-_., ]+(\d{4})(?!\d)', re.IGNORECASE)
+
+
+def _plausible(y: int, m: int, d: int) -> Optional[datetime.date]:
+    try:
+        date = datetime.date(y, m, d)
+    except ValueError:
+        return None
+    return date if 1990 <= date.year and date <= datetime.date.today() else None
 
 
 def _folder_name_date(folder: str) -> Optional[datetime.datetime]:
     """Return the full date in a folder name at 12:00:00, or None. Accepts
-    the forms _filename_date does (2019-08-30, 20190830) plus M-D-YYYY."""
+    the forms _filename_date does (2019-08-30, 2019_08_30, 20190830, with or
+    without a time after it, as in "2026-08-19 11-44-31"), M-D-YYYY
+    (11-11-2019; read as D-M-YYYY only when the first number cannot be a
+    month, as in 30-08-2019) and month names (Aug 19 2026, 19 August 2026).
+    A folder name holding only a year ("2014") is not a date."""
     dt = _filename_date(folder)
     if dt is not None:
         return dt.replace(hour=12, minute=0, second=0)
     for m in _FOLDER_MDY_RE.finditer(folder):
-        try:
-            d = datetime.date(int(m[3]), int(m[1]), int(m[2]))
-        except ValueError:
-            continue
-        if 1990 <= d.year and d <= datetime.date.today():
+        a, b, y = int(m[1]), int(m[2]), int(m[3])
+        d = _plausible(y, a, b) or _plausible(y, b, a)
+        if d:
+            return datetime.datetime.combine(d, datetime.time(12, 0, 0))
+    for m in _FOLDER_MONTH_DY_RE.finditer(folder):
+        d = _plausible(int(m[3]), _MONTHS[m[1].lower()], int(m[2]))
+        if d:
+            return datetime.datetime.combine(d, datetime.time(12, 0, 0))
+    for m in _FOLDER_D_MONTH_Y_RE.finditer(folder):
+        d = _plausible(int(m[3]), _MONTHS[m[2].lower()], int(m[1]))
+        if d:
             return datetime.datetime.combine(d, datetime.time(12, 0, 0))
     return None
 
@@ -598,8 +632,8 @@ def scan(root: str) -> list:
     """Return a list of plan dicts for every file under root."""
     rows = []
     for folder, name, full in iter_media(root):
-        m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', folder)
-        folder_date = datetime.date(int(m[1]), int(m[2]), int(m[3])) if m else None
+        folder_dt = _folder_name_date(folder)
+        folder_date = folder_dt.date() if folder_dt else None
         ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
         meta = read_metadata(full, ftype)
         dt = meta['date_taken']
@@ -1245,10 +1279,11 @@ def sync_timestamps(root: str) -> dict:
 # ---------------- Flatten into root ----------------
 
 def flatten(root: str, dry_run: bool = False) -> dict:
-    """Move dated files up from their subfolder into root, then remove the
-    subfolders that end up empty. Undated files are left in place, except
-    inside the _ads folder: ads rarely have a Date Taken, so there every file
-    moves up from its subfolder into _ads itself, dated or not."""
+    """Move dated files up from their subfolder into root, then move the
+    subfolders that end up empty into _empty_folders. Undated files are left
+    in place, except inside the _ads folder: ads rarely have a Date Taken, so
+    there every file moves up from its subfolder into _ads itself, dated or
+    not."""
     counts = Counter()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     gone = set()  # paths moved or removed, so a dry run can tell what empties
@@ -1375,26 +1410,50 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             counts['orphan-sidecars-deleted'] += 1
             print(f"{verb} (sidecar with no file): {rel}")
 
-    verb = 'WOULD REMOVE EMPTY' if dry_run else 'REMOVED EMPTY'
     # Incomplete files stay in their dated folders: the name is their only date
-    kept = tuple(os.path.join(root, d) + os.sep for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR))
+    kept = tuple(os.path.join(root, d) + os.sep
+                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR))
+    empty = []
     for dirpath, _dirs, _files in os.walk(root, topdown=False):
         if dirpath in (root, ads) or (dirpath + os.sep).startswith(kept):
             continue
         if any(os.path.join(dirpath, e) not in gone for e in os.listdir(dirpath)):
             counts['folders-kept'] += 1
             continue
+        gone.add(dirpath)
+        empty.append(dirpath)
+    _quarantine_empty_folders(root, empty, dry_run, counts)
+    return dict(counts)
+
+
+def _quarantine_empty_folders(root: str, empty: list, dry_run: bool, counts: Counter) -> None:
+    """Move the folders in empty (each holding nothing but other folders in
+    empty) into root/_empty_folders at their path relative to root, instead
+    of deleting them. Only the topmost of a nested run is moved; its empty
+    subfolders go with it. A path already taken in _empty_folders gets a
+    " (2)", " (3)" ... ending."""
+    verb = 'WOULD MOVE EMPTY' if dry_run else 'MOVED EMPTY'
+    empty_set = set(empty)
+    for d in sorted(empty):
+        if os.path.dirname(d) in empty_set:
+            continue
+        rel = os.path.relpath(d, root)
+        dst = base = os.path.join(root, EMPTY_FOLDERS_DIR, rel)
+        n = 2
+        while os.path.exists(dst):
+            dst = f"{base} ({n})"
+            n += 1
+        nested = sum(1 for e in empty_set if e == d or e.startswith(d + os.sep))
         if not dry_run:
             try:
-                os.rmdir(dirpath)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.move(d, dst)
             except OSError as e:
-                counts['folders-kept'] += 1
-                print(f"FAILED to remove {dirpath}: {e}", file=sys.stderr)
+                counts['folders-kept'] += nested
+                print(f"FAILED to move {d}: {e}", file=sys.stderr)
                 continue
-        gone.add(dirpath)
-        counts['folders-removed'] += 1
-        print(f"{verb}: {dirpath}")
-    return dict(counts)
+        counts['empty-folders-moved'] += nested
+        print(f"{verb}: {rel} -> {os.path.relpath(dst, root)}")
 
 
 # ---------------- Opposite type report ----------------
@@ -2155,7 +2214,7 @@ def main(argv=None):
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install imageio-ffmpeg). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
-    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then delete the emptied subfolders. Inside _ads, files move up into _ads itself even with no Date Taken.')
+    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, files still in _incomplete, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')

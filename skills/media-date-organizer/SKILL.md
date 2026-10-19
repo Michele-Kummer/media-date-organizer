@@ -50,7 +50,7 @@ Writes the audit workbook (`<root folder name>_<photos|videos>_media_audit_<date
 ### Phase 3 — Write Date Taken where it's missing
 `python scripts/organize.py --root "<MediaRoot>" --fill-blanks`. For every file in `<MediaRoot>` and every subfolder at any depth whose Date Taken is blank:
 - If the filename contains a date (e.g. Snapchat exports `2023-12-20_<id>-main.jpg`, or `IMG_20231220_142355.jpg`), write that as `DateTimeOriginal` (JPEG, PNG, TIFF), using the time from the name if present, else `12:00:00`.
-- Otherwise, if the containing folder is named `YYYY-MM-DD`, write `DateTimeOriginal = <folder-date> 12:00:00`.
+- Otherwise, if the containing folder's name holds a date (`2019-08-30`, `20190830`, `2026-08-19 11-44-31`, `08-19-2026` read month first, `30-08-2019` read day first only when the first number cannot be a month, `Aug 19 2026`, `19 August 2026`), write `DateTimeOriginal = <folder-date> 12:00:00`.
 - The file's modified time is never used as a source — it usually reflects the import, not the capture.
 - JPEGs get the EXIF segment swapped in place; the image data is not re-encoded.
 - HEIC/MOV files are written with `exiftool` when it is installed (on PATH, or in winget's default folder). Without it they are flagged as `SKIPPED (needs exiftool)` — offer to install it (`winget install --id OliverBetz.ExifTool -e --source winget`), or convert HEIC → JPEG in Phase 4.
@@ -83,7 +83,7 @@ Writes the audit workbook (`<root folder name>_<photos|videos>_media_audit_<date
 `python scripts/organize.py --root "<MediaRoot>" --sync-timestamps`. Looks at every file in `<MediaRoot>` and every subfolder at any depth. Sets each file's "Date Created" to its EXIF Date Taken, and its "Date Modified" too **but only for files that look unedited**. An "unedited" file is one whose EXIF `DateTime` tag (file-level modify time) equals `DateTimeOriginal` (or is missing) AND whose EXIF `Software` tag does not match a known editor (Photoshop, Lightroom, Camera Raw, GIMP, Affinity, Luminar, Pixelmator, Snapseed, VSCO, Instagram). Files that fail the check keep their "Date Modified" (it records when they were edited) and get only "Date Created" set, listed as `SYNCED created only (edited)` and counted as `created-only-edited`. Files with no Date Taken are not touched. "Date Created" is set through the Win32 `SetFileTime` API, so on non-Windows systems only "Date Modified" is synced (reported as `created-unsupported`) and edited files are skipped.
 
 ### Phase 7 — Flatten into the root folder (optional)
-`python scripts/organize.py --root "<MediaRoot>" --flatten`. Moves every file that has a Date Taken up one level, out of its `YYYY-MM-DD` subfolder and into `<MediaRoot>` itself, then deletes the subfolders left empty. Preview first with `--flatten --dry-run`, which lists every move and folder removal without touching anything.
+`python scripts/organize.py --root "<MediaRoot>" --flatten`. Moves every file that has a Date Taken up one level, out of its `YYYY-MM-DD` subfolder and into `<MediaRoot>` itself, then moves the subfolders left empty into `<MediaRoot>/_empty_folders`, keeping their path, instead of deleting them (`MOVED EMPTY`, counted as `empty-folders-moved`; a path already there gets a ` (2)` ending). Every phase ignores `_empty_folders`. Preview first with `--flatten --dry-run`, which lists every move, including the folders that would go into `_empty_folders`, without touching anything.
 - Files with no Date Taken are left where they are — the folder name may be the only record of their date — so their folders are kept.
 - Exception: inside `<MediaRoot>/_ads`, every file moves up from its subfolder into `_ads` itself whether or not it has a Date Taken (ads rarely do), counted as `ads-moved`. A name already taken in `_ads` gets a `_<subfolder-name>` suffix, which keeps the date the ad was filed under.
 - Camcorder videos (`.m2ts`, `.mts`) and older MPEG, Windows Media and AVI videos (`.mpg`, `.mpeg`, `.wmv`, `.avi`) are flattened too, going by the date in the filename (`20180116122434.m2ts`, `WP_20130807_002.mpg`), since their internal date is not read. One with no date in its name goes by the date in its subfolder's name (`2018-01-16`, `7-17-2014`) and has that date appended as it moves (`7-17-2014/SDC13837.AVI` → `SDC13837_2014-07-17.AVI`), counted as `dated-from-folder`, so the date survives the folder being removed. One with neither is `LEFT (no date in filename or folder name)`; one that is empty or all null bytes is `LEFT (no video data)`.
@@ -130,7 +130,7 @@ Best run before Phase 3 so ads are not dated and moved with the real photos and 
 `python scripts/organize.py --root "<MediaRoot>" --delete-junk`. Permanently deletes every `.AAE` file and every Windows thumbnail cache (`Thumbs.db`, `ehthumbs.db`, `ehthumbs_vista.db`, hidden or not; counted as `deleted-thumbs`) in `<MediaRoot>` and every subfolder, `_ads` and `_incomplete` included. Thumbnail caches are matched by whole file name only, so a photo such as `west sucking thumb.jpg` is never touched. These are the edit-instruction sidecars an iPhone exports next to a photo (`IMG_1234.AAE`); they contain no image and nothing on Windows reads them. It also deletes macOS `._` sidecars (`._IMG_1234.png` beside `IMG_1234.png`; counted as `deleted-mac-sidecars`), the metadata stubs a Mac writes when copying to a non-Mac drive. A file counts as one only when its name starts with `._` and its contents open with the AppleDouble signature, so a real picture with such a name is never touched. Preview first with `--delete-junk --dry-run`. This is a real delete, not a move — confirm with the user before running it or `--all`.
 
 ### Cleanup
-Remind the user to run `scripts/Cleanup-Pictures.ps1 -Path "<MediaRoot>"` at the end. It removes duplicate base-name files (keeps the preferred format: HEIC > JPG > MOV > … > PNG) and empty folders.
+Remind the user to run `scripts/Cleanup-Pictures.ps1 -Path "<MediaRoot>"` at the end. It removes duplicate base-name files (keeps the preferred format: HEIC > JPG > MOV > … > PNG) and moves empty folders into `_empty_folders` (not deleted).
 
 ## Output
 
@@ -143,7 +143,7 @@ Everything writes to one audit workbook per day, `<root folder name>_<photos|vid
 
 End the response with:
 
-1. A short summary of counts (extensions corrected, dates written, files converted, files moved, timestamps synced, files flattened and folders removed, ad files quarantined, incomplete files moved).
+1. A short summary of counts (extensions corrected, dates written, files converted, files moved, timestamps synced, files flattened and empty folders moved to `_empty_folders`, ad files quarantined, incomplete files moved).
 2. A reminder to run `.\Cleanup-Pictures.ps1` from `<MediaRoot>` (and any extra PowerShell for leftovers the sandbox could not delete).
 3. A link to the audit XLSX.
 
@@ -157,4 +157,5 @@ End the response with:
 - `--delete-junk` (and so `--all`) permanently deletes `.AAE` sidecars, `Thumbs.db` thumbnail caches and macOS `._` sidecars; the only other deletion `organize.py` makes is `--flatten` removing `.modd`/`.moff` sidecars whose file is gone.
 - Incomplete files are moved to `_incomplete` in their dated folders, never deleted.
 - Ad images and videos are quarantined in `_ads`, never deleted. Deleting that folder is the user's call after they have looked through it.
+- Empty folders are moved into `_empty_folders`, never deleted. Deleting that folder is the user's call.
 - Timestamp sync only touches files that pass the unedited-heuristic. Edited files are skipped and reported, never silently overwritten.

@@ -72,6 +72,37 @@ class SmokeTests(unittest.TestCase):
         self.assertIn(f'{self.root.name}_photos_media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'.lower(),
                       names(self.root))
 
+    def test_folder_names_in_common_date_formats_are_read(self):
+        noon = lambda y, m, d: datetime.datetime(y, m, d, 12, 0, 0)
+        for folder, want in [
+            ('2019-08-30', noon(2019, 8, 30)),
+            ('2019_08_30', noon(2019, 8, 30)),
+            ('20190830', noon(2019, 8, 30)),
+            ('2026-08-19 11-44-31', noon(2026, 8, 19)),
+            ('08-19-2026', noon(2026, 8, 19)),
+            ('8.19.2026', noon(2026, 8, 19)),
+            ('Trip 11-11-2019', noon(2019, 11, 11)),
+            ('30-08-2019', noon(2019, 8, 30)),       # not a month first, so day first
+            ('Aug 19 2026', noon(2026, 8, 19)),
+            ('August 19, 2026', noon(2026, 8, 19)),
+            ('19 August 2026', noon(2026, 8, 19)),
+            ('2014', None),
+            ('2013 West', None),
+            ('Day 1', None),
+        ]:
+            self.assertEqual(organize._folder_name_date(folder), want, folder)
+
+    def test_apply_moves_reads_folder_dates_with_a_time_or_month_first(self):
+        taken = datetime.datetime(2024, 8, 28, 10, 19, 44)
+        make_image(self.root / '2026-08-19 11-44-31' / 'a.jpg', taken=taken)
+        make_image(self.root / '08-28-2024' / 'b.jpg', taken=taken)
+
+        plan = {r['current_name']: r for r in organize.scan(str(self.root))}
+
+        self.assertEqual(plan['a.jpg']['action'], 'move')
+        self.assertEqual(plan['a.jpg']['target_folder'], '2024-08-28')
+        self.assertEqual(plan['b.jpg']['action'], 'keep')
+
     def test_all_cleans_dates_converts_and_moves(self):
         day = self.root / '2020-01-01'
         make_image(day / 'wrong.jpg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))
@@ -296,7 +327,39 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('a_2020-01-02.jpg', names(self.root))
         self.assertFalse((self.root / '2020-01-01').exists())
         self.assertFalse((self.root / '2020-01-02').exists())
+        # Emptied folders are set aside, not deleted
+        self.assertEqual(names(self.root / '_empty_folders'), ['2020-01-01', '2020-01-02'])
         self.assertEqual(names(self.root / 'misc'), ['undated.jpg'])
+
+    def test_flatten_moves_nested_empty_folders_aside_once_and_never_overwrites(self):
+        taken = datetime.datetime(2020, 1, 1, 10, 0, 0)
+        day = self.root / '2020-01-01'
+        make_image(day / 'a.jpg', taken=taken)
+        make_image(day / 'b.jpg', taken=taken)
+        (day / 'Edits' / 'Old').mkdir(parents=True)
+        (self.root / '_empty_folders' / '2020-01-01').mkdir(parents=True)   # from an earlier run
+
+        code, out = run(self.root, '--flatten', '--dry-run')
+        self.assertEqual(code, 0)
+        self.assertIn('WOULD MOVE EMPTY', out)
+        self.assertTrue((day / 'a.jpg').exists())
+
+        code, out = run(self.root, '--flatten')
+
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(n for n in names(self.root) if n.endswith('.jpg')), ['a.jpg', 'b.jpg'])
+        self.assertFalse(day.exists())
+        # The whole emptied tree moves as one, beside the earlier one
+        moved = self.root / '_empty_folders' / '2020-01-01 (2)'
+        self.assertEqual(names(moved), ['edits'])
+        self.assertEqual(names(moved / 'Edits'), ['old'])
+        self.assertIn('"empty-folders-moved": 3', out)
+
+        # _empty_folders is a holding folder: a second run leaves it alone
+        code, out = run(self.root, '--flatten')
+        self.assertEqual(code, 0)
+        self.assertTrue(moved.is_dir())
+        self.assertNotIn('MOVED EMPTY', out)
 
     def test_duplicate_checks_tell_copies_from_different_pictures(self):
         day = self.root / '2020-01-01'

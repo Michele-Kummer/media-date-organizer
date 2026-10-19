@@ -1,5 +1,5 @@
 ---
-description: Move every dated photo and video up out of its subfolder into the media folder itself, then delete the subfolders left empty.
+description: Move every dated photo and video up out of its subfolder into the media folder itself, then move the subfolders left empty into _empty_folders.
 argument-hint: <path-to-media-folder>
 ---
 
@@ -21,10 +21,10 @@ Move the dated photos and videos in `$ARGUMENTS` up one level, out of their subf
 - Camcorder videos (`.m2ts`, `.mts`) and older MPEG, Windows Media and AVI videos (`.mpg`, `.mpeg`, `.wmv`, `.avi`) move up as well, going by the date in the filename. One with no date in its name goes by the date in its subfolder's name and has that date appended (`7-17-2014/SDC13837.AVI` → `SDC13837_2014-07-17.AVI`). Ones with neither, or holding no data, stay.
 - Sony `.modd`/`.moff` sidecar files move with the file they belong to. A sidecar whose file is not beside it is permanently deleted; the dry run lists these as `WOULD DELETE (sidecar with no file)`, so share that list before running for real.
 - A name already taken in the root gets a `_<date-taken>` suffix; if that is taken as well, the file is skipped and reported.
-- Subfolders left empty are deleted. Folders still holding anything are kept.
+- Subfolders left empty are moved into `_empty_folders` inside the media folder, keeping their path, instead of being deleted (a path already there gets a ` (2)` ending). Folders still holding anything are kept. The user can delete `_empty_folders` once they have looked at it.
 - It ends with an `OPPOSITE TYPE` line saying how many files of the less common kind `$ARGUMENTS` itself holds once flattened (videos in a photo folder, or photos in a video folder). Tell the user that number.
 
 ## Deliverables
 
 - The run (and the dry run) is recorded in the Run log and Run counts sheets of the audit workbook (`<folder name>_<photos|videos>_media_audit_<date>.xlsx`) at the root of `$ARGUMENTS`.
-- Summary message with counts (moved, ads moved, sidecars moved, orphan sidecars deleted, renamed, left undated, folders removed, folders kept, videos in photo folder or photos in video folder).
+- Summary message with counts (moved, ads moved, sidecars moved, orphan sidecars deleted, renamed, left undated, empty folders moved, folders kept, videos in photo folder or photos in video folder).

@@ -27,6 +27,7 @@
   "commands": [
     "./commands/fix-media-dates.md",
     "./commands/flatten-media.md",
-    "./commands/report-opposite-type.md"
+    "./commands/report-opposite-type.md",
+    "./commands/media-help.md"
   ]
 }
