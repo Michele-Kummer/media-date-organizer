@@ -9,8 +9,12 @@ Ensure every photo and video in `$ARGUMENTS` has a readable Date Taken (Media Cr
 
 ## Prereq (first run only)
 
+Python 3.9 or later, then:
+
 ```bash
 pip install -r requirements.txt
+# or:
+pip install "pillow>=10.0" "openpyxl>=3.1"
 ```
 
 ## Steps

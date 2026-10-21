@@ -17,7 +17,7 @@ Reports the oddities left behind once the media-date-organizer phases have run, 
 
 2. **Run.** If the preview lists any `WOULD RENAME AUDIT FILE` lines, tell the user which workbooks will be renamed, and after they confirm run it without `--dry-run`. If it lists none, the preview is the report and there is nothing more to run.
 
-The script lives in the media-date-organizer skill and needs the same packages (`pip install pillow openpyxl`).
+The script lives in the media-date-organizer skill and needs the same packages (Python 3.9+, `pip install "pillow>=10.0" "openpyxl>=3.1"`).
 
 ## What it reports
 

@@ -80,7 +80,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         needed. A photo is compared as one picture, a video
                         by four frames and its length. Runs entirely on this
                         computer; videos need ffmpeg (pip install
-                        imageio-ffmpeg). The confidence level gets its own
+                        "imageio-ffmpeg>=0.5"). The confidence level gets its own
                         column in the audit workbook's Run log. Nothing is
                         moved or deleted.
     --sync-timestamps   Set each file's "Date Created" to its EXIF Date Taken,
@@ -197,9 +197,10 @@ and photos or videos whichever kind the root holds more of: runs on the
 same day share a workbook, a new day starts a new one. Close it in Excel
 before running, or the run cannot be recorded.
 
-Dependencies: Pillow (`pip install pillow`) and, for the audit workbook,
-openpyxl (`pip install openpyxl`). Scanning works without openpyxl — the XLSX
-step is skipped with a clear message if it's missing. exiftool is optional:
+Dependencies: Python 3.9+, Pillow 10.0+ (`pip install "pillow>=10.0"`) and,
+for the audit workbook, openpyxl 3.1+ (`pip install "openpyxl>=3.1"`).
+Scanning works without openpyxl — the XLSX step is skipped with a clear
+message if it's missing. exiftool is optional:
 when present (on PATH, or in winget's default folder) --fill-blanks uses it
 for HEIC and video files. Install with `winget install OliverBetz.ExifTool`.
 """
@@ -220,12 +221,15 @@ import sys
 from collections import Counter
 from typing import Optional
 
+if sys.version_info < (3, 9):
+    sys.exit(f"Python 3.9 or later is needed; this is {sys.version.split()[0]}")
+
 try:
     from PIL import Image, ImageChops, ImageStat
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
-    print("WARNING: Pillow is not installed. Install with: pip install pillow", file=sys.stderr)
+    print('WARNING: Pillow is not installed. Install with: pip install "pillow>=10.0"', file=sys.stderr)
 
 
 # ---------------- Format detection ----------------
@@ -871,7 +875,7 @@ def _visual_pictures(ffmpeg: Optional[str], path: str) -> tuple:
     ftype = detect_type(path) or pathlib.Path(path).suffix.lower()
     if ftype in VIDEO_EXTS:
         if ffmpeg is None:
-            raise ValueError('ffmpeg is needed to compare videos (pip install imageio-ffmpeg)')
+            raise ValueError('ffmpeg is needed to compare videos (pip install "imageio-ffmpeg>=0.5")')
         return _video_frames(ffmpeg, path)
     with Image.open(path) as img:
         return None, [img.convert('RGB')]
@@ -918,7 +922,7 @@ def visual_compare(root: str, plan: list) -> dict:
     (see _format_pairs). Byte-identical pairs need no pixel comparison."""
     counts = Counter()
     if not HAS_PIL:
-        print("FAILED: Pillow is needed to compare pictures (pip install pillow)", file=sys.stderr)
+        print("FAILED: Pillow is needed to compare pictures (pip install \"pillow>=10.0\")", file=sys.stderr)
         return {'failed': 1}
     ffmpeg = _find_ffmpeg()
     seen = set()
@@ -984,7 +988,7 @@ def _write_exif_date_image(path: str, dt: datetime.datetime) -> None:
     JPEGs get the EXIF segment swapped in place (no re-encode, no quality
     loss); other formats are re-saved through Pillow."""
     if not HAS_PIL:
-        raise RuntimeError("Pillow is required to write EXIF; pip install pillow")
+        raise RuntimeError("Pillow is required to write EXIF; pip install \"pillow>=10.0\"")
     ds = dt.strftime("%Y:%m:%d %H:%M:%S")
     tmp = path + '.tmp'
     with Image.open(path) as img:
@@ -1945,7 +1949,7 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.utils import get_column_letter
     except ImportError:
-        print("openpyxl not installed; skipping XLSX report. (pip install openpyxl)", file=sys.stderr)
+        print("openpyxl not installed; skipping XLSX report. (pip install \"openpyxl>=3.1\")", file=sys.stderr)
         return
     # Keep the run log sheets of an existing workbook; only the scan sheets
     # are rebuilt
@@ -2047,7 +2051,7 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
     try:
         from openpyxl.styles import Font
     except ImportError:
-        print("openpyxl not installed; run not recorded in the audit workbook. (pip install openpyxl)", file=sys.stderr)
+        print("openpyxl not installed; run not recorded in the audit workbook. (pip install \"openpyxl>=3.1\")", file=sys.stderr)
         return
     wb = _open_audit(xlsx)
 
@@ -2212,7 +2216,7 @@ def main(argv=None):
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
-    ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install imageio-ffmpeg). Changes nothing. Not part of --all.')
+    ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')

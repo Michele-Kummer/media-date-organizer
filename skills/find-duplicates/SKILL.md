@@ -15,7 +15,7 @@ Reports photos and videos that are the same file twice, or likely the same pictu
 
 `python skills/find-duplicates/scripts/find_duplicates.py --root "<MediaRoot>"`
 
-Nothing is changed, so no confirmation is needed. The script borrows its date reading and picture comparing from the media-date-organizer skill's `organize.py`, so that skill must sit beside this one, and it needs the same packages (`pip install pillow openpyxl`). Comparing videos also needs ffmpeg (`pip install imageio-ffmpeg`).
+Nothing is changed, so no confirmation is needed. The script borrows its date reading and picture comparing from the media-date-organizer skill's `organize.py`, so that skill must sit beside this one, and it needs the same packages (Python 3.9+, `pip install "pillow>=10.0" "openpyxl>=3.1"`). Comparing videos also needs ffmpeg (`pip install "imageio-ffmpeg>=0.5"`).
 
 A whole `D:\Pictures` can take a while: every file's date is read, and files that share a size are read in full.
 

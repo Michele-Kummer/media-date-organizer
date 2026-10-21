@@ -33,7 +33,7 @@ same kind (two photos, or two videos) are compared when they share any of:
 Pairs that turn out to be different pictures (burst shots taken in the same
 second, two cameras that both used IMG_0001) are counted, not listed. Videos
 are compared by four frames and their length, which needs ffmpeg
-(pip install imageio-ffmpeg); without it, matching videos are listed as
+(pip install "imageio-ffmpeg>=0.5"); without it, matching videos are listed as
 POSSIBLE.
 
 The run is appended to the Run log and Run counts sheets of the audit
@@ -141,10 +141,10 @@ def _signature(path: str, kind: str) -> tuple:
     edge = organize.VISUAL_COMPARE_EDGE
     try:
         if not organize.HAS_PIL:
-            raise ValueError('Pillow is needed to compare pictures (pip install pillow)')
+            raise ValueError('Pillow is needed to compare pictures (pip install "pillow>=10.0")')
         if kind == 'video':
             if _ffmpeg() is None:
-                raise ValueError('ffmpeg is needed to compare videos (pip install imageio-ffmpeg)')
+                raise ValueError('ffmpeg is needed to compare videos (pip install "imageio-ffmpeg>=0.5")')
             length, frames = organize._video_frames(_ffmpeg(), path)
             width, height = frames[0].size
         else:

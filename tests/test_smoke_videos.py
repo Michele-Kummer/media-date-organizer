@@ -1,6 +1,6 @@
 """Smoke tests for how organize.py handles videos. Small test videos are
 generated with ffmpeg, so these are skipped when ffmpeg is not available
-(pip install imageio-ffmpeg); the date-writing test also needs exiftool.
+(pip install "imageio-ffmpeg>=0.5"); the date-writing test also needs exiftool.
 
 Run from the repository root:
     py -m unittest discover tests -v
@@ -39,7 +39,7 @@ def media_created(path):
     return organize.read_metadata(str(path), organize.detect_type(str(path)))['date_taken']
 
 
-@unittest.skipUnless(FFMPEG, 'ffmpeg is needed to generate test videos (pip install imageio-ffmpeg)')
+@unittest.skipUnless(FFMPEG, 'ffmpeg is needed to generate test videos (pip install "imageio-ffmpeg>=0.5")')
 class VideoSmokeTests(unittest.TestCase):
 
     @classmethod

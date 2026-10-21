@@ -9,12 +9,12 @@ Ensures every photo and video has a Date Taken (Media Created for video). Seven 
 
 ## Prerequisites
 
-The scripts rely on two Python packages: `Pillow` (image handling + EXIF) and `openpyxl` (audit workbook). On first run in a fresh Python environment, install both before invoking any phase:
+The scripts need Python 3.9 or later and two Python packages: `Pillow` 10.0+ (image handling + EXIF) and `openpyxl` 3.1+ (audit workbook). On first run in a fresh Python environment, install both before invoking any phase:
 
 ```bash
 pip install -r requirements.txt
 # or:
-pip install pillow openpyxl
+pip install "pillow>=10.0" "openpyxl>=3.1"
 ```
 
 Scanning still works without `openpyxl` — only the XLSX report is skipped. Writing EXIF or converting PNG requires `Pillow`.
@@ -76,7 +76,7 @@ Writes the audit workbook (`<root folder name>_<photos|videos>_media_audit_<date
 - Pairs checked: every collision pair `--compare-collisions` covers, plus files in one folder that share a name and differ only in extension (`IMG_1.jpg` / `IMG_1.png`, the pairs `Cleanup-Pictures.ps1` would delete from).
 - Byte-identical pairs are `IDENTICAL (confidence certain)` with no comparison needed. For the rest, a photo is compared as one picture; a video by its length and by four frames taken at the same points in each file, judged on the least alike frame.
 - The pixel difference is a percentage (0 = same picture). Up to 1% is `DUPLICATE` high, up to 2% `DUPLICATE` medium, up to 10% `UNSURE` low, up to 15% `DIFFERENT` medium, above that `DIFFERENT` high. Different video lengths or picture shapes are `DIFFERENT` high outright. Two shots taken a fraction of a second apart can score under 2%, so a `DUPLICATE` verdict on files that never shared a name deserves a look.
-- Videos need ffmpeg: on PATH, or `pip install imageio-ffmpeg`.
+- Videos need ffmpeg: on PATH, or `pip install "imageio-ffmpeg>=0.5"`.
 - The audit workbook's Run log has a **Confidence** column filled in for these rows. HEIC photos cannot be compared (Pillow cannot open them) and are listed as `FAILED`.
 
 ### Phase 6 — Sync file-system timestamps (optional)
@@ -138,7 +138,7 @@ Everything writes to one audit workbook per day, `<root folder name>_<photos|vid
 
 - Every scan (`--report-only`, `--apply-moves`) rebuilds the Summary, Plan and Only-moves sheets.
 - Every run of every phase of `organize.py`, and every run of `Fix-Extensions.ps1` and `Cleanup-Pictures.ps1`, appends to two history sheets that are never cleared: **Run log** (one row per reported line: run time, phase, dry run yes/no, action such as `MOVED`, `WROTE`, `DELETED`, `FAILED`, and the detail) and **Run counts** (each phase's counts). Dry runs and `-WhatIf` previews are recorded too, marked `yes` in the Dry run column.
-- The PowerShell scripts record through `Write-AuditLog.ps1`, which needs Python with `openpyxl`.
+- The PowerShell scripts record through `Write-AuditLog.ps1`, which needs Python with `openpyxl`: `python` on PATH, or the `py` launcher.
 - If the workbook is open in Excel the run still happens but cannot be recorded; the output says `This run is NOT recorded in the audit workbook`. Tell the user to close it before the next phase.
 
 End the response with:

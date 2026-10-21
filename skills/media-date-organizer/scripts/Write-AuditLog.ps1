@@ -18,12 +18,21 @@ function Write-AuditLog {
         [switch]$DryRun
     )
     if (-not $Lines -or $Lines.Count -eq 0) { return }
-    $python = Get-Command python -ErrorAction SilentlyContinue
+    # "python" first, then the "py" launcher, which is often all a python.org
+    # install puts on PATH. The Microsoft Store stub in WindowsApps only opens
+    # the Store, so it does not count as Python.
+    $pyArgs = @()
+    $python = Get-Command python -CommandType Application -ErrorAction SilentlyContinue |
+        Where-Object { $_.Source -notlike '*\WindowsApps\*' } | Select-Object -First 1
+    if (-not $python) {
+        $python = Get-Command py -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($python) { $pyArgs += '-3' }
+    }
     if (-not $python) {
         Write-Host "Python not found; this run is NOT recorded in the audit workbook." -ForegroundColor DarkYellow
         return
     }
-    $pyArgs = @((Join-Path $PSScriptRoot 'organize.py'), '--root', $Path, '--audit-log', $Phase)
+    $pyArgs += @((Join-Path $PSScriptRoot 'organize.py'), '--root', $Path, '--audit-log', $Phase)
     if ($DryRun) { $pyArgs += '--dry-run' }
     # File names can hold non-ASCII characters; the default pipe encoding
     # would turn them into question marks
