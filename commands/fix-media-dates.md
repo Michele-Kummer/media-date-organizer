@@ -33,7 +33,7 @@ pip install "pillow>=10.0" "openpyxl>=3.1"
 
 7. **Flatten into the root folder (optional).** If the user wants the photos and videos out of their dated subfolders, preview with `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --flatten --dry-run`, then after confirming run it without `--dry-run`. Every file that has a Date Taken moves up into `$ARGUMENTS` itself and the emptied subfolders are moved into `$ARGUMENTS/_empty_folders`, keeping their path (not deleted); undated files stay put. Also available on its own as `/flatten-media`.
 
-8. **Cleanup.** Remind the user: `skills/media-date-organizer/scripts/Cleanup-Pictures.ps1 -Path "$ARGUMENTS"` removes duplicate base-name files and moves empty folders into `_empty_folders`.
+8. **Cleanup.** Remind the user: `skills/media-date-organizer/scripts/Cleanup-Pictures.ps1 -Path "$ARGUMENTS"` deletes PNGs already converted to JPG and moves empty folders into `_empty_folders`.
 
 ## Ad images and videos (optional, any time)
 

@@ -1146,7 +1146,7 @@ def _has_transparency(img) -> bool:
 def convert_pngs(root: str) -> dict:
     counts = Counter()
     if not HAS_PIL:
-        print("Pillow required for PNG conversion; pip install pillow", file=sys.stderr)
+        print('Pillow required for PNG conversion; pip install "pillow>=10.0"', file=sys.stderr)
         return {}
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(root, dirpath, dirs)
@@ -1742,7 +1742,7 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
     counts = Counter()
     if not HAS_PIL:
         # Without Pillow the camera check cannot run, and name alone is not enough
-        print("Pillow required to check for camera info; pip install pillow", file=sys.stderr)
+        print('Pillow required to check for camera info; pip install "pillow>=10.0"', file=sys.stderr)
         return {}
     verb = 'WOULD QUARANTINE' if dry_run else 'QUARANTINED'
     for dirpath, dirs, files in os.walk(root):
