@@ -103,6 +103,51 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(plan['a.jpg']['target_folder'], '2024-08-28')
         self.assertEqual(plan['b.jpg']['action'], 'keep')
 
+    def test_report_and_apply_moves_look_at_every_depth(self):
+        aug30, aug31 = datetime.datetime(2019, 8, 30, 10, 0, 0), datetime.datetime(2019, 8, 31, 10, 0, 0)
+        make_image(self.root / 'loose.jpg', taken=aug30)
+        make_image(self.root / '2019-08-30' / 'wrong.jpg', taken=aug31)
+        make_image(self.root / 'Trip' / '2019-08-30' / 'deep.jpg', taken=aug31)
+        make_image(self.root / 'Trip' / '2019-08-30' / 'right.jpg', taken=aug30)
+        make_image(self.root / 'Trip' / '2019-08-30' / 'undated.jpg')
+        make_image(self.root / '_ads' / '2019-08-30' / 'ad.jpg', taken=aug31)
+
+        plan = {r['current_name']: r for r in organize.scan(str(self.root))}
+
+        self.assertEqual(sorted(plan), ['deep.jpg', 'loose.jpg', 'right.jpg', 'undated.jpg', 'wrong.jpg'])
+        self.assertEqual((plan['loose.jpg']['current_folder'], plan['loose.jpg']['action']), ('.', 'keep'))
+        self.assertEqual(plan['wrong.jpg']['target_folder'], '2019-08-31')
+        # A deep file moves to a sibling of its own folder, not up to root
+        self.assertEqual(plan['deep.jpg']['current_folder'], 'Trip/2019-08-30')
+        self.assertEqual(plan['deep.jpg']['target_folder'], 'Trip/2019-08-31')
+        self.assertEqual(plan['right.jpg']['action'], 'keep')
+        self.assertEqual(plan['undated.jpg']['new_name'], 'undated_2019-08-30.jpg')
+
+        code, _ = run(self.root, '--apply-moves')
+
+        self.assertEqual(code, 0)
+        self.assertEqual(names(self.root / '2019-08-31'), ['wrong.jpg'])
+        self.assertEqual(names(self.root / 'Trip' / '2019-08-31'), ['deep.jpg'])
+        self.assertEqual(names(self.root / 'Trip' / '2019-08-30'), ['right.jpg', 'undated_2019-08-30.jpg'])
+        self.assertIn('loose.jpg', names(self.root))
+        self.assertEqual(names(self.root / '_ads' / '2019-08-30'), ['ad.jpg'])
+
+    def test_a_file_loose_in_a_dated_root_is_never_moved_out(self):
+        day = self.root / '2019-08-30'
+        make_image(day / 'right.jpg', taken=datetime.datetime(2019, 8, 30, 10, 0, 0))
+        make_image(day / 'other_day.jpg', taken=datetime.datetime(2019, 9, 1, 10, 0, 0))
+
+        plan = {r['current_name']: r for r in organize.scan(str(day))}
+
+        self.assertEqual(plan['right.jpg']['action'], 'keep')
+        self.assertEqual(plan['other_day.jpg']['action'], 'in-root-date-differs')
+
+        code, _ = run(day, '--apply-moves')
+
+        self.assertEqual(code, 0)
+        self.assertEqual([n for n in names(day) if n.endswith('.jpg')], ['other_day.jpg', 'right.jpg'])
+        self.assertEqual(names(self.root), ['2019-08-30'])
+
     def test_all_cleans_dates_converts_and_moves(self):
         day = self.root / '2020-01-01'
         make_image(day / 'wrong.jpg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))

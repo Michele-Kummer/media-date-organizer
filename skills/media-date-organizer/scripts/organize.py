@@ -22,7 +22,9 @@ and a summary of every phase's counts and problems is printed at the end):
                         only treated as one when its contents carry the
                         AppleDouble signature as well as the name. Add
                         --dry-run to list them without deleting anything.
-    --report-only       Scan and write audit XLSX; make no changes.
+    --report-only       Scan and write audit XLSX; make no changes. Photos
+                        and videos are found in the root and every subfolder
+                        at any depth.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
                         are missing Date Taken. Uses a date embedded in the
                         filename (e.g. 2023-12-20_<id>-main.jpg,
@@ -58,7 +60,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         A suffix is never added to a file that has a date
                         and never stripped from any file. Extensions are
                         left exactly as they are, case included; correcting
-                        them is Fix-Extensions.ps1's job.
+                        them is Fix-Extensions.ps1's job. Works at any depth:
+                        Trip/2019-08-30/x.jpg taken on the 31st moves to
+                        Trip/2019-08-31. A file loose in the root is never
+                        moved out of it.
     --compare-collisions
                         Report only; not part of --all. For every file
                         --apply-moves skips as a COLLISION (its name is
@@ -633,41 +638,53 @@ def _video_fallback_date(name: str, folders: list) -> tuple:
 
 
 def scan(root: str) -> list:
-    """Return a list of plan dicts for every file under root."""
+    """Return a list of plan dicts for every photo and video in root and
+    every subfolder at any depth, holding folders excepted. current_folder
+    is the path from root with '/' between folders, '.' for root itself.
+
+    A file is checked against the date in the name of the folder it sits in
+    (root's own name for a file loose in root). One in the wrong folder moves
+    to a sibling folder named for its date: Trip/2019-08-30/x.jpg taken on
+    the 31st goes to Trip/2019-08-31. A file loose in root is never moved out
+    of it; one whose date differs from a dated root is listed as
+    'in-root-date-differs'."""
     rows = []
-    for folder, name, full in iter_media(root):
-        folder_dt = _folder_name_date(folder)
+    for _label, name, full, ftype, folders in _iter_media_deep(root):
+        parts = folders[-2::-1]            # path from root, root's own name left off
+        folder = '/'.join(parts) or '.'
+        folder_dt = _folder_name_date(folders[0])
         folder_date = folder_dt.date() if folder_dt else None
-        ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
         meta = read_metadata(full, ftype)
         dt = meta['date_taken']
         # The name is kept as it is: a _YYYY-MM-DD ending is never stripped,
         # and the extension is Fix-Extensions.ps1's business
         p = pathlib.Path(name)
-        fallback_source = _fallback_date(name, folder)[1] if dt is None else None
+        # The same date source --fill-blanks would use
+        if dt is not None:
+            fill_dt, fallback_source = None, None
+        elif ftype in VIDEO_EXTS:
+            fill_dt, fallback_source = _video_fallback_date(name, folders)
+        else:
+            fill_dt, fallback_source = _fallback_date(name, folders[0])
+        target_folder = folder
+        new_name = name
         if fallback_source == 'filename':
             action = 'fill-blank'
-            target_folder = folder
-            new_name = name
         elif fallback_source == 'folder':
             action = 'fill-blank'
-            target_folder = folder
             # No date inside the file: the folder's date goes into the name,
             # once, so it survives the file leaving the folder
-            dated = f"_{folder_date.isoformat()}"
+            dated = f"_{fill_dt.date().isoformat()}"
             new_name = name if p.stem.endswith(dated) else f"{p.stem}{dated}{p.suffix}"
         elif dt is None:
             action = 'skip-no-folder-date'
-            target_folder = folder
-            new_name = name
         elif folder_date is None or dt.date() == folder_date:
             action = 'keep'
-            target_folder = folder
-            new_name = name
+        elif not parts:
+            action = 'in-root-date-differs'
         else:
             action = 'move'
-            target_folder = dt.date().isoformat()
-            new_name = name
+            target_folder = '/'.join(parts[:-1] + [dt.date().isoformat()])
         rows.append({
             'current_folder': folder,
             'current_name': name,

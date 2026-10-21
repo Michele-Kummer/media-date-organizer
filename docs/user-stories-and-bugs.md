@@ -25,13 +25,13 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 7 |
-| User stories | 25 (18 Done, 7 Partly done) |
-| Bugs | 24 (4 open, 20 resolved) |
+| User stories | 25 (19 Done, 6 Partly done) |
+| Bugs | 24 (3 open, 21 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
 | Michele Kummer | 0 | 6 | 6 |
-| Claude | 4 | 14 | 18 |
+| Claude | 3 | 15 | 18 |
 | Automated tests | 0 | 0 | 0 |
 
 ---
@@ -94,10 +94,12 @@ As a media owner, I want photos and videos whose extension does not match their 
 As a media owner, I want a report of every photo's and video's real date and what would happen to it, so that I can decide before anything changes.
 
 - `--report-only` reads photo dates from EXIF (JPEG, PNG and TIFF, and the EXIF embedded in HEIC) and video dates from the MOV/MP4 container. It needs no external tools.
-- Each file is given an action: keep, move, fill-blank or skip. The results are written to the audit workbook.
+- Photos and videos are found in the root and every subfolder at any depth, skipping `_ads`, `_incomplete` and `_empty_folders`.
+- Each file is given an action: keep, move, fill-blank or skip. A file loose in a root named for a different date is listed as `in-root-date-differs`. The results are written to the audit workbook.
+- The fill-blank date is the one `--fill-blanks` would write: for a photo, its filename or its own folder's name; for a video, its filename or the nearest folder whose name holds a full date.
 - Nothing is changed.
 
-**Status:** Partly done. Files loose in the root, or more than one folder deep, are not reported (BUG-03).
+**Status:** Done
 
 #### US-06 Fill in missing Date Taken on photos
 As a photo owner, I want photos with a blank Date Taken to get one from the best evidence available, so that they sort correctly.
@@ -143,10 +145,12 @@ Put each photo and video where its date says it belongs, then tidy the folder st
 As a media owner, I want each photo and video in a folder named for its real date, so that folder names can be trusted.
 
 - `--apply-moves` moves a photo or video whose date differs from its folder's date into a sibling `YYYY-MM-DD` folder.
+- Works at any depth. Each file is checked against the folder it sits in, and moves to a sibling of that folder: `Trip\2019-08-30\x.jpg` taken on the 31st moves to `Trip\2019-08-31`, not up to the root.
+- A file loose in the root is never moved out of it. It is checked against the root's own name; if that is a different date, it is listed as `in-root-date-differs` and left where it is.
 - A file with no date inside it, in a dated folder, gets that folder's date appended to its name (`IMG_1_2019-08-30.jpg`), so the date survives a later move.
 - A name already taken at the target is skipped as a `COLLISION` and never overwritten.
 
-**Status:** Partly done. Files loose in the root, or more than one folder deep, are not moved (BUG-03). There is no `--dry-run` preview, though `--report-only` shows the plan.
+**Status:** Partly done. There is no `--dry-run` preview, though `--report-only` shows the plan.
 
 #### US-10 Flatten dated subfolders
 As a media owner, I want every dated photo and video moved up into the media folder itself, so that I have one flat folder per year.
@@ -330,7 +334,7 @@ Change and test the plugin safely.
 #### US-24 Test without real photos or videos
 As a maintainer, I want tests that run on generated files, so that I can check a change without risking my own photos and videos.
 
-- `py -m unittest discover tests -v` runs the suite. It currently has 21 tests.
+- `py -m unittest discover tests -v` runs the suite. It currently has 23 tests.
 - `sample-data/generate.py` makes synthetic test photos. The video tests generate their own small videos with ffmpeg.
 - Video tests are skipped when ffmpeg is missing. The video date-writing test is skipped when ExifTool is missing. The Date Created test runs only on Windows.
 - The PowerShell scripts have no automated tests.
@@ -353,7 +357,7 @@ As a maintainer, I want to load my local copy into Claude Code, so that I can tr
 Severity: **High** means files are lost or the plugin can't be used. **Medium** means a wrong result, or a step that fails or stops. **Low** means a cosmetic problem, or one with a workaround.
 
 <details>
-<summary><strong>Open bugs</strong> (4, all found by Claude on 2026-10-21)</summary>
+<summary><strong>Open bugs</strong> (3, all found by Claude on 2026-10-21)</summary>
 
 Each was reproduced on synthetic files, except where noted.
 
@@ -368,20 +372,6 @@ Each was reproduced on synthetic files, except where noted.
 
 **Expected:** That file is reported as failed and the rest are synced.
 **Actual:** The step stops with a traceback, and no audit workbook is written. Under `--all`, the record of the steps that had already finished is lost too, because the workbook is written once at the end.
-
-#### BUG-03 Report and `--apply-moves` only look one folder deep
-**Severity:** Medium · **Found by:** Claude · **Affects:** photos and videos · **Where:** `iter_media` in [organize.py](../skills/media-date-organizer/scripts/organize.py)
-
-`scan` looks only at photos and videos exactly one folder below the root. `--fill-blanks`, `--sync-timestamps`, `--flatten` and `--convert-png` work at any depth.
-
-**Steps to reproduce**
-1. Create `root\loose.jpg`, `root\2019-08-30\wrong.jpg` and `root\Trip\2019-08-30\deep.jpg`, each with a Date Taken. (A `.mov` in the same places behaves the same way.)
-2. Run `--report-only`.
-
-**Expected:** All three files are in the report.
-**Actual:** Only `wrong.jpg` is reported.
-
-**Impact:** After `--flatten`, every photo and video is loose in the root, so a later `--report-only` reports none of them.
 
 #### BUG-04 HEIF and AVIF photos are read as MP4 video
 **Severity:** Low · **Found by:** Claude · **Affects:** photos (HEIF image sequences and AVIF) · **Where:** `detect_type` in [organize.py](../skills/media-date-organizer/scripts/organize.py)
@@ -407,7 +397,7 @@ Working out today's workbook name renames an old-style `media_audit_<date>.xlsx`
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (20: 6 found by Michele Kummer, 14 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (21: 6 found by Michele Kummer, 15 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -429,10 +419,11 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-19 | Fill and sync only looked one level deep | Photos and videos | Medium | Michele Kummer | `9f23c22` |
 | BUG-20 | Plugin could not be installed | Setup | High | Michele Kummer | `9f23c22` |
 | BUG-21 | Folder dates read only from exact `YYYY-MM-DD` names | Photos and videos | Medium | Michele Kummer | `89f2044` |
-| BUG-22 | Install commands disagreed about package versions | Setup | Low | Claude | `8c6d76f` |
+| BUG-22 | Install commands disagreed about package versions | Setup | Low | Claude | `8c6d76f`, `1111480` |
 | BUG-23 | Minimum Python version stated but never checked | Setup | Low | Claude | `8c6d76f` |
 | BUG-24 | PowerShell scripts skipped the audit log without `python` on PATH | Audit workbook | Low | Claude | `8c6d76f` |
-| BUG-01 | Cleanup deleted Live Photo videos and sidecar files | Photos and videos | High | Claude | 2026-10-21 (uncommitted) |
+| BUG-01 | Cleanup deleted Live Photo videos and sidecar files | Photos and videos | High | Claude | `1111480` |
+| BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | 2026-10-21 (uncommitted) |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -515,7 +506,7 @@ Besides moving photos and videos, `--apply-moves` changed their extension to the
 #### BUG-19 Fill and sync only looked one level deep
 **Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** `9f23c22`
 
-`--fill-blanks` and `--sync-timestamps` only checked files exactly one folder below the root, so photos and videos in nested folders were missed. (BUG-03 is the same limit in `--report-only` and `--apply-moves`.)
+`--fill-blanks` and `--sync-timestamps` only checked files exactly one folder below the root, so photos and videos in nested folders were missed. (BUG-03 was the same limit in `--report-only` and `--apply-moves`, fixed later.)
 **Fix:** Both now look at every depth.
 
 #### BUG-20 Plugin could not be installed
@@ -531,7 +522,7 @@ Folders named `2026-08-19 11-44-31`, `2019_08_30`, `30-08-2019` or `Aug 19 2026`
 **Fix:** All of these forms are read. A year-only name is still not a date.
 
 #### BUG-22 Install commands disagreed about package versions
-**Found by:** Claude · **Affects:** setup · **Fixed in:** `8c6d76f`, plus two missed hints on 2026-10-21 (not yet committed)
+**Found by:** Claude · **Affects:** setup · **Fixed in:** `8c6d76f`, `1111480` (two missed hints)
 
 The two `SKILL.md` files, `commands/fix-media-dates.md` and the scripts' error messages said `pip install pillow openpyxl` with no versions. The README and `requirements.txt` require `pillow>=10.0` and `openpyxl>=3.1`.
 **Fix:** Every install hint now gives the minimum version, including `imageio-ffmpeg>=0.5`. The `--convert-png` and `--quarantine-ads` hints were missed at first and fixed later.
@@ -549,9 +540,15 @@ The README said Python 3.9+, but nothing enforced it, and the skill docs did not
 **Fix:** It tries a real `python` first, then `py -3`, and ignores the WindowsApps stub.
 
 #### BUG-01 Cleanup deleted Live Photo videos and sidecar files
-**Severity:** High (permanent data loss) · **Found by:** Claude · **Affects:** photos and videos · **Fixed:** 2026-10-21 (not yet committed)
+**Severity:** High (permanent data loss) · **Found by:** Claude · **Affects:** photos and videos · **Fixed in:** `1111480`
 
 `Cleanup-Pictures.ps1` treated any two files with the same base name in a folder as duplicates, whatever their type and content, and deleted all but one. `IMG_1234.HEIC` and `IMG_1234.MOV` (a Live Photo) lost the video, and `IMG_5555.JPG` and `IMG_5555.xmp` lost the edits. A file with an extension not on the preference list always lost, and the pass also ran inside `_ads`, `_incomplete` and `_empty_folders`.
 **Fix:** The only file it deletes now is a PNG photo with a JPG or JPEG of the same name beside it, and only when both are the same size and differ by no more than 1% in their pixels, as a `--convert-png` conversion does. Videos and sidecars are never deleted. Any other pair is kept, and a PNG whose JPG differs is listed as `KEPT (not the same picture)` with the reason. The holding folders are skipped. The `-PreferredExtOrder` parameter is gone, and `-MaxPixelDifference` is new. US-11 describes how the pictures are compared.
+
+#### BUG-03 Report and `--apply-moves` only looked one folder deep
+**Severity:** Medium · **Found by:** Claude · **Affects:** photos and videos · **Fixed:** 2026-10-21 (not yet committed)
+
+`scan` looked only at photos and videos exactly one folder below the root, while `--fill-blanks`, `--sync-timestamps`, `--flatten` and `--convert-png` work at any depth. With `root\loose.jpg`, `root\2019-08-30\wrong.jpg` and `root\Trip\2019-08-30\deep.jpg`, `--report-only` reported only `wrong.jpg`. After `--flatten`, every file is loose in the root, so a later report listed none of them. `--apply-moves`, `--compare-collisions` and `--visual-compare` use the same scan, so they missed the same files.
+**Fix:** `scan` walks the root and every subfolder at any depth, skipping the holding folders, like `--fill-blanks`. Each file is checked against the folder it sits in and moves to a sibling of that folder (`Trip\2019-08-31`). A file loose in the root is never moved out of it; one whose date differs from a dated root is listed as `in-root-date-differs`. The fill-blank date now comes from the same source `--fill-blanks` uses, so a video gets the nearest dated folder. Two tests cover it, and both fail on the old code.
 
 </details>
