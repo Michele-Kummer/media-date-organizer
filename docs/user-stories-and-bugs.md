@@ -25,12 +25,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 7 |
-| User stories | 27 (25 Done, 2 Partly done) |
-| Bugs | 24 (2 open, 22 resolved) |
+| User stories | 28 (26 Done, 2 Partly done) |
+| Bugs | 25 (2 open, 23 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 6 | 6 |
+| Michele Kummer | 0 | 7 | 7 |
 | Claude | 2 | 16 | 18 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -220,7 +220,7 @@ As a media owner, I want files that hold no picture or recording deleted, so tha
 </details>
 
 <details>
-<summary><strong>Epic 5 — Check and report, without changing anything</strong> (US-15 to US-18)</summary>
+<summary><strong>Epic 5 — Check and report, without changing anything</strong> (US-15 to US-18, US-28)</summary>
 
 Reports that show duplicates, misfiled files and anything left over.
 
@@ -266,6 +266,17 @@ As a media owner, I want one report of everything still needing attention, so th
   - name collisions;
   - audit workbooks left behind.
 - Its only change is renaming audit workbooks so their name includes the folder and media type, and only with `--apply`.
+
+**Status:** Done
+
+#### US-28 Find plist files saved with a photo name
+As a media owner, I want to know which of my "photos" are really plist or XMP files, such as an iPhone `.AAE` edit file saved as `IMG_E5239.JPG`, so that I can decide whether to keep or delete them, instead of seeing date-writing fail on them.
+
+- `--find-plists` searches the folder at every depth, holding folders included, and lists each file with a photo or video name that holds plist (XML or binary), XMP or other XML text, as `NOT MEDIA (plist file named .JPG): 2023-08-07/IMG_E5239.JPG`. It counts them by kind.
+- Real photos and videos are never listed: they never start with `<` or `bplist`.
+- Every other step reports these files as `NOT MEDIA (... left alone)` and skips them. `--fill-blanks` no longer reports `FAILED to write`, `--convert-png` does not try to convert them, and `--apply-moves` gives them no date suffix (BUG-25). `Fix-Extensions.ps1` reports `NOT MEDIA (plist)` instead of `UNKNOWN`.
+- Nothing is moved, renamed or deleted. The user decides.
+- `tests/test_plists.py` covers each of these.
 
 **Status:** Done
 
@@ -342,7 +353,7 @@ As a media owner, I want every step that changes my photos and videos to preview
 - Every `organize.py` step that writes, converts, moves, renames or deletes files lists what it would do (`WOULD WRITE`, `WOULD CONVERT`, `WOULD MOVE`, `WOULD SYNC`, `WOULD DELETE`, ...) and changes nothing unless `--apply` is given. This covers `--delete-junk`, `--move-incomplete`, `--quarantine-ads`, `--fill-blanks`, `--convert-png`, `--apply-moves`, `--sync-timestamps`, `--flatten`, `--final-check` and `--all`.
 - A dry run ends with `DRY RUN: nothing was changed. Run the same command again with --apply to make these changes.`
 - `Fix-Extensions.ps1` and `Cleanup-Pictures.ps1` preview unless `-Apply` is given. `-WhatIf` still works.
-- Reports (`--report-only`, `--compare-collisions`, `--visual-compare`, `--opposite-type`, `find_duplicates.py`) change nothing, so they run the same either way. `--visual-compare` no longer needs a flag.
+- Reports (`--report-only`, `--compare-collisions`, `--visual-compare`, `--opposite-type`, `--find-plists`, `find_duplicates.py`) change nothing, so they run the same either way. `--visual-compare` no longer needs a flag.
 - `--dry-run` is still accepted and means the default. It cannot be combined with `--apply`.
 - A dry run is recorded in the audit workbook, marked `yes` in the Dry run column, and never renames the workbook (BUG-05).
 - `tests/test_dry_run.py` runs each step without `--apply` and checks that no file's content, name or timestamp changed, then runs it with `--apply` and checks that something did. A new step that changes files fails the test until it is added there.
@@ -413,7 +424,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (22: 6 found by Michele Kummer, 16 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (23: 7 found by Michele Kummer, 16 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -441,6 +452,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-01 | Cleanup deleted Live Photo videos and sidecar files | Photos and videos | High | Claude | `1111480` |
 | BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | `2b6ea1d` |
 | BUG-05 | A dry run renamed an audit workbook | Audit workbook | Low | Claude | `15b699c` |
+| BUG-25 | Plist files named as photos failed to get a date and were renamed | Photos (non-media files with a photo name) | Low | Michele Kummer | 2026-10-21 (uncommitted) |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -573,5 +585,11 @@ The README said Python 3.9+, but nothing enforced it, and the skill docs did not
 
 Working out today's workbook name renamed an old-style `media_audit_<date>.xlsx` to `<folder>_<type>_media_audit_<date>.xlsx` on every run, previews included. With `media_audit_<date>.xlsx` in a folder named `2014`, `--flatten --dry-run` renamed it to `2014_photos_media_audit_<date>.xlsx`.
 **Fix:** A dry run leaves the workbook's name alone and records itself in the old-style workbook. The next run with `--apply` renames it. Fixed with US-27, which made every step a dry run unless `--apply` is given. `tests/test_dry_run.py` covers it.
+
+#### BUG-25 Plist files named as photos failed to get a date and were renamed
+**Severity:** Low · **Found by:** Michele Kummer · **Affects:** files with a photo name that are really plist or XMP text · **Fixed:** 2026-10-21 (not yet committed)
+
+On `E:\Pictures\2023`, `--fill-blanks` reported `FAILED to write 2023-08-07/IMG_E5239_2023-08-07.JPG: Error: Not a valid JPG (looks more like a XMP)`, and the same for `IMG_E6230_2023-12-10.JPG`. The files are plist text (iPhone `.AAE` edit data) saved under a `.JPG` name. Every step treated them as undated photos: `--fill-blanks` handed them to ExifTool, which refused them; `--convert-png` failed on a `.png` one; and `--apply-moves` gave them a `_<folder-date>` suffix, which is how they got `_2023-08-07` in their names.
+**Fix:** Files whose content is plist, XMP or other XML text are recognised by their first bytes. Every step reports them as `NOT MEDIA` and leaves them alone, and the new `--find-plists` lists them all (US-28). They are never deleted, so the user decides. The `_2023-08-07` suffixes already added are not removed.
 
 </details>

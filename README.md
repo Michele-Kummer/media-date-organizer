@@ -1,74 +1,74 @@
 # media-date-organizer
 
-A Claude Code plugin that ensures every photo and video in a folder has a readable **Date Taken** (**Media Created** for video) — reading the real EXIF (even when the extension lies), converting formats that Windows can't surface Date Taken for (notably PNG) to JPEG with EXIF preserved, writing metadata where it's missing, and sorting files into folders matching their real date.
+**Fixes the dates on your photos and videos so they sort correctly in Windows.**
 
-Works on any photo or video source. The author built it from a cleanup on a mixed folder of HEIC images, Live Photo MOV clips, and PNG screenshots exported to Windows, but nothing in the pipeline is tied to a specific camera or phone.
+Photos copied from phones, cameras and apps often show a blank or wrong **Date Taken** in Windows Explorer. As a result, they sort by the day they were copied, not the day they were taken. media-date-organizer finds each file's real date, writes it in where it's missing, and files every photo and video in a folder named for that date. It runs as a [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) plugin, so you can ask for things in plain English. It is also a standalone Python command-line tool.
 
----
+| Before | After |
+|---|---|
+| ![Before: a PNG with no Date Taken, a HEIC with no Date Taken, and a file whose created and modified dates are wrong](docs/screenshots/Before.jpg) | ![After: every file is a JPG in a folder named for its date, and Date created, Date modified and Date taken all match](docs/screenshots/After.png) |
 
-## What it does
+## Why it's useful
 
-**Nothing changes until you say so.** Every step that writes, converts, moves, renames or deletes files is a dry run by default: it lists what it would do (`WOULD WRITE`, `WOULD MOVE`, ...) and changes nothing. Add `--apply` to make the changes (`-Apply` for the PowerShell scripts). The slash commands work the same way: `/fix-media-dates D:\Pictures\2026` previews, and `/fix-media-dates D:\Pictures\2026 --apply` makes the changes.
+Missing dates are rarely just missing. They come from a handful of everyday problems, and this tool handles each one:
 
-1. **Fixes wrong file extensions.** Reads the first 16 bytes of each file and renames anything whose extension doesn't match its real format (PNG, JPEG, HEIC/HEIF, MOV/MP4/M4V, GIF, BMP, TIFF, WEBP).
-2. **Reads the true Date Taken.** HEIC embedded TIFF/EXIF, MOV/MP4 `mvhd` creation time, JPEG/PNG standard EXIF — all parsed without external tools like `exiftool` (which is only needed, optionally, to write dates into HEIC and video files).
-3. **Writes Date Taken where it's missing.** Looks at photos and videos in the folder and every subfolder at any depth. Falls back to the containing folder's date (if the folder name holds a date: `2019-08-30`, `2026-08-19 11-44-31`, `08-19-2026`, `Aug 19 2026`) and stamps `DateTimeOriginal` into the EXIF. Videos (MOV/MP4/M4V/3GP) with a blank **Media Created** get it from a date in the filename first, else from a containing folder's name holding a full date (`2019-08-30`, `11-11-2019`). A year-only folder name like `2014` is not used.
-4. **Converts PNG to JPEG when needed.** Windows Explorer only shows Date Taken for JPEG/HEIC/TIFF/raw; PNG dates stay invisible there. The plugin re-encodes PNG → JPEG at quality 95, preserving EXIF, so Explorer surfaces the date. PNGs with transparency are left as PNG.
-5. **Moves files to date-matched folders.** Files whose Date Taken doesn't match their current folder's name are moved to a sibling folder named for their real date.
-6. **Produces an audit workbook.** `<folder name>_<photos|videos>_media_audit_<date>.xlsx` in the media folder (`2014_videos_media_audit_2026-10-07.xlsx`) holds the scan results plus a running history: every step, including the two PowerShell scripts and every dry run, appends what it did to the Run log and Run counts sheets. Finishes with a PowerShell cleanup script that removes duplicates and moves empty folders into `_empty_folders`.
-7. **Flattens the result, if you want.** An optional last step moves every dated photo and video up out of its `YYYY-MM-DD` subfolder into the media folder itself and moves the emptied subfolders into `_empty_folders` (nothing is deleted). Runs on its own with `/flatten-media <folder>`.
-8. **Quarantines ad images and videos, if you want.** `organize.py --quarantine-ads` moves images and videos that have an ad-style name (a UUID, `bed51b94a_1595`, `gmsnet2`, `news_images%2F1714658759372`, `UnityAdsCache-<hash>`, `54ac2fda0a6755305200011c-b30-600`) and no camera Make/Model into an `_ads` folder for you to review and delete.
-9. **Sets aside incomplete files.** `organize.py --move-incomplete` moves media files that are 0 bytes, all null bytes, or videos with no video header (a failed copy or transfer) into an `_incomplete` folder, keeping their subfolder path so each stays in its dated folder. Nothing is deleted.
+- **Extensions that lie.** A file named `.PNG` may really be an iPhone HEIC photo or a Live Photo video, and then the date reader fails. On the first real folder, 13 of 35 files were misnamed this way ([case study](docs/case-study.md)). The tool reads each file's first bytes to find its true format.
+- **Formats Windows won't show.** Explorer never shows Date Taken for PNG, even when the date is inside the file. The tool can convert PNGs to JPEG and keep the date.
+- **Dates that only live in a name.** `IMG_20231220_142355.jpg` or a folder named `Aug 19 2026` holds the real date. The tool writes it into the file.
+- **Clutter that isn't a photo at all.** App ads, half-copied files, Mac and iPhone sidecar files, and edit data saved as `.JPG`. These are set aside or reported, never silently deleted.
 
-Several steps can run in one command: `organize.py --root <folder> --all` deletes `.AAE` sidecars, `Thumbs.db` thumbnail caches and macOS `._` sidecars (iPhone edit-instruction files, Windows leftovers and Mac copy leftovers; also available alone as `--delete-junk`), moves incomplete files into `_incomplete`, runs steps 3–5 plus the timestamp sync, and prints one summary of every step's counts and problems at the end. Add `--quarantine-ads` or `--flatten` to include those. Without `--apply` it previews every step against the folder as it is now, so a later step may do more once the earlier ones have run.
+## What makes it different
 
-`organize.py --root <folder> --compare-collisions` is a report-only extra, not part of `--all`: for each file the move step skipped as a `COLLISION`, it compares the file byte for byte with the one already holding its name in the target folder and lists the pair as `IDENTICAL` or `DIFFERENT`. It also covers files `--flatten` renamed with a `_<date-taken>` suffix or left behind because their name was taken in the root. Nothing is changed.
+- **Nothing changes until you say so.** Every step is a dry run by default: it lists what it *would* do and touches nothing. Add `--apply` to make the changes.
+- **Nothing is lost by surprise.** Files are moved into review folders (`_ads`, `_incomplete`, `_empty_folders`) rather than deleted. The only steps that delete say so plainly.
+- **A full audit trail.** Every run, previews included, is logged to an Excel workbook in the folder. You can see later what changed, when, and why.
+- **Reads metadata itself.** It parses HEIC, MOV/MP4, JPEG, PNG and TIFF metadata directly, with no external tools needed just to read dates. ExifTool is only needed to write dates into HEIC and video files.
+- **Plain English or command line.** In Claude Code you can type "Fill in the missing dates in D:\Pictures\2026". Every step is also a command-line flag you can script.
+- **Tested on generated files.** 41 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell scripts.
 
-`organize.py --root <folder> --visual-compare` goes one step further for pairs that are not byte-identical: it compares the pixels of the two photos, or of four frames of the two videos, and reports `DUPLICATE`, `DIFFERENT` or `UNSURE` with a confidence level, which is also written to a Confidence column in the audit workbook's Run log. It only reports (nothing is deleted), is not part of `--all`, and runs entirely on your computer. Videos need ffmpeg (`pip install "imageio-ffmpeg>=0.5"`).
+## Quick start
 
-`organize.py --root <folder of year folders> --opposite-type` is another report-only extra: point it at the folder that holds your year folders (`D:\Videos`, `D:\Pictures`) and it lists every photo filed among the videos, or video among the photos, with a count for each year folder. Nothing is changed. Runs on its own with `/report-opposite-type <folder>`.
+**You need:** Windows, Python 3.9+, and [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) 2.1.275+ to use the plugin.
 
-`organize.py --root <folder of year folders> --final-check` is the last look: for each year folder it reports files still in `_ads`, files still in `_incomplete`, photos among videos (or videos among photos), subfolders that were not flattened and audit workbooks left behind. Its only change is renaming audit workbooks that do not yet carry their folder name and media type, and only with `--apply`. It is its own skill, `final-check-report`: ask Claude to "run the final check on D:\Videos".
+1. Install the plugin. In Claude Code:
 
-`skills/find-duplicates/scripts/find_duplicates.py --root <folder>` is a separate script that runs on its own, before or after any of the steps above. It searches the folder at every depth and reports files that are byte-for-byte `IDENTICAL`, then pairs that are likely the same picture or recording saved twice (`DUPLICATE`, or `POSSIBLE` when it is less sure), found among files that share a Date Taken, a name or a size. Nothing is moved, renamed or deleted. It is its own skill, `find-duplicates`: ask Claude to "find duplicates in D:\Pictures\2012".
+   ```
+   /plugin install media-date-organizer --marketplace Michele-Kummer/media-date-organizer
+   ```
 
-End state: every photo and video has a Date Taken, is in a folder matching that date, has a correct file extension, and shows up correctly in Windows Explorer.
+2. Install the Python packages:
 
-## Install
+   ```bash
+   pip install "pillow>=10.0" "openpyxl>=3.1"
+   ```
 
-Requires [Claude Code](https://docs.anthropic.com/claude/docs/claude-code), Python 3.9+, and Windows PowerShell 5.1+ (or PowerShell 7).
+3. See what it would change. This changes nothing:
 
-In Claude Code (2.1.275 or later):
+   ```
+   /fix-media-dates D:\Pictures\2026
+   ```
 
-```
-/plugin install media-date-organizer --marketplace Michele-Kummer/media-date-organizer
-```
+4. Happy with the preview? Make the changes:
 
-Then install the Python packages:
+   ```
+   /fix-media-dates D:\Pictures\2026 --apply
+   ```
 
-```bash
-pip install "pillow>=10.0" "openpyxl>=3.1"
-pip install "imageio-ffmpeg>=0.5"   # optional, only for --visual-compare on videos
-```
+Type these in the Claude Code chat (VS Code, the desktop app, or `claude` in a terminal), not in PowerShell itself. Not sure what to type? Run **`/media-help`**. First time? Try it on a copy of a small folder.
 
-To pick up a newer version later, run `/plugin marketplace update michele-kummer`.
-
-### Working on the plugin
-
-To try changes from a local clone without installing, start Claude Code with the plugin loaded for that session:
+**Without Claude Code**, the same steps run from a clone:
 
 ```bash
 git clone https://github.com/Michele-Kummer/media-date-organizer.git
 cd media-date-organizer
 pip install -r requirements.txt
-claude --plugin-dir .
+python skills/media-date-organizer/scripts/organize.py --root "D:\Pictures\2026" --all           # preview
+python skills/media-date-organizer/scripts/organize.py --root "D:\Pictures\2026" --all --apply   # make the changes
 ```
 
-## Quick start
+## What you can ask for
 
-Type these in the Claude Code chat: the chat box in VS Code or the desktop app, or after starting `claude` in a terminal. **Not in PowerShell itself.** There, `/fix-media-dates` gives "The term '/fix-media-dates' is not recognized".
-
-Not sure what to type? Run **`/media-help`** for this list, or type `/` to see every command with a short description.
+Lines starting with `/` are slash commands. The others are plain requests: any wording works, and Claude picks the right skill. Every step that changes files is previewed first.
 
 | I want to… | Type |
 |---|---|
@@ -80,35 +80,68 @@ Not sure what to type? Run **`/media-help`** for this list, or type `/` to see e
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
 | Find photos or videos that are copies of each other | `Find duplicates in D:\Pictures\2012` |
 | See photos filed among videos, or videos among photos | `/report-opposite-type D:\Videos` |
+| Find plist or XMP files saved with a photo name (changes nothing) | `Check D:\Pictures\2023 for plist files` |
 | See what is left over after organizing | `Run the final check on D:\Videos` |
 | Fill in only the missing dates | `Fill in the missing dates in D:\Pictures\2026` |
 | Convert PNG screenshots to JPEG so Explorer shows their date | `Convert the PNGs in D:\Pictures\2026 to JPEG` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 
-Lines starting with `/` are slash commands. The others are plain requests: any wording works, and Claude picks the matching skill. Every step that changes files is previewed first, and Claude asks before going ahead.
+## How it works
 
-`/fix-media-dates <folder>` is a dry run of: extension fix → metadata read → date-write for blanks → PNG→JPG conversion (optional) → moves → cleanup reminder. It shows what each step would change and changes nothing. Type `/fix-media-dates <folder> --apply` to make the changes. `/fix-media-dates <folder> --all` previews what `organize.py --all` would do, and `/fix-media-dates <folder> --all --apply` makes those changes. Add `--quarantine-ads` or `--flatten` to include those. `/flatten-media` works the same way, without `--all`. An audit XLSX is written alongside your files.
+`/fix-media-dates` runs these steps in order. Each one can also run on its own.
 
-Managing the plugin itself (`/plugin`) works only in Claude Code in a terminal, not in the VS Code extension. From PowerShell, `claude plugin list` shows what is installed.
+| Step | What it does |
+|---|---|
+| 1. Fix extensions | Reads each file's first bytes and renames any whose extension doesn't match its real format (PNG, JPEG, HEIC, MOV/MP4, 3GP, M2TS, MPG, WMV, AVI, GIF, WEBP, TIFF, BMP). |
+| 2. Scan | Reads every file's real date (HEIC and JPEG EXIF, the MOV/MP4 creation time) and writes the audit workbook. Changes nothing. |
+| 3. Fill missing dates | Writes Date Taken (Media Created for video) from a date in the filename, else from the folder name. File modified time is never trusted, because copying resets it. |
+| 4. Convert PNG (optional) | Re-encodes PNG as JPEG at quality 95 with its date kept, so Explorer shows it. PNGs with transparency stay PNG. |
+| 5. Move | Moves each file whose date doesn't match its folder into a folder named for its real date. An existing file is never overwritten. |
+| 6. Sync timestamps (optional) | Sets Date Created, and Date Modified on unedited files, to the date taken. |
+| 7. Flatten (optional) | Moves everything up out of its dated subfolders into one folder per year. |
+| 8. Clean up | Removes PNGs already converted to JPEG (only after checking that the pixels match) and sets empty folders aside. |
 
-## Project layout
+Housekeeping steps set aside ad images (`_ads`) and broken copies (`_incomplete`), and delete iPhone `.AAE`, `Thumbs.db` and macOS `._` sidecar files. Read-only reports find duplicates (byte-identical or visually the same), photos filed among videos, plist files named as photos, and anything left over at the end.
+
+The full reference, with every flag, rule and edge case, is in the skill guide: [skills/media-date-organizer/SKILL.md](skills/media-date-organizer/SKILL.md).
+
+## How it's built
+
+- **Python 3.9+** (`organize.py`, about 2,400 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
+- **PowerShell** scripts detect file formats and clean up, using .NET `System.Drawing` to compare pixels.
+- **Claude Code plugin:** three skills and four slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
+- **Tests:** `py -m unittest discover tests -v` runs 41 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
 
 ```
 .
-├── .claude-plugin/plugin.json         Plugin manifest
-├── skills/media-date-organizer/           The skill
-├── skills/final-check-report/         Skill: what is left after organizing
-├── skills/find-duplicates/            Skill: identical and likely duplicate files
-├── commands/                          Slash commands (media-help, fix-media-dates, flatten-media, report-opposite-type)
-├── docs/                              Case study, screenshots, example audit
-└── sample-data/                       Synthetic test photos
+├── .claude-plugin/              Plugin manifest and marketplace entry
+├── commands/                    Slash commands: fix-media-dates, flatten-media, report-opposite-type, media-help
+├── skills/media-date-organizer/ Main skill: organize.py and the PowerShell scripts
+├── skills/final-check-report/   Skill: what is left after organizing
+├── skills/find-duplicates/      Skill: identical and likely duplicate files
+├── tests/                       Automated tests
+├── docs/                        Case study, user stories and bugs, screenshots, example audit
+└── sample-data/                 Generator for synthetic test photos
 ```
 
-## Case study
+## Project documents
 
-See [docs/case-study.md](docs/case-study.md) for how the ruleset evolved — including the moment a "blank Date Taken" finding turned out to be a wrong-extension problem instead, and why "ensuring Date Taken" is as much about file formats and Windows Shell behavior as about metadata.
+- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 28 user stories in 7 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked.
+- **[Case study](docs/case-study.md):** how the approach changed on the first real folder, when a "blank Date Taken" problem turned out to be files with the wrong extension.
+- **[Example audit workbook](docs/example-audit.xlsx):** what the Excel audit trail looks like.
+- **[Command cheatsheet](docs/project-cheatsheet.md):** every command, ready to copy.
+
+## Working on the plugin
+
+To try changes from a local clone without installing, start Claude Code with the plugin loaded for that session:
+
+```bash
+claude --plugin-dir .
+```
+
+To pick up a newer published version, run `/plugin marketplace update michele-kummer`. Managing plugins (`/plugin`) works only in Claude Code in a terminal, not in the VS Code extension; from PowerShell, `claude plugin list` shows what is installed.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

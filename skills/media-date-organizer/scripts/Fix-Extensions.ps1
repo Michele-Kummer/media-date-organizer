@@ -10,6 +10,9 @@
     the detected type, the file is renamed to use the correct extension.
     Empty (0-byte) files are listed as EMPTY and left alone. Sony sidecar
     files (.modd, .moff) are known and counted, not reported as UNKNOWN.
+    A file with a photo or video name that holds plist or XMP text (an
+    iPhone .AAE edit file saved as IMG_E5239.JPG) is reported as NOT MEDIA
+    and left alone: never renamed or deleted.
 
 .PARAMETER Path
     Folder to scan. Defaults to the current directory.
@@ -109,6 +112,29 @@ function Get-FileType {
     return $null
 }
 
+# 'plist', 'binary plist', 'XMP' or 'XML' for a text sidecar (an iPhone .AAE
+# edit file, an XMP file) saved under a photo or video name, else $null.
+# Only asked about files Get-FileType did not recognise.
+function Get-TextSidecarKind {
+    param([string]$FilePath)
+    try {
+        $fs = [System.IO.File]::OpenRead($FilePath)
+        $buf = New-Object byte[] 1024
+        $read = $fs.Read($buf, 0, 1024)
+        $fs.Close()
+    } catch {
+        return $null
+    }
+    $text = [System.Text.Encoding]::ASCII.GetString($buf, 0, $read)
+    if ($text.StartsWith('bplist')) { return 'binary plist' }
+    $text = $text.TrimStart([char]0xFEFF, '?', ' ', "`t", "`r", "`n")
+    if (-not $text.StartsWith('<')) { return $null }
+    if ($text.Contains('<plist') -or $text.Contains('DOCTYPE plist')) { return 'plist' }
+    if ($text.Contains('x:xmpmeta') -or $text.Contains('<?xpacket') -or $text.Contains('adobe:ns:meta')) { return 'XMP' }
+    if ($text.StartsWith('<?xml')) { return 'XML' }
+    return $null
+}
+
 $equivalents = @{
     '.jpg'  = @('.jpg','.jpeg')
     '.jpeg' = @('.jpg','.jpeg')
@@ -128,10 +154,15 @@ $equivalents = @{
 # signature to check, so the extension is taken as it stands.
 $sidecarExts = @('.modd', '.moff')
 
+# Photo and video extensions, for spotting text files saved under one
+$mediaExts = @($equivalents.Values | ForEach-Object { $_ }) +
+    @('.png', '.gif', '.webp', '.bmp', '.mov', '.mp4', '.m4v', '.3gp', '.3g2')
+
 $files = Get-ChildItem -Path $Path -File -Recurse
 $changed = 0
 $ok = 0
 $unknown = 0
+$notMedia = 0
 $empty = 0
 $sidecar = 0
 $plan = @()
@@ -151,6 +182,17 @@ foreach ($f in $files) {
         continue
     }
     $detected = Get-FileType $f.FullName
+    if (-not $detected -and $mediaExts -contains $f.Extension.ToLower()) {
+        # A photo or video name holding plist or XMP text: reported, never
+        # renamed or deleted
+        $kind = Get-TextSidecarKind $f.FullName
+        if ($kind) {
+            $notMedia++
+            Write-Host ("NOT MEDIA ($kind) : " + $f.FullName) -ForegroundColor DarkYellow
+            $audit.Add("NOT MEDIA ($kind file named " + $f.Extension + "): " + $f.FullName)
+            continue
+        }
+    }
     if (-not $detected) {
         $unknown++
         Write-Host ("UNKNOWN  : " + $f.FullName) -ForegroundColor DarkYellow
@@ -192,13 +234,14 @@ Write-Host ("  Correct extension : " + $ok)
 Write-Host ("  " + $(if ($WhatIfPreference) { 'Would rename      : ' } else { 'Renamed           : ' }) + $changed)
 Write-Host ("  Sony sidecars     : " + $sidecar)
 Write-Host ("  Unknown format    : " + $unknown)
+Write-Host ("  Not media (plist) : " + $notMedia)
 Write-Host ("  Empty (0 bytes)   : " + $empty)
 if ($plan.Count -gt 0 -and -not $WhatIfPreference) {
     $plan | Format-Table -AutoSize
 }
 
 $renamedWord = if ($WhatIfPreference) { 'would rename' } else { 'renamed' }
-$audit.Add("SUMMARY: correct extension $ok, $renamedWord $changed, Sony sidecars $sidecar, unknown format $unknown, empty $empty")
+$audit.Add("SUMMARY: correct extension $ok, $renamedWord $changed, Sony sidecars $sidecar, unknown format $unknown, not media (plist or XMP) $notMedia, empty $empty")
 Write-AuditLog -Path $Path -Phase 'fix_extensions' -Lines $audit -DryRun:$WhatIfPreference
 if ($WhatIfPreference) {
     Write-Host ""

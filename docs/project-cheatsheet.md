@@ -46,6 +46,9 @@ py skills\media-date-organizer\scripts\organize.py --root $root --report-only
 py skills\media-date-organizer\scripts\organize.py --root $root --flatten
 
 
+Report plist and XMP files saved with a photo or video name (changes nothing)
+py skills\media-date-organizer\scripts\organize.py --root $root --find-plists
+
 Report photos in video folders and videos in photo folders, by year folder (changes nothing)
 py skills\media-date-organizer\scripts\organize.py --root "D:\Videos" --opposite-type
 py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures" --opposite-type

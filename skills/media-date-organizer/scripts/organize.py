@@ -126,6 +126,16 @@ and a summary of every phase's counts and problems is printed at the end):
                         holds (videos in a photo folder, or photos in a video
                         folder), also counted as videos-in-photo-folder or
                         photos-in-video-folder.
+    --find-plists       Report only; not part of --all. Lists every file
+                        named as a photo or video (IMG_E5239.JPG) whose
+                        content is really plist, XMP or other XML text: an
+                        iPhone .AAE edit file or an XMP sidecar saved under a
+                        picture's name. Searches the root and every
+                        subfolder, holding folders included. Every other
+                        phase leaves such files where they are and reports
+                        them as NOT MEDIA, instead of failing on them or
+                        giving them a date suffix. Nothing is moved,
+                        renamed or deleted.
     --opposite-type     Report only; not part of --all. Give the folder that
                         holds the year folders as --root (D:\\Videos, not
                         D:\\Videos\\2014). Lists every photo filed among the
@@ -275,6 +285,38 @@ def detect_type(path: str) -> Optional[str]:
     if h[:4] == b'RIFF' and h[8:12] == b'WEBP':
         return '.webp'
     return None
+
+
+def not_media_kind(path: str) -> Optional[str]:
+    """Return 'plist', 'binary plist', 'XMP' or 'XML' when a file named as a
+    photo or video is really a text sidecar: an iPhone .AAE edit file (a
+    plist) or an XMP file saved under a picture's name. None for anything
+    else, real photos and videos included (they never start with '<')."""
+    if detect_type(path) is not None:
+        return None
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(1024)
+    except OSError:
+        return None
+    if head.startswith(b'bplist'):
+        return 'binary plist'
+    text = head.lstrip(b'\xef\xbb\xbf \t\r\n')
+    if not text.startswith(b'<'):
+        return None
+    if b'<plist' in text or b'DOCTYPE plist' in text:
+        return 'plist'
+    if b'x:xmpmeta' in text or b'<?xpacket' in text or b'adobe:ns:meta' in text:
+        return 'XMP'
+    return 'XML' if text.startswith(b'<?xml') else None
+
+
+def _report_not_media(label: str, kind: str, counts: Counter) -> None:
+    """Report a text sidecar named as a photo or video and count it. It is
+    left where it is: the user decides whether to delete it."""
+    counts['not-media'] += 1
+    ext = pathlib.Path(label).suffix
+    print(f"NOT MEDIA ({kind} file named {ext}, left alone): {label}", file=sys.stderr)
 
 
 # ---------------- Date Taken extraction ----------------
@@ -653,6 +695,13 @@ def scan(root: str) -> list:
         folder = '/'.join(parts) or '.'
         folder_dt = _folder_name_date(folders[0])
         folder_date = folder_dt.date() if folder_dt else None
+        kind = not_media_kind(full)
+        if kind:
+            # Not a photo or video: never moved or given a date suffix
+            rows.append({'current_folder': folder, 'current_name': name,
+                         'detected_type': kind.upper(), 'date_taken': '',
+                         'target_folder': folder, 'new_name': name, 'action': 'not-media'})
+            continue
         meta = read_metadata(full, ftype)
         dt = meta['date_taken']
         # The name is kept as it is: a _YYYY-MM-DD ending is never stripped,
@@ -1104,6 +1153,10 @@ def fill_blanks(root: str, dry_run: bool = False) -> dict:
             # A failed copy or transfer: there is no image to write a date into
             counts['empty-file'] += 1
             continue
+        kind = not_media_kind(full)
+        if kind:
+            _report_not_media(label, kind, counts)
+            continue
         try:
             meta = read_metadata(full, ftype)
         except (OSError, MemoryError) as e:
@@ -1193,6 +1246,10 @@ def convert_pngs(root: str, dry_run: bool = False) -> dict:
             new = str(pathlib.Path(p).with_suffix('.jpg'))
             if os.path.exists(new):
                 counts['already-converted'] += 1
+                continue
+            kind = not_media_kind(p)
+            if kind:
+                _report_not_media(os.path.relpath(p, root), kind, counts)
                 continue
             try:
                 with Image.open(p) as img:
@@ -1567,6 +1624,34 @@ def opposite_type(root: str) -> dict:
     print(f"OPPOSITE TYPE: {total[minor]:,} {minor}(s) among {total[major]:,} {major}(s), in "
           f"{counts[f'year-folders-with-{minor}s']} of {len(tops)} year folder(s)")
     return counts
+
+
+# ---------------- Find plist files ----------------
+
+def find_plists(root: str) -> dict:
+    """Report every file in root and every subfolder at any depth that is
+    named as a photo or video but holds a plist, XMP or other XML text: an
+    iPhone .AAE edit file or an XMP sidecar saved under a picture's name.
+    Holding folders (_ads, _incomplete, _empty_folders) are searched too.
+    Nothing is moved, renamed or deleted; the user decides what to do."""
+    counts = Counter()
+    exts = MEDIA_EXTS | set(CAMCORDER_EXTS)
+    for dirpath, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            if pathlib.Path(name).suffix.lower() not in exts:
+                continue
+            full = os.path.join(dirpath, name)
+            kind = not_media_kind(full)
+            if kind:
+                counts[kind.replace(' ', '-') + '-files'] += 1
+                rel = os.path.relpath(full, root).replace(os.sep, '/')
+                print(f"NOT MEDIA ({kind} file named {pathlib.Path(name).suffix}): {rel}")
+    total = sum(counts.values())
+    counts['not-media'] = total
+    print(f"FOUND {total:,} file(s) named as a photo or video that hold plist or XMP text. "
+          "Nothing was changed.")
+    return dict(counts)
 
 
 # ---------------- Final check report ----------------
@@ -2141,11 +2226,11 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # in the root the other phases no longer see them).
 PHASE_ORDER = ('delete_junk', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
                'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
-               'opposite_type', 'final_check')
+               'opposite_type', 'find_plists', 'final_check')
 ALL_PHASES = ('delete_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
 # Phases that only report. Every other phase changes files, and only when
 # --apply is given; without it, it lists what it would do.
-REPORT_PHASES = ('report_only', 'compare_collisions', 'visual_compare', 'opposite_type')
+REPORT_PHASES = ('report_only', 'compare_collisions', 'visual_compare', 'opposite_type', 'find_plists')
 
 
 def _default_xlsx(root: str, rename: bool = True) -> str:
@@ -2222,6 +2307,8 @@ def _run_phase(phase: str, args) -> dict:
         return sync_timestamps(args.root, dry_run)
     if phase == 'flatten':
         return flatten(args.root, dry_run)
+    if phase == 'find_plists':
+        return find_plists(args.root)
     if phase == 'opposite_type':
         return opposite_type(args.root)
     if phase == 'final_check':
@@ -2271,6 +2358,7 @@ def main(argv=None):
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, files move up into _ads itself even with no Date Taken.')
+    ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. Every other phase leaves these alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, files still in _incomplete, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')

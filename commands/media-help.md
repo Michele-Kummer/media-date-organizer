@@ -26,6 +26,7 @@ Show the user the list below as it is, then ask which one they want to do and fo
 |---|---|
 | Find photos or videos that are copies of each other | `Find duplicates in D:\Pictures\2012` |
 | See photos filed among videos, or videos among photos | `/report-opposite-type D:\Videos` |
+| Find plist or XMP files saved with a photo name | `Check D:\Pictures\2023 for plist files` |
 | See what is left over after organizing | `Run the final check on D:\Videos` |
 
 **Single steps** (ask in plain words)
