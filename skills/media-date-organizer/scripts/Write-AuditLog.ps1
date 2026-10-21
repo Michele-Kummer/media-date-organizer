@@ -33,7 +33,8 @@ function Write-AuditLog {
         return
     }
     $pyArgs += @((Join-Path $PSScriptRoot 'organize.py'), '--root', $Path, '--audit-log', $Phase)
-    if ($DryRun) { $pyArgs += '--dry-run' }
+    # organize.py records a run as a dry run unless it is told otherwise
+    if (-not $DryRun) { $pyArgs += '--apply' }
     # File names can hold non-ASCII characters; the default pipe encoding
     # would turn them into question marks
     $previous = $OutputEncoding

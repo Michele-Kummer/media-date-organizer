@@ -9,7 +9,7 @@ List the photos sitting among the videos in `$ARGUMENTS`, or the videos sitting 
 
 ## Steps
 
-1. **Report.** Run `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --opposite-type`. Nothing is changed, so no confirmation is needed.
+1. **Report.** Run `python skills/media-date-organizer/scripts/organize.py --root "$ARGUMENTS" --opposite-type`. Nothing is changed, so no confirmation is needed and there is no `--apply`.
 
 2. **Share the result.** Give the user the total, the count for each year folder that has any, and the listed files (or where to find them if there are many).
 

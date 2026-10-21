@@ -3,6 +3,12 @@
 organize.py — read photo and video metadata (EXIF, MOV mvhd, HEIC TIFF) and
 sort files by real Date Taken.
 
+Every run is a dry run unless --apply is given: each phase that writes,
+converts, moves, renames or deletes files lists what it would do (WOULD
+WRITE, WOULD MOVE, ...) and changes nothing. Check the list, then run the
+same command again with --apply to make the changes. Phases that only report
+run the same either way. --dry-run is still accepted and means the default.
+
 Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
     --all               Shorthand for --delete-junk --move-incomplete
@@ -20,8 +26,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         (._IMG_0001.png beside IMG_0001.png), which a Mac
                         writes when copying to a non-Mac drive; a file is
                         only treated as one when its contents carry the
-                        AppleDouble signature as well as the name. Add
-                        --dry-run to list them without deleting anything.
+                        AppleDouble signature as well as the name.
     --report-only       Scan and write audit XLSX; make no changes. Photos
                         and videos are found in the root and every subfolder
                         at any depth.
@@ -43,8 +48,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         name holding only a year ("2014") is not used; such
                         videos are listed as skipped. The time is
                         taken as local time and stored as UTC, so Explorer
-                        shows it unchanged. Add --dry-run to list what would
-                        be written without changing anything.
+                        shows it unchanged.
     --convert-png       Re-encode PNG files as JPEG at quality 95, preserving
                         EXIF. Leaves originals in place. PNGs with any
                         transparent pixels are skipped and stay PNG, as are
@@ -74,8 +78,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         it renamed with a _<date-taken> suffix, or left in
                         its subfolder, because its name was taken in the
                         root. Nothing is moved or deleted.
-    --visual-compare    Dry run only (give --dry-run with it); not part of
-                        --all. Compare the pixels of each pair of possible
+    --visual-compare    Report only; not part of --all. Compare the pixels of each pair of possible
                         duplicates and report DUPLICATE, DIFFERENT or UNSURE
                         with a confidence level (high, medium, low) and the
                         measured difference. Pairs are the collisions above
@@ -122,8 +125,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         files of the less common kind the root itself then
                         holds (videos in a photo folder, or photos in a video
                         folder), also counted as videos-in-photo-folder or
-                        photos-in-video-folder. Add --dry-run to preview
-                        without changing anything.
+                        photos-in-video-folder.
     --opposite-type     Report only; not part of --all. Give the folder that
                         holds the year folders as --root (D:\\Videos, not
                         D:\\Videos\\2014). Lists every photo filed among the
@@ -153,8 +155,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         media type is renamed so that it is
                         (2014/media_audit_2026-10-07.xlsx becomes
                         2014_videos_media_audit_2026-10-07.xlsx). Nothing
-                        else is moved, renamed or deleted. Add --dry-run to
-                        list the renames without making them.
+                        else is moved, renamed or deleted.
     --quarantine-ads    Move ad images and videos into an _ads folder inside
                         the root, keeping their subfolder path, for the user to
                         review and delete. A file is an ad only if BOTH hold:
@@ -177,8 +178,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         it carries no camera info (EXIF Make/Model for a photo,
                         a device-make tag for a video). Name matches that do
                         have camera info are kept and listed. Looks in the root
-                        folder and every subfolder. Nothing is deleted. Add
-                        --dry-run to preview without moving anything.
+                        folder and every subfolder. Nothing is deleted.
     --move-incomplete   Move incomplete media files into an "_incomplete"
                         folder inside the root, keeping their subfolder path
                         (so each stays in its dated folder). A file is
@@ -190,8 +190,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         "_no-image-data" folder from earlier versions is
                         folded into "_incomplete". --flatten leaves the
                         folder alone. --move-no-data is the old name for this
-                        flag and still works. Add --dry-run to preview
-                        without moving anything.
+                        flag and still works.
 
 Every run appends what it reported to the "Run log" and "Run counts" sheets
 of the audit workbook, dry runs included, so the workbook is a history of
@@ -699,24 +698,35 @@ def scan(root: str) -> list:
 
 # ---------------- Apply moves ----------------
 
-def apply_moves(root: str, plan: list) -> dict:
+def apply_moves(root: str, plan: list, dry_run: bool = False) -> dict:
     """Execute moves and renames. A 'fill-blank' row is not moved (its date
     is for --fill-blanks to write), but one still undated here gets the
-    _<folder-date> suffix the plan gave it."""
+    _<folder-date> suffix the plan gave it. With dry_run, list what would be
+    moved or renamed and change nothing."""
     counts = Counter()
+    # Targets taken by an earlier file of this run, so a dry run reports the
+    # same collisions a real run would meet
+    taken = set()
+
+    def is_taken(dst):
+        return os.path.exists(dst) or os.path.normcase(dst) in taken
+
     for r in plan:
         src = os.path.join(root, r['current_folder'], r['current_name'])
         if r['action'] == 'fill-blank' and r['new_name'] != r['current_name']:
             dst = os.path.join(root, r['current_folder'], r['new_name'])
             if not os.path.isfile(src):
                 counts['missing'] += 1
-            elif os.path.exists(dst):
+            elif is_taken(dst):
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {dst}", file=sys.stderr)
             else:
-                shutil.move(src, dst)
+                if not dry_run:
+                    shutil.move(src, dst)
+                taken.add(os.path.normcase(dst))
                 counts['suffixed-undated'] += 1
-                print(f"RENAMED (no date in file): {r['current_folder']}/{r['current_name']} -> {r['new_name']}")
+                print(f"{'WOULD RENAME' if dry_run else 'RENAMED'} (no date in file): "
+                      f"{r['current_folder']}/{r['current_name']} -> {r['new_name']}")
             continue
         if r['action'] not in ('move', 'keep'):
             counts['skipped-' + r['action']] += 1
@@ -725,17 +735,20 @@ def apply_moves(root: str, plan: list) -> dict:
             counts['missing'] += 1
             continue
         tgt_dir = os.path.join(root, r['target_folder'])
-        os.makedirs(tgt_dir, exist_ok=True)
         dst = os.path.join(tgt_dir, r['new_name'])
         if src == dst:
             counts['unchanged'] += 1
             continue
-        if os.path.exists(dst):
+        if is_taken(dst):
             counts['collision'] += 1
             print(f"COLLISION, skipping: {dst}", file=sys.stderr)
             continue
-        shutil.move(src, dst)
+        if not dry_run:
+            os.makedirs(tgt_dir, exist_ok=True)
+            shutil.move(src, dst)
+        taken.add(os.path.normcase(dst))
         counts[r['action']] += 1
+        print(f"{'WOULD MOVE' if dry_run else 'MOVED'}: {os.path.relpath(src, root)} -> {os.path.relpath(dst, root)}")
     return dict(counts)
 
 
@@ -932,7 +945,7 @@ def _visual_verdict(ffmpeg: Optional[str], src: str, dst: str) -> tuple:
 
 
 def visual_compare(root: str, plan: list) -> dict:
-    """Dry run only: judge whether pairs of files are duplicates by comparing
+    """Report only: judge whether pairs of files are duplicates by comparing
     their pixels, and report a verdict with a confidence level. Changes
     nothing and sends nothing anywhere. Covers every collision pair (see
     _collision_pairs) and every pair of same-named files in different formats
@@ -1160,7 +1173,9 @@ def _has_transparency(img) -> bool:
     return img.getchannel('A').getextrema()[0] < 255
 
 
-def convert_pngs(root: str) -> dict:
+def convert_pngs(root: str, dry_run: bool = False) -> dict:
+    """Convert each PNG to a JPEG beside it. With dry_run, read each PNG and
+    list the ones that would be converted, writing nothing."""
     counts = Counter()
     if not HAS_PIL:
         print('Pillow required for PNG conversion; pip install "pillow>=10.0"', file=sys.stderr)
@@ -1186,18 +1201,20 @@ def convert_pngs(root: str) -> dict:
                         # JPEG has no transparency; flattening would change the picture
                         counts['skipped-transparent'] += 1
                         continue
-                    exif_bytes = img.info.get('exif', b'')
-                    img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
+                    if not dry_run:
+                        exif_bytes = img.info.get('exif', b'')
+                        img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
             except (OSError, SyntaxError, ValueError, MemoryError) as e:
                 # Not a picture despite the name (a macOS "._" sidecar, a
                 # truncated download): report it and carry on with the rest
                 counts['read-failed'] += 1
                 print(f"FAILED to convert {os.path.relpath(p, root)}: {e or type(e).__name__}", file=sys.stderr)
-                if os.path.exists(new):
+                if not dry_run and os.path.exists(new):
                     # A half-written JPEG would pass for a finished conversion
                     os.remove(new)
                 continue
             counts['converted'] += 1
+            print(f"{'WOULD CONVERT' if dry_run else 'CONVERTED'}: {os.path.relpath(p, root)} -> {os.path.basename(new)}")
     return dict(counts)
 
 
@@ -1262,10 +1279,11 @@ def _set_creation_time(path: str, ts: float) -> bool:
     return True
 
 
-def sync_timestamps(root: str) -> dict:
+def sync_timestamps(root: str, dry_run: bool = False) -> dict:
     """Set Date Created to Date Taken on every dated file in root and every
     subfolder at any depth, and Date Modified too on unedited ones. An edited
-    file keeps its Date Modified, which is when it was edited."""
+    file keeps its Date Modified, which is when it was edited. With dry_run,
+    list what would be set and change nothing."""
     counts = Counter()
     for label, name, full, ftype, _folders in _iter_media_deep(root):
         meta = read_metadata(full, ftype)
@@ -1273,6 +1291,18 @@ def sync_timestamps(root: str) -> dict:
             counts['no-date-taken'] += 1
             continue
         ts = meta['date_taken'].timestamp()
+        if dry_run:
+            when = f"{meta['date_taken']:%Y-%m-%d %H:%M:%S}"
+            if _is_unedited(meta):
+                counts['synced'] += 1
+                print(f"WOULD SYNC {when}: {label}")
+            elif os.name == 'nt':
+                counts['created-only-edited'] += 1
+                print(f"WOULD SYNC created only (edited) {when}: {label}")
+            else:
+                counts['skipped-edited'] += 1
+                print(f"SKIP (edited): {label}")
+            continue
         if not _is_unedited(meta):
             try:
                 if _set_creation_time(full, ts):
@@ -2113,16 +2143,18 @@ PHASE_ORDER = ('delete_junk', 'move_incomplete', 'quarantine_ads', 'fill_blanks'
                'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
                'opposite_type', 'final_check')
 ALL_PHASES = ('delete_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
-DRY_RUN_PHASES = ('flatten', 'quarantine_ads', 'move_incomplete', 'delete_junk', 'fill_blanks', 'visual_compare',
-                  'final_check')
+# Phases that only report. Every other phase changes files, and only when
+# --apply is given; without it, it lists what it would do.
+REPORT_PHASES = ('report_only', 'compare_collisions', 'visual_compare', 'opposite_type')
 
 
-def _default_xlsx(root: str) -> str:
+def _default_xlsx(root: str, rename: bool = True) -> str:
     """Return today's audit workbook name for root,
     <root folder name>_<photos|videos>_media_audit_<date>.xlsx
     (2014_videos_media_audit_2026-10-07.xlsx). A workbook from earlier today
     under the old name, with no prefix, is renamed to it so the day's runs
-    stay in one workbook."""
+    stay in one workbook. Without rename (a dry run), the old name is kept
+    and returned, so the run is recorded there and nothing is renamed."""
     plain = f'media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'
     if not os.path.isdir(root):
         return plain
@@ -2135,6 +2167,8 @@ def _default_xlsx(root: str) -> str:
     name = _audit_prefix(root) + plain
     old, new = os.path.join(root, plain), os.path.join(root, name)
     if name != plain and os.path.isfile(old) and not os.path.exists(new):
+        if not rename:
+            return plain
         try:
             os.rename(old, new)
         except OSError:
@@ -2173,24 +2207,25 @@ class _IssueTee:
 
 
 def _run_phase(phase: str, args) -> dict:
+    dry_run = not args.apply
     if phase == 'delete_junk':
-        return delete_junk(args.root, args.dry_run)
+        return delete_junk(args.root, dry_run)
     if phase == 'move_incomplete':
-        return move_incomplete(args.root, args.dry_run)
+        return move_incomplete(args.root, dry_run)
     if phase == 'quarantine_ads':
-        return quarantine_ads(args.root, args.dry_run)
+        return quarantine_ads(args.root, dry_run)
     if phase == 'fill_blanks':
-        return fill_blanks(args.root, args.dry_run)
+        return fill_blanks(args.root, dry_run)
     if phase == 'convert_png':
-        return convert_pngs(args.root)
+        return convert_pngs(args.root, dry_run)
     if phase == 'sync_timestamps':
-        return sync_timestamps(args.root)
+        return sync_timestamps(args.root, dry_run)
     if phase == 'flatten':
-        return flatten(args.root, args.dry_run)
+        return flatten(args.root, dry_run)
     if phase == 'opposite_type':
         return opposite_type(args.root)
     if phase == 'final_check':
-        return final_check(args.root, os.path.join(args.root, args.xlsx), args.dry_run)
+        return final_check(args.root, os.path.join(args.root, args.xlsx), dry_run)
     if phase == 'compare_collisions':
         return compare_collisions(args.root, scan(args.root))
     if phase == 'visual_compare':
@@ -2200,7 +2235,7 @@ def _run_phase(phase: str, args) -> dict:
     out_xlsx = os.path.join(args.root, args.xlsx)
     write_xlsx(args.root, plan, out_xlsx)
     if phase == 'apply_moves':
-        return apply_moves(args.root, plan)
+        return apply_moves(args.root, plan, dry_run)
     return dict(Counter(r['action'] for r in plan))
 
 
@@ -2233,7 +2268,7 @@ def main(argv=None):
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
-    ap.add_argument('--visual-compare', action='store_true', help='Dry run only (give --dry-run too): compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
+    ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
@@ -2241,12 +2276,15 @@ def main(argv=None):
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
     ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder.')
-    ap.add_argument('--dry-run', action='store_true', help='With --fill-blanks, --flatten, --quarantine-ads, --move-incomplete, --delete-junk or --final-check: list what would be written, moved, renamed, removed or deleted without changing anything.')
+    ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
+    ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
     ap.add_argument('--audit-log', metavar='NAME', help='Record lines read from standard input in the audit workbook as phase NAME, then exit. Used by Fix-Extensions.ps1 and Cleanup-Pictures.ps1.')
     args = ap.parse_args(argv)
+    if args.apply and args.dry_run:
+        ap.error('--apply and --dry-run cannot be combined: leave out --dry-run to make the changes')
     if args.xlsx is None:
-        args.xlsx = _default_xlsx(args.root)
+        args.xlsx = _default_xlsx(args.root, rename=args.apply)
     started = datetime.datetime.now()
     out_xlsx = os.path.join(args.root, args.xlsx)
 
@@ -2255,7 +2293,7 @@ def main(argv=None):
             print(f"Not a directory: {args.root}", file=sys.stderr)
             return 2
         lines = sys.stdin.buffer.read().decode('utf-8-sig', 'replace').splitlines()
-        append_audit_log(out_xlsx, started, [(args.audit_log, args.dry_run, {}, lines)])
+        append_audit_log(out_xlsx, started, [(args.audit_log, not args.apply, {}, lines)])
         return 0
 
     phases = [p for p in PHASE_ORDER
@@ -2266,18 +2304,16 @@ def main(argv=None):
         phases = ['report_only']
     if not phases:
         ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
-    if args.dry_run and any(p not in DRY_RUN_PHASES for p in phases):
-        ap.error('--dry-run is only supported with --fill-blanks, --flatten, --quarantine-ads, --move-incomplete, --delete-junk, --visual-compare and --final-check')
-    if args.visual_compare and not args.dry_run:
-        ap.error('--visual-compare only reports for now: add --dry-run')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)
         return 2
 
+    # A phase that only reports runs the same either way
+    dry = {p: not args.apply and p not in REPORT_PHASES for p in phases}
     results = []
     for phase in phases:
-        key = phase + '_dry_run' if args.dry_run else phase
+        key = phase + '_dry_run' if dry[phase] else phase
         if len(phases) > 1:
             print(f"\n----- {key} -----")
         log = []
@@ -2293,8 +2329,13 @@ def main(argv=None):
     if len(phases) > 1:
         _print_summary(results)
     append_audit_log(out_xlsx, started,
-                     [(phase, args.dry_run, counts, log)
+                     [(phase, dry[phase], counts, log)
                       for phase, (_key, counts, _issues, log) in zip(phases, results)])
+    if any(dry.values()):
+        print("\nDRY RUN: nothing was changed. Run the same command again with --apply to make these changes.")
+        if len([p for p in phases if dry[p]]) > 1:
+            print("Each phase was previewed against the folder as it is now, so a later phase may "
+                  "do more once the earlier ones have run.")
     return 0
 
 

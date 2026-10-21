@@ -14,18 +14,23 @@
 .PARAMETER Path
     Folder to scan. Defaults to the current directory.
 
-.PARAMETER WhatIf
-    PowerShell built-in. Use -WhatIf to preview without renaming.
+.PARAMETER Apply
+    Rename the files. Without it the script only lists what it would rename
+    (a dry run) and changes nothing. -WhatIf also previews.
 
 .EXAMPLE
-    .\Fix-Extensions.ps1 -Path "D:\Pictures\2026" -WhatIf
     .\Fix-Extensions.ps1 -Path "D:\Pictures\2026"
+    .\Fix-Extensions.ps1 -Path "D:\Pictures\2026" -Apply
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$Path = (Get-Location).Path
+    [string]$Path = (Get-Location).Path,
+    [switch]$Apply
 )
+
+# A dry run unless -Apply is given
+if (-not $Apply) { $WhatIfPreference = $true }
 
 function Get-FileType {
     param([string]$FilePath)
@@ -175,6 +180,8 @@ foreach ($f in $files) {
         Write-Host ("RENAMED  : " + $f.Name + "  ->  " + (Split-Path $newPath -Leaf)) -ForegroundColor Green
         $audit.Add("RENAMED: " + $f.FullName + " -> " + (Split-Path $newPath -Leaf))
     } elseif ($WhatIfPreference) {
+        $changed++
+        Write-Host ("WOULD RENAME : " + $f.Name + "  ->  " + (Split-Path $newPath -Leaf)) -ForegroundColor Green
         $audit.Add("WOULD RENAME: " + $f.FullName + " -> " + (Split-Path $newPath -Leaf))
     }
 }
@@ -182,13 +189,18 @@ foreach ($f in $files) {
 Write-Host ""
 Write-Host "Summary:" -ForegroundColor Cyan
 Write-Host ("  Correct extension : " + $ok)
-Write-Host ("  Renamed           : " + $changed)
+Write-Host ("  " + $(if ($WhatIfPreference) { 'Would rename      : ' } else { 'Renamed           : ' }) + $changed)
 Write-Host ("  Sony sidecars     : " + $sidecar)
 Write-Host ("  Unknown format    : " + $unknown)
 Write-Host ("  Empty (0 bytes)   : " + $empty)
-if ($plan.Count -gt 0 -and -not $PSBoundParameters.ContainsKey('WhatIf')) {
+if ($plan.Count -gt 0 -and -not $WhatIfPreference) {
     $plan | Format-Table -AutoSize
 }
 
-$audit.Add("SUMMARY: correct extension $ok, renamed $changed, Sony sidecars $sidecar, unknown format $unknown, empty $empty")
+$renamedWord = if ($WhatIfPreference) { 'would rename' } else { 'renamed' }
+$audit.Add("SUMMARY: correct extension $ok, $renamedWord $changed, Sony sidecars $sidecar, unknown format $unknown, empty $empty")
 Write-AuditLog -Path $Path -Phase 'fix_extensions' -Lines $audit -DryRun:$WhatIfPreference
+if ($WhatIfPreference) {
+    Write-Host ""
+    Write-Host "DRY RUN: nothing was renamed. Run the same command again with -Apply to rename." -ForegroundColor Cyan
+}

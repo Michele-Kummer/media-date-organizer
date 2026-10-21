@@ -25,13 +25,13 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 7 |
-| User stories | 25 (19 Done, 6 Partly done) |
-| Bugs | 24 (3 open, 21 resolved) |
+| User stories | 27 (25 Done, 2 Partly done) |
+| Bugs | 24 (2 open, 22 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
 | Michele Kummer | 0 | 6 | 6 |
-| Claude | 3 | 15 | 18 |
+| Claude | 2 | 16 | 18 |
 | Automated tests | 0 | 0 | 0 |
 
 ---
@@ -86,7 +86,7 @@ As a media owner, I want photos and videos whose extension does not match their 
   - videos: MP4/MOV, 3GP/3G2, M2TS/MTS, MPG, WMV and AVI.
 - A mismatched extension is corrected, for example a `.PNG` that is really HEIC, or a `.HEIC` that is really a QuickTime video. 3GP/3G2 keep their own extension.
 - Empty files are listed as `EMPTY`. Unrecognised non-empty files are listed as `UNKNOWN`. Sony `.modd`/`.moff` video sidecars are counted, not reported as unknown.
-- `-WhatIf` previews without renaming.
+- It lists the renames and changes nothing unless `-Apply` is given (US-27).
 
 **Status:** Done
 
@@ -109,7 +109,7 @@ As a photo owner, I want photos with a blank Date Taken to get one from the best
 - The file's modified time is never used, because copying and importing resets it.
 - JPEGs get their EXIF block replaced without re-encoding the picture. HEIC is written with ExifTool.
 - Empty files are skipped and counted.
-- `--dry-run` lists what would be written.
+- Without `--apply` it lists what would be written (US-27).
 
 **Status:** Done
 
@@ -130,9 +130,9 @@ As a photo owner, I want PNG screenshots converted to JPEG, so that Windows Expl
 - PNGs with any transparent pixel stay PNG. So do Snapchat `*-overlay.png` caption layers.
 - A `.png` that cannot be read is reported as `FAILED to convert` and the rest still convert. A half-written JPEG is removed.
 - The original PNG is left for the cleanup script (US-11).
-- The conversion runs only after the user confirms.
+- Without `--apply` it lists each PNG that would be converted (`WOULD CONVERT`) and writes nothing. Claude adds `--apply` only after the user confirms.
 
-**Status:** Partly done. There is no `--dry-run` preview (US-22).
+**Status:** Done
 
 </details>
 
@@ -149,8 +149,9 @@ As a media owner, I want each photo and video in a folder named for its real dat
 - A file loose in the root is never moved out of it. It is checked against the root's own name; if that is a different date, it is listed as `in-root-date-differs` and left where it is.
 - A file with no date inside it, in a dated folder, gets that folder's date appended to its name (`IMG_1_2019-08-30.jpg`), so the date survives a later move.
 - A name already taken at the target is skipped as a `COLLISION` and never overwritten.
+- Without `--apply` it lists each move (`WOULD MOVE`) and rename, creates no folder, and reports the same collisions a real run would meet.
 
-**Status:** Partly done. There is no `--dry-run` preview, though `--report-only` shows the plan.
+**Status:** Done
 
 #### US-10 Flatten dated subfolders
 As a media owner, I want every dated photo and video moved up into the media folder itself, so that I have one flat folder per year.
@@ -159,7 +160,7 @@ As a media owner, I want every dated photo and video moved up into the media fol
 - Camcorder, MPEG, WMV and AVI videos move too, going by the date in the filename, else the subfolder name. The date is appended to the name when it came from the folder.
 - Inside `_ads`, files move up into `_ads` itself, dated or not.
 - Subfolders left empty are moved into `_empty_folders`, keeping their path. Nothing is deleted.
-- `--dry-run` previews.
+- Without `--apply` it only previews.
 
 **Status:** Done
 
@@ -177,7 +178,7 @@ As a photo owner, I want the PNG left behind by a conversion removed, and empty 
 - Every other file that shares a name is kept: a Live Photo video next to its photo, a sidecar (`.xmp`, `.aae`), or a HEIC next to a JPG.
 - `_ads`, `_incomplete`, `_no-image-data` and `_empty_folders` are skipped.
 - Empty folders are moved into `_empty_folders`, keeping their path.
-- `-WhatIf` previews. The console, the summary and the audit workbook all list each PNG deleted and each one kept.
+- It previews unless `-Apply` is given. The console, the summary and the audit workbook all list each PNG deleted (or that would be) and each one kept.
 
 **Status:** Done
 
@@ -193,7 +194,7 @@ As a media owner, I want ad and app-cache images and videos moved out of my medi
 
 - `--quarantine-ads` moves photos and videos with an ad-style name and no camera information into `_ads`. Examples of ad-style names: a UUID, `UnityAdsCache-<hash>`, `news_images%2F…`.
 - Camera information is EXIF Make/Model on a photo, or a device-make tag on a video. A file that has it is never treated as an ad.
-- Nothing is deleted. `--dry-run` previews.
+- Nothing is deleted. Without `--apply` it only previews.
 
 **Status:** Done
 
@@ -202,7 +203,7 @@ As a media owner, I want failed copies moved out of the way, so that they stop s
 
 - `--move-incomplete` moves files that are 0 bytes or all null bytes, and videos with no video header, into `_incomplete`, keeping their subfolder path.
 - Files in the older `_no-image-data` folder are folded into `_incomplete`.
-- Nothing is deleted. `--dry-run` previews.
+- Nothing is deleted. Without `--apply` it only previews.
 
 **Status:** Done
 
@@ -212,7 +213,7 @@ As a media owner, I want files that hold no picture or recording deleted, so tha
 - `--delete-junk` deletes `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, and macOS `._` sidecars.
 - A `._` file is deleted only when its contents carry the AppleDouble signature.
 - Thumbnail caches are matched by whole file name only, so `west sucking thumb.jpg` is safe.
-- This is a real delete. `--dry-run` previews, and Claude asks before running it.
+- This is a real delete. Without `--apply` it only lists the files, and Claude asks before adding `--apply`.
 
 **Status:** Done
 
@@ -238,7 +239,7 @@ As a media owner, I want to know which photos and videos are copies of each othe
 As a media owner, I want to know whether a photo or video skipped as a `COLLISION` is the same as the file in its way, so that I know which one to delete.
 
 - `--compare-collisions` lists each pair as `IDENTICAL` or `DIFFERENT`. It also covers files `--flatten` renamed or left behind.
-- `--visual-compare --dry-run` compares the pixels of two photos, or four frames of two videos. It reports `DUPLICATE`, `DIFFERENT` or `UNSURE` with a confidence level, which goes into its own column in the audit workbook.
+- `--visual-compare` compares the pixels of two photos, or four frames of two videos. It reports `DUPLICATE`, `DIFFERENT` or `UNSURE` with a confidence level, which goes into its own column in the audit workbook.
 - Both run entirely on the computer and change nothing.
 
 **Status:** Done
@@ -264,14 +265,14 @@ As a media owner, I want one report of everything still needing attention, so th
   - subfolders not flattened;
   - name collisions;
   - audit workbooks left behind.
-- Its only change is renaming audit workbooks so their name includes the folder and media type. `--dry-run` previews that.
+- Its only change is renaming audit workbooks so their name includes the folder and media type, and only with `--apply`.
 
 **Status:** Done
 
 </details>
 
 <details>
-<summary><strong>Epic 6 — Workflow, safety and record-keeping</strong> (US-19 to US-23)</summary>
+<summary><strong>Epic 6 — Workflow, safety and record-keeping</strong> (US-19 to US-23, US-26, US-27)</summary>
 
 Run the steps together, preview them, never lose a photo or video by surprise, and keep a history.
 
@@ -281,8 +282,9 @@ As a media owner, I want one command that runs the routine steps in the right or
 - `--all` runs, in order: delete junk, move incomplete files, fill blanks, convert PNG, apply moves, sync timestamps.
 - `--quarantine-ads` and `--flatten` can be added to it.
 - It ends with one summary of every step's counts and up to 50 problems per step.
+- Without `--apply` it previews every step against the folder as it is now, and says that a later step may do more once the earlier ones have run.
 
-**Status:** Partly done. `--all --dry-run` is refused, so the combined run cannot be previewed.
+**Status:** Done
 
 #### US-20 Match Explorer's dates to the date taken
 As a media owner, I want Date Created and Date Modified to match when the photo or video was taken, so that every Explorer column agrees.
@@ -291,7 +293,9 @@ As a media owner, I want Date Created and Date Modified to match when the photo 
 - Date Modified is set too, but only on files that look unedited. A photo looks edited when EXIF `DateTime` differs from `DateTimeOriginal` by a minute or more, or when `Software` names a known editor (Photoshop, Lightroom, Snapseed and others). An edited file keeps its Date Modified.
 - Date Created is set through the Win32 API. On other systems only Date Modified is synced.
 
-**Status:** Partly done. One unreadable file stops the whole step (BUG-02). There is no `--dry-run` preview.
+- Without `--apply` it lists each file that would be synced (`WOULD SYNC`) and changes no timestamp.
+
+**Status:** Partly done. One unreadable file stops the whole step (BUG-02).
 
 #### US-21 Never delete without saying so
 As a media owner, I want photos and videos moved aside rather than deleted, except in steps that say they delete, so that mistakes can be undone.
@@ -304,25 +308,46 @@ As a media owner, I want photos and videos moved aside rather than deleted, exce
 #### US-22 Preview before anything changes
 As a media owner, I want to see what a step will do before it does it, so that I never lose a photo or video by surprise.
 
-- `--dry-run` works with fill blanks, flatten, quarantine ads, move incomplete, delete junk, visual compare and final check. `-WhatIf` works with both PowerShell scripts.
-- Claude previews each changing step and asks before going ahead.
+- Every step that changes files previews by default, and changes files only with `--apply` (US-27). That includes `--convert-png`, `--apply-moves`, `--sync-timestamps` and `--all`, which had no preview before.
+- Claude previews each changing step and asks before going ahead. The slash commands do the same (US-26).
+- A preview changes nothing, not even the audit workbook's name (BUG-05).
 
-**Status:** Partly done. These have no dry run:
-- `--convert-png`
-- `--apply-moves`
-- `--sync-timestamps`
-- `--all`
-
-`--dry-run` also renames an old-style audit workbook (BUG-05).
+**Status:** Done
 
 #### US-23 Keep a history of everything done to a folder
 As a media owner, I want a record of every step run on a photo or video folder, so that I can see later what changed and when.
 
 - The workbook is named `<folder>_<photos|videos>_media_audit_<date>.xlsx`, in the media folder. Whichever kind the folder holds more of picks `photos` or `videos`. Runs on the same day share it.
-- Every step appends to the Run log and Run counts sheets. That includes dry runs and both PowerShell scripts.
+- Every step appends to the Run log and Run counts sheets. That includes dry runs (marked `yes` in the Dry run column) and both PowerShell scripts.
 - If the workbook is open in Excel, the step runs but is not recorded.
 
 **Status:** Partly done. A step that stops on an error records nothing, and in `--all` neither do the steps that finished before it (BUG-02).
+
+#### US-26 Slash commands show what they would do, and change files only with `--apply`
+As a media owner, I want `/fix-media-dates` and `/flatten-media` to show me what they would change before they change anything, and to make the changes only when I type `--apply`, so that I can check the plan first and nothing changes by accident. (Plex-Filename-Organizer's scripts work the same way.)
+
+- `/fix-media-dates <folder>` and `/flatten-media <folder>` are dry runs. Every step runs as a preview, and nothing is renamed, written, converted, moved or deleted.
+- A dry run ends by telling the user what to type to go ahead: `/fix-media-dates <folder> --apply` or `/flatten-media <folder> --apply`.
+- `/fix-media-dates <folder> --apply` and `/flatten-media <folder> --apply` make the changes. Optional steps (PNG conversion, timestamp sync, flatten, ads) run only when the user asked for them.
+- `/fix-media-dates <folder> --all` previews `organize.py --all` (delete junk, move incomplete, fill blanks, convert PNG, apply moves, sync timestamps) in one go, and ends by telling the user to type `/fix-media-dates <folder> --all --apply`, which makes those changes. As before, ad quarantine and flatten are left out unless `--quarantine-ads` or `--flatten` is added, and fixing extensions and cleanup run on their own.
+- Both commands show `[--apply]` in their argument hint (`/fix-media-dates` also shows `[--all]`), and `/media-help` lists every form.
+- `/report-opposite-type` only reports, so it has no `--apply`.
+- `tests/test_commands.py` checks each of these, and that no command, skill or guide still says `--dry-run` or `-WhatIf`.
+
+**Status:** Done
+
+#### US-27 Every step that changes files has a dry run, and it is the default
+As a media owner, I want every step that changes my photos and videos to preview by default, so that I never have to remember a preview flag to stay safe.
+
+- Every `organize.py` step that writes, converts, moves, renames or deletes files lists what it would do (`WOULD WRITE`, `WOULD CONVERT`, `WOULD MOVE`, `WOULD SYNC`, `WOULD DELETE`, ...) and changes nothing unless `--apply` is given. This covers `--delete-junk`, `--move-incomplete`, `--quarantine-ads`, `--fill-blanks`, `--convert-png`, `--apply-moves`, `--sync-timestamps`, `--flatten`, `--final-check` and `--all`.
+- A dry run ends with `DRY RUN: nothing was changed. Run the same command again with --apply to make these changes.`
+- `Fix-Extensions.ps1` and `Cleanup-Pictures.ps1` preview unless `-Apply` is given. `-WhatIf` still works.
+- Reports (`--report-only`, `--compare-collisions`, `--visual-compare`, `--opposite-type`, `find_duplicates.py`) change nothing, so they run the same either way. `--visual-compare` no longer needs a flag.
+- `--dry-run` is still accepted and means the default. It cannot be combined with `--apply`.
+- A dry run is recorded in the audit workbook, marked `yes` in the Dry run column, and never renames the workbook (BUG-05).
+- `tests/test_dry_run.py` runs each step without `--apply` and checks that no file's content, name or timestamp changed, then runs it with `--apply` and checks that something did. A new step that changes files fails the test until it is added there.
+
+**Status:** Done
 
 </details>
 
@@ -334,10 +359,10 @@ Change and test the plugin safely.
 #### US-24 Test without real photos or videos
 As a maintainer, I want tests that run on generated files, so that I can check a change without risking my own photos and videos.
 
-- `py -m unittest discover tests -v` runs the suite. It currently has 23 tests.
+- `py -m unittest discover tests -v` runs the suite. It currently has 36 tests.
 - `sample-data/generate.py` makes synthetic test photos. The video tests generate their own small videos with ffmpeg.
 - Video tests are skipped when ffmpeg is missing. The video date-writing test is skipped when ExifTool is missing. The Date Created test runs only on Windows.
-- The PowerShell scripts have no automated tests.
+- The PowerShell scripts are tested only for their dry run (`-Apply`), and only on Windows.
 
 **Status:** Done
 
@@ -357,7 +382,7 @@ As a maintainer, I want to load my local copy into Claude Code, so that I can tr
 Severity: **High** means files are lost or the plugin can't be used. **Medium** means a wrong result, or a step that fails or stops. **Low** means a cosmetic problem, or one with a workaround.
 
 <details>
-<summary><strong>Open bugs</strong> (3, all found by Claude on 2026-10-21)</summary>
+<summary><strong>Open bugs</strong> (2, both found by Claude on 2026-10-21)</summary>
 
 Each was reproduced on synthetic files, except where noted.
 
@@ -385,19 +410,10 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 **Steps to reproduce:** `detect_type` on a file starting `....ftyphevc` or `....ftypavif` returns `.mp4`.
 **Expected:** HEIF brands (`hevc`, `heim`, `heis`, `hevx`) return `.heic`. Unknown brands return `None`.
 
-#### BUG-05 `--dry-run` renames an audit workbook
-**Severity:** Low · **Found by:** Claude · **Affects:** the audit workbook (no photo or video is touched) · **Where:** `_default_xlsx` in [organize.py](../skills/media-date-organizer/scripts/organize.py)
-
-Working out today's workbook name renames an old-style `media_audit_<date>.xlsx` to `<folder>_<type>_media_audit_<date>.xlsx`. This happens on every run, previews included.
-
-**Steps to reproduce:** Put today's `media_audit_<date>.xlsx` in a folder and run `--flatten --dry-run`.
-**Expected:** Nothing in the folder changes.
-**Actual:** The workbook is renamed to `2014_photos_media_audit_<date>.xlsx`.
-
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (21: 6 found by Michele Kummer, 15 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (22: 6 found by Michele Kummer, 16 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -423,7 +439,8 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-23 | Minimum Python version stated but never checked | Setup | Low | Claude | `8c6d76f` |
 | BUG-24 | PowerShell scripts skipped the audit log without `python` on PATH | Audit workbook | Low | Claude | `8c6d76f` |
 | BUG-01 | Cleanup deleted Live Photo videos and sidecar files | Photos and videos | High | Claude | `1111480` |
-| BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | 2026-10-21 (uncommitted) |
+| BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | `2b6ea1d` |
+| BUG-05 | A dry run renamed an audit workbook | Audit workbook | Low | Claude | 2026-10-21 (uncommitted) |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -546,9 +563,15 @@ The README said Python 3.9+, but nothing enforced it, and the skill docs did not
 **Fix:** The only file it deletes now is a PNG photo with a JPG or JPEG of the same name beside it, and only when both are the same size and differ by no more than 1% in their pixels, as a `--convert-png` conversion does. Videos and sidecars are never deleted. Any other pair is kept, and a PNG whose JPG differs is listed as `KEPT (not the same picture)` with the reason. The holding folders are skipped. The `-PreferredExtOrder` parameter is gone, and `-MaxPixelDifference` is new. US-11 describes how the pictures are compared.
 
 #### BUG-03 Report and `--apply-moves` only looked one folder deep
-**Severity:** Medium · **Found by:** Claude · **Affects:** photos and videos · **Fixed:** 2026-10-21 (not yet committed)
+**Severity:** Medium · **Found by:** Claude · **Affects:** photos and videos · **Fixed in:** `2b6ea1d`
 
 `scan` looked only at photos and videos exactly one folder below the root, while `--fill-blanks`, `--sync-timestamps`, `--flatten` and `--convert-png` work at any depth. With `root\loose.jpg`, `root\2019-08-30\wrong.jpg` and `root\Trip\2019-08-30\deep.jpg`, `--report-only` reported only `wrong.jpg`. After `--flatten`, every file is loose in the root, so a later report listed none of them. `--apply-moves`, `--compare-collisions` and `--visual-compare` use the same scan, so they missed the same files.
 **Fix:** `scan` walks the root and every subfolder at any depth, skipping the holding folders, like `--fill-blanks`. Each file is checked against the folder it sits in and moves to a sibling of that folder (`Trip\2019-08-31`). A file loose in the root is never moved out of it; one whose date differs from a dated root is listed as `in-root-date-differs`. The fill-blank date now comes from the same source `--fill-blanks` uses, so a video gets the nearest dated folder. Two tests cover it, and both fail on the old code.
+
+#### BUG-05 A dry run renamed an audit workbook
+**Severity:** Low · **Found by:** Claude · **Affects:** the audit workbook (no photo or video is touched) · **Fixed:** 2026-10-21 (not yet committed)
+
+Working out today's workbook name renamed an old-style `media_audit_<date>.xlsx` to `<folder>_<type>_media_audit_<date>.xlsx` on every run, previews included. With `media_audit_<date>.xlsx` in a folder named `2014`, `--flatten --dry-run` renamed it to `2014_photos_media_audit_<date>.xlsx`.
+**Fix:** A dry run leaves the workbook's name alone and records itself in the old-style workbook. The next run with `--apply` renames it. Fixed with US-27, which made every step a dry run unless `--apply` is given. `tests/test_dry_run.py` covers it.
 
 </details>

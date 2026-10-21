@@ -123,7 +123,7 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(plan['right.jpg']['action'], 'keep')
         self.assertEqual(plan['undated.jpg']['new_name'], 'undated_2019-08-30.jpg')
 
-        code, _ = run(self.root, '--apply-moves')
+        code, _ = run(self.root, '--apply-moves', '--apply')
 
         self.assertEqual(code, 0)
         self.assertEqual(names(self.root / '2019-08-31'), ['wrong.jpg'])
@@ -157,7 +157,7 @@ class SmokeTests(unittest.TestCase):
         (day / 'IMG_0001.AAE').write_text('edit sidecar')
         (day / 'Thumbs.db').write_bytes(b'cache')
 
-        code, _ = run(self.root, '--all')
+        code, _ = run(self.root, '--all', '--apply')
 
         self.assertEqual(code, 0)
         # Junk deleted, the incomplete file set aside
@@ -184,12 +184,12 @@ class SmokeTests(unittest.TestCase):
             make_image(p)
         make_image(self.root / '_ads' / 'IMG_20210304_101112.jpg')   # holding folders are left alone
 
-        code, out = run(self.root, '--fill-blanks', '--dry-run')
+        code, out = run(self.root, '--fill-blanks')
         self.assertEqual(code, 0)
         self.assertIn('WOULD WRITE', out)
         self.assertIsNone(date_taken(deep), 'a dry run must not write anything')
 
-        code, _ = run(self.root, '--fill-blanks')
+        code, _ = run(self.root, '--fill-blanks', '--apply')
 
         self.assertEqual(code, 0)
         for p in (in_root, one_down, deep):
@@ -236,7 +236,7 @@ class SmokeTests(unittest.TestCase):
         (self.root / '2014' / 'media_audit_2020-01-01.xlsx').write_bytes(b'an earlier audit')
         before = sorted(str(p) for p in self.root.rglob('*'))
 
-        code, out = run(self.root, '--final-check', '--dry-run')
+        code, out = run(self.root, '--final-check')
 
         self.assertEqual(code, 0)
         self.assertIn('IN ADS: 2014/_ads (2 file(s))', out)
@@ -260,7 +260,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn(own, names(self.root), 'the workbook is named for its folder and media type')
         self.assertNotIn('audit file: ' + own, out.lower(), "this run's own workbook is not a leftover")
 
-        code, out = run(self.root, '--final-check')
+        code, out = run(self.root, '--final-check', '--apply')
 
         # The one change a real run makes: the leftover workbook gets its prefix
         self.assertEqual(code, 0)
@@ -274,17 +274,17 @@ class SmokeTests(unittest.TestCase):
         (day / '._shot.png').write_bytes(organize.APPLEDOUBLE_MAGIC + b'\x00' * 60)
         make_image(day / '._real.png')                         # a picture, despite the name
 
-        code, out = run(self.root, '--convert-png')
+        code, out = run(self.root, '--convert-png', '--apply')
         self.assertEqual(code, 0)
         self.assertIn('FAILED to convert', out)
         self.assertIn('shot.jpg', os.listdir(day), 'the new JPEG gets a lowercase extension')
         self.assertNotIn('._shot.jpg', names(day))
 
-        code, _ = run(self.root, '--delete-junk', '--dry-run')
+        code, _ = run(self.root, '--delete-junk')
         self.assertEqual(code, 0)
         self.assertIn('._shot.png', names(day), 'a dry run must not delete anything')
 
-        code, _ = run(self.root, '--delete-junk')
+        code, _ = run(self.root, '--delete-junk', '--apply')
         self.assertEqual(code, 0)
         self.assertNotIn('._shot.png', names(day))
         self.assertIn('._real.png', names(day))
@@ -297,7 +297,7 @@ class SmokeTests(unittest.TestCase):
         make_image(day / 'already_2020-01-01.jpg')
         make_image(day / 'stray.jpeg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))
 
-        code, _ = run(self.root, '--apply-moves')
+        code, _ = run(self.root, '--apply-moves', '--apply')
 
         self.assertEqual(code, 0)
         # Exact names: the extension keeps its spelling and its case
@@ -321,7 +321,7 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(date_taken(edited), taken)
         modified = os.stat(edited).st_mtime
 
-        code, out = run(self.root, '--sync-timestamps')
+        code, out = run(self.root, '--sync-timestamps', '--apply')
 
         self.assertEqual(code, 0)
         self.assertIn('created only (edited)', out)
@@ -340,12 +340,12 @@ class SmokeTests(unittest.TestCase):
             make_image(day / name)
         make_image(day / 'IMG_20200101_120000.jpg')
 
-        code, out = run(self.root, '--quarantine-ads', '--dry-run')
+        code, out = run(self.root, '--quarantine-ads')
         self.assertEqual(code, 0)
         self.assertEqual(len(names(day)), 4, 'a dry run must not move anything')
         self.assertIn('WOULD', out)
 
-        code, _ = run(self.root, '--quarantine-ads')
+        code, _ = run(self.root, '--quarantine-ads', '--apply')
         self.assertEqual(code, 0)
         self.assertEqual(names(day), ['img_20200101_120000.jpg'])
         self.assertEqual(names(self.root / '_ads' / '2020-01-01'), sorted(ads))
@@ -358,11 +358,11 @@ class SmokeTests(unittest.TestCase):
 
         (self.root / 'clip.mp4').write_bytes(b'not read: only the extension is counted')
 
-        code, out = run(self.root, '--flatten', '--dry-run')
+        code, out = run(self.root, '--flatten')
         self.assertEqual(code, 0)
         self.assertIn('OPPOSITE TYPE: 1 video(s) in this photo folder (2 photo(s)) once flattened', out)
 
-        code, out = run(self.root, '--flatten')
+        code, out = run(self.root, '--flatten', '--apply')
 
         self.assertEqual(code, 0)
         self.assertIn('OPPOSITE TYPE: 1 video(s) in this photo folder (2 photo(s))', out)
@@ -384,12 +384,12 @@ class SmokeTests(unittest.TestCase):
         (day / 'Edits' / 'Old').mkdir(parents=True)
         (self.root / '_empty_folders' / '2020-01-01').mkdir(parents=True)   # from an earlier run
 
-        code, out = run(self.root, '--flatten', '--dry-run')
+        code, out = run(self.root, '--flatten')
         self.assertEqual(code, 0)
         self.assertIn('WOULD MOVE EMPTY', out)
         self.assertTrue((day / 'a.jpg').exists())
 
-        code, out = run(self.root, '--flatten')
+        code, out = run(self.root, '--flatten', '--apply')
 
         self.assertEqual(code, 0)
         self.assertEqual(sorted(n for n in names(self.root) if n.endswith('.jpg')), ['a.jpg', 'b.jpg'])
@@ -401,7 +401,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('"empty-folders-moved": 3', out)
 
         # _empty_folders is a holding folder: a second run leaves it alone
-        code, out = run(self.root, '--flatten')
+        code, out = run(self.root, '--flatten', '--apply')
         self.assertEqual(code, 0)
         self.assertTrue(moved.is_dir())
         self.assertNotIn('MOVED EMPTY', out)
@@ -422,7 +422,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('IDENTICAL', out)
         self.assertIn('clip_2020-01-01.jpg | clip.jpg', out)
 
-        code, out = run(self.root, '--visual-compare', '--dry-run')
+        code, out = run(self.root, '--visual-compare')
         self.assertEqual(code, 0)
         verdicts = {ln.split(': ', 1)[1].split(' - ')[0]: ln.split(':')[0]
                     for ln in out.splitlines() if ' | ' in ln}
@@ -433,9 +433,10 @@ class SmokeTests(unittest.TestCase):
                          'DIFFERENT (confidence high)')
         # Report only: no file added, removed or renamed
         self.assertEqual(before, sorted(str(p) for p in self.root.rglob('*') if p.suffix != '.xlsx'))
-        # And it refuses to run as anything but a dry run
-        with self.assertRaises(SystemExit):
-            run(self.root, '--visual-compare')
+        # It only reports, so --apply changes nothing either
+        code, _ = run(self.root, '--visual-compare', '--apply')
+        self.assertEqual(code, 0)
+        self.assertEqual(before, sorted(str(p) for p in self.root.rglob('*') if p.suffix != '.xlsx'))
 
 
 if __name__ == '__main__':

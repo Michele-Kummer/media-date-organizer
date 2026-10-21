@@ -13,8 +13,12 @@ Show the user the list below as it is, then ask which one they want to do and fo
 
 | I want to… | Type |
 |---|---|
-| Make sure every photo and video has the right Date Taken, step by step | `/fix-media-dates D:\Pictures\2026` |
-| Move everything up out of its subfolders into the main folder | `/flatten-media D:\Pictures\2026` |
+| See what fixing the dates would change (changes nothing) | `/fix-media-dates D:\Pictures\2026` |
+| Then make those changes | `/fix-media-dates D:\Pictures\2026 --apply` |
+| See what the routine steps would change, all in one go (changes nothing; add `--quarantine-ads` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
+| Then make all of those changes | `/fix-media-dates D:\Pictures\2026 --all --apply` |
+| See what moving everything up out of its subfolders would do (changes nothing) | `/flatten-media D:\Pictures\2026` |
+| Then move them | `/flatten-media D:\Pictures\2026 --apply` |
 
 **Check, without changing anything**
 
@@ -37,7 +41,8 @@ Show the user the list below as it is, then ask which one they want to do and fo
 ## Good to know
 
 - Lines starting with `/` are typed in the Claude chat, not in PowerShell.
-- Every step that changes files is previewed first, and Claude asks before going ahead.
+- `/fix-media-dates` and `/flatten-media` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
+- The plain-language steps are previewed first too, and Claude asks before going ahead.
 - Ads, incomplete files and empty folders are moved into `_ads`, `_incomplete` and `_empty_folders`, not deleted.
 - Each folder gets an audit spreadsheet (`.xlsx`) recording everything that was done.
 - First time? Try it on a small folder, or a copy of one.

@@ -1,38 +1,40 @@
 How to run all phases
+
+Every step only previews what it would do. The commands below have --apply (-Apply for the .ps1 scripts) so they make the changes; leave it off to preview first.
 cd C:\Code\media-date-organizer
 $root = "D:\Pictures\20"
-.\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path $root
+.\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path $root -Apply
 
-py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads
-py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete
-py skills\media-date-organizer\scripts\organize.py --root $root --delete-junk
+py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --delete-junk --apply
 
-py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks
-py skills\media-date-organizer\scripts\organize.py --root $root --convert-png
-py skills\media-date-organizer\scripts\organize.py --root $root --apply-moves
-py skills\media-date-organizer\scripts\organize.py --root $root --sync-timestamps
-py skills\media-date-organizer\scripts\organize.py --root $root --flatten
-.\skills\media-date-organizer\scripts\Cleanup-Pictures.ps1 -Path $root
+py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --convert-png --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --apply-moves --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --sync-timestamps --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --flatten --apply
+.\skills\media-date-organizer\scripts\Cleanup-Pictures.ps1 -Path $root -Apply
 py -m unittest discover tests -v
 
 py skills\media-date-organizer\scripts\organize.py --root $root --report-only
-py skills\media-date-organizer\scripts\organize.py --root $root --flatten --dry-run
+py skills\media-date-organizer\scripts\organize.py --root $root --flatten
 py -m unittest discover tests -v
 
 
 $root = "D:\Videos\20"
-.\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path $root
-py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads
-py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete
-py skills\media-date-organizer\scripts\organize.py --root $root --delete-junk
+.\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path $root -Apply
+py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --delete-junk --apply
 
-py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks
-py skills\media-date-organizer\scripts\organize.py --root $root --convert-png
-py skills\media-date-organizer\scripts\organize.py --root $root --apply-moves
-py skills\media-date-organizer\scripts\organize.py --root $root --sync-timestamps
-py skills\media-date-organizer\scripts\organize.py --root $root --visual-compare --dry-run
-py skills\media-date-organizer\scripts\organize.py --root $root --flatten
-.\skills\media-date-organizer\scripts\Cleanup-Pictures.ps1 -Path $root
+py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --convert-png --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --apply-moves --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --sync-timestamps --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --visual-compare
+py skills\media-date-organizer\scripts\organize.py --root $root --flatten --apply
+.\skills\media-date-organizer\scripts\Cleanup-Pictures.ps1 -Path $root -Apply
 py -m unittest discover tests -v
 
 
@@ -41,7 +43,7 @@ py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures" --opposi
 
 
 py skills\media-date-organizer\scripts\organize.py --root $root --report-only
-py skills\media-date-organizer\scripts\organize.py --root $root --flatten --dry-run
+py skills\media-date-organizer\scripts\organize.py --root $root --flatten
 
 
 Report photos in video folders and videos in photo folders, by year folder (changes nothing)
@@ -79,10 +81,13 @@ py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures\2026" --a
 py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures\2026" --sync-timestamps
 ```
 
-Or the last four in one go (this also deletes `.AAE` sidecar files first), with a summary of every phase at the end:
+Each of these only previews (a dry run). Add `--apply` to the end of a line to make the changes.
+
+Or the last four in one go (this also deletes `.AAE` sidecar files first), with a summary of every phase at the end. Preview, then apply:
 
 ```powershell
 py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures\2026" --all
+py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures\2026" --all --apply
 ```
 
 **With the debugger** (step through code, inspect variables, set breakpoints):
@@ -116,7 +121,7 @@ Open `Fix-Extensions.ps1` or `Cleanup-Pictures.ps1`:
 - Right-click in the editor → **Run File in PowerShell Integrated Console** — run the whole script
 - Or just type the full command in the terminal:
   ```powershell
-  .\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path "D:\Pictures\2026" -WhatIf
+  .\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path "D:\Pictures\2026"
   ```
 
 If PowerShell refuses to run `.ps1` files ("execution of scripts is disabled"), fix the policy once with:

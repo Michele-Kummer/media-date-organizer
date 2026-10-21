@@ -78,7 +78,7 @@ class VideoSmokeTests(unittest.TestCase):
         self.assertEqual(media_created(self.root / '2019-01-01' / 'clip.mp4'), CREATED_LOCAL)
         self.assertIsNone(media_created(self.blank))
 
-        code, _ = run(self.root, '--apply-moves')
+        code, _ = run(self.root, '--apply-moves', '--apply')
 
         self.assertEqual(code, 0)
         self.assertEqual(names(self.root / CREATED_DAY), ['clip.mp4'])
@@ -91,11 +91,11 @@ class VideoSmokeTests(unittest.TestCase):
         no_source = self.put(self.blank, '2014', 'clip.mp4')        # a year is not a date
         already = self.put(self.dated, '2019-08-30', 'dated.mp4')
 
-        code, out = run(self.root, '--fill-blanks', '--dry-run')
+        code, out = run(self.root, '--fill-blanks')
         self.assertEqual(code, 0)
         self.assertIsNone(media_created(from_name), 'a dry run must not write anything')
 
-        code, out = run(self.root, '--fill-blanks')
+        code, out = run(self.root, '--fill-blanks', '--apply')
 
         self.assertEqual(code, 0)
         self.assertEqual(media_created(from_name), datetime.datetime(2019, 6, 30, 9, 1, 36))
@@ -111,7 +111,7 @@ class VideoSmokeTests(unittest.TestCase):
         (day / 'nulls.mp4').write_bytes(b'\x00' * 4096)
         (day / 'empty.mov').write_bytes(b'')
 
-        code, out = run(self.root, '--move-incomplete')
+        code, out = run(self.root, '--move-incomplete', '--apply')
 
         self.assertEqual(code, 0)
         self.assertEqual(names(day), ['good.mp4'])
@@ -127,7 +127,7 @@ class VideoSmokeTests(unittest.TestCase):
             self.put(self.blank, '2020-02-02', name)
         self.put(self.dated, '2020-02-02', '20200202_100000.mp4')
 
-        code, _ = run(self.root, '--quarantine-ads')
+        code, _ = run(self.root, '--quarantine-ads', '--apply')
 
         self.assertEqual(code, 0)
         self.assertEqual(names(day), ['20200202_100000.mp4'])
@@ -151,7 +151,7 @@ class VideoSmokeTests(unittest.TestCase):
         (cam / '20130828174322.wmv').write_bytes(b'windows media video data')
         (cam / 'MVI_20050612_0042.avi').write_bytes(b'RIFF\x00\x00\x00\x00AVI avi video data')
 
-        code, _ = run(self.root, '--flatten')
+        code, _ = run(self.root, '--flatten', '--apply')
 
         self.assertEqual(code, 0)
         for moved in ('clip.mp4', '20180116122434.m2ts', '20180116122434.m2ts.modd',
@@ -174,7 +174,7 @@ class VideoSmokeTests(unittest.TestCase):
             self.put(sample, f"{name}_{CREATED_DAY}.mp4")
         before = names(self.root)
 
-        code, out = run(self.root, '--visual-compare', '--dry-run')
+        code, out = run(self.root, '--visual-compare')
 
         self.assertEqual(code, 0)
         verdict = {ln.split(': ', 1)[1].split('_')[0]: ln for ln in out.splitlines() if ' | ' in ln}

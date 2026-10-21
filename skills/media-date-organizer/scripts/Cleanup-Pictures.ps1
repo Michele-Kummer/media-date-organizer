@@ -21,19 +21,25 @@
     their pixels is taken, as in organize.py --visual-compare, where up to 1%
     is a DUPLICATE with high confidence. Default 1.
 
-.PARAMETER WhatIf
-    PowerShell built-in. Use -WhatIf to preview without deleting.
+.PARAMETER Apply
+    Delete the converted PNGs and move the empty folders. Without it the
+    script only lists what it would do (a dry run) and changes nothing.
+    -WhatIf also previews.
 
 .EXAMPLE
-    .\Cleanup-Pictures.ps1 -Path "D:\Pictures\2026" -WhatIf
     .\Cleanup-Pictures.ps1 -Path "D:\Pictures\2026"
+    .\Cleanup-Pictures.ps1 -Path "D:\Pictures\2026" -Apply
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$Path = (Get-Location).Path,
-    [double]$MaxPixelDifference = 1.0
+    [double]$MaxPixelDifference = 1.0,
+    [switch]$Apply
 )
+
+# A dry run unless -Apply is given
+if (-not $Apply) { $WhatIfPreference = $true }
 
 Add-Type -AssemblyName System.Drawing
 
@@ -137,6 +143,7 @@ foreach ($png in $pngs) {
         $deletedDupes++
         $audit.Add("DELETED (converted to " + $jpg.Name + "): " + $png.FullName)
     } elseif ($WhatIfPreference) {
+        $deletedDupes++
         $audit.Add("WOULD DELETE (converted to " + $jpg.Name + "): " + $png.FullName)
     }
 }
@@ -170,15 +177,22 @@ foreach ($e in ($empties | Sort-Object FullName)) {
         Write-Host ("MOVED EMPTY: " + $rel + " -> " + $relDst) -ForegroundColor DarkYellow
         $audit.Add("MOVED EMPTY: " + $rel + " -> " + $relDst)
     } elseif ($WhatIfPreference) {
+        $movedFolders += $nested
+        Write-Host ("WOULD MOVE EMPTY: " + $rel + " -> " + $relDst) -ForegroundColor DarkYellow
         $audit.Add("WOULD MOVE EMPTY: " + $rel + " -> " + $relDst)
     }
 }
 
+$would = if ($WhatIfPreference) { 'would be ' } else { '' }
 Write-Host ""
 Write-Host "Cleanup summary:" -ForegroundColor Cyan
-Write-Host ("  Converted PNGs removed        : " + $deletedDupes)
+Write-Host ("  Converted PNGs " + $would + "removed : " + $deletedDupes)
 Write-Host ("  PNG/JPG pairs kept (differ)   : " + $keptPairs)
-Write-Host ("  Empty folders moved aside     : " + $movedFolders + " (into _empty_folders)")
+Write-Host ("  Empty folders " + $would + "moved aside : " + $movedFolders + " (into _empty_folders)")
 
-$audit.Add("SUMMARY: converted PNGs removed $deletedDupes, PNG/JPG pairs kept $keptPairs, empty folders moved into _empty_folders $movedFolders")
+$audit.Add("SUMMARY: converted PNGs ${would}removed $deletedDupes, PNG/JPG pairs kept $keptPairs, empty folders ${would}moved into _empty_folders $movedFolders")
 Write-AuditLog -Path $Path -Phase 'cleanup' -Lines $audit -DryRun:$WhatIfPreference
+if ($WhatIfPreference) {
+    Write-Host ""
+    Write-Host "DRY RUN: nothing was deleted or moved. Run the same command again with -Apply to make these changes." -ForegroundColor Cyan
+}

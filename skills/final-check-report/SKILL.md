@@ -13,9 +13,9 @@ Reports the oddities left behind once the media-date-organizer phases have run, 
 
 ## How to run
 
-1. **Preview.** `python skills/media-date-organizer/scripts/organize.py --root "<MediaRoot>" --final-check --dry-run`. Changes nothing. This is the full report; the only difference from a real run is that audit workbooks are listed as `WOULD RENAME` and left alone.
+1. **Preview.** `python skills/media-date-organizer/scripts/organize.py --root "<MediaRoot>" --final-check`. Without `--apply` it changes nothing. This is the full report; the only difference from a run with `--apply` is that audit workbooks are listed as `WOULD RENAME` and left alone.
 
-2. **Run.** If the preview lists any `WOULD RENAME AUDIT FILE` lines, tell the user which workbooks will be renamed, and after they confirm run it without `--dry-run`. If it lists none, the preview is the report and there is nothing more to run.
+2. **Run.** If the preview lists any `WOULD RENAME AUDIT FILE` lines, tell the user which workbooks will be renamed, and after they confirm run the same command again with `--apply` added. If it lists none, the preview is the report and there is nothing more to run.
 
 The script lives in the media-date-organizer skill and needs the same packages (Python 3.9+, `pip install "pillow>=10.0" "openpyxl>=3.1"`).
 
@@ -41,7 +41,7 @@ It ends with one line per year folder (`2014: 120 in _ads, 4 in _incomplete, 0 p
 An audit workbook whose name does not start with its folder's name and media type is renamed so that it does: `2014/media_audit_2026-10-07.xlsx` becomes `2014_videos_media_audit_2026-10-07.xlsx`. Workbooks from different folders can then be told apart, and gathered in one place without their names clashing.
 
 - The prefix is the name of the folder the workbook sits in, then `photos` or `videos`, whichever kind that folder holds more of. A folder with no media gets the folder name alone.
-- Listed as `RENAMED AUDIT FILE: <old> -> <new>` (`WOULD RENAME` in a dry run), counted as `audit-files-renamed`.
+- Listed as `RENAMED AUDIT FILE: <old> -> <new>` (`WOULD RENAME` without `--apply`), counted as `audit-files-renamed`.
 - If the new name is already taken the workbook is left and reported as `COLLISION, not renaming` (counted as `audit-files-not-renamed`). A workbook open in Excel cannot be renamed and is reported as `FAILED to rename`.
 - New workbooks already get this name from every phase, so only ones written by earlier versions need renaming.
 
@@ -50,7 +50,7 @@ An audit workbook whose name does not start with its folder's name and media typ
 1. A short summary: the six totals (collisions split into identical and different) and how many year folders have something left.
 2. A table of the year folders that are not clean, one row each, with the six counts.
 3. For short lists, the files and folders themselves; for long ones, point to the Run log sheet of the audit workbook, where the run is recorded in full.
-4. The audit workbook: `<MediaRoot folder name>_<photos|videos>_media_audit_<date>.xlsx` in `<MediaRoot>` (`Videos_videos_media_audit_2026-10-09.xlsx`). The run, and the dry run, are appended to its Run log and Run counts sheets. It must be closed in Excel while the check runs, or the run is not recorded.
+4. The audit workbook: `<MediaRoot folder name>_<photos|videos>_media_audit_<date>.xlsx` in `<MediaRoot>` (`Videos_videos_media_audit_2026-10-09.xlsx`). The run, with or without `--apply`, is appended to its Run log and Run counts sheets. It must be closed in Excel while the check runs, or the run is not recorded.
 
 ## What to suggest next
 
@@ -59,6 +59,6 @@ Suggest, do not do; each of these changes files and needs the user's go-ahead.
 - `_ads` files: the user reviews and deletes them by hand.
 - `_incomplete` files: the user re-copies them from the original source, or deletes them.
 - Opposite-type files: the user moves them to the matching year folder under the other root.
-- Folders not flattened: run `--flatten --dry-run` on that year folder to see why each file was left (`LEFT`, `COLLISION`), then `--fill-blanks` or `--compare-collisions` as the reason calls for.
-- Collisions: an `identical` pair is a duplicate, so one of the two can be deleted (the user's call which). For a `different` pair, `--visual-compare --dry-run` on that year folder says whether they are the same picture saved twice or two unrelated files.
+- Folders not flattened: run `--flatten` (without `--apply`) on that year folder to see why each file was left (`LEFT`, `COLLISION`), then `--fill-blanks` or `--compare-collisions` as the reason calls for.
+- Collisions: an `identical` pair is a duplicate, so one of the two can be deleted (the user's call which). For a `different` pair, `--visual-compare` on that year folder says whether they are the same picture saved twice or two unrelated files.
 - Audit workbooks: once the user no longer needs the history, they can gather them into one folder or delete them.
