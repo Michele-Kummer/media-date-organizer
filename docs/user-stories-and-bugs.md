@@ -440,7 +440,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-24 | PowerShell scripts skipped the audit log without `python` on PATH | Audit workbook | Low | Claude | `8c6d76f` |
 | BUG-01 | Cleanup deleted Live Photo videos and sidecar files | Photos and videos | High | Claude | `1111480` |
 | BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | `2b6ea1d` |
-| BUG-05 | A dry run renamed an audit workbook | Audit workbook | Low | Claude | 2026-10-21 (uncommitted) |
+| BUG-05 | A dry run renamed an audit workbook | Audit workbook | Low | Claude | `15b699c` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -569,7 +569,7 @@ The README said Python 3.9+, but nothing enforced it, and the skill docs did not
 **Fix:** `scan` walks the root and every subfolder at any depth, skipping the holding folders, like `--fill-blanks`. Each file is checked against the folder it sits in and moves to a sibling of that folder (`Trip\2019-08-31`). A file loose in the root is never moved out of it; one whose date differs from a dated root is listed as `in-root-date-differs`. The fill-blank date now comes from the same source `--fill-blanks` uses, so a video gets the nearest dated folder. Two tests cover it, and both fail on the old code.
 
 #### BUG-05 A dry run renamed an audit workbook
-**Severity:** Low · **Found by:** Claude · **Affects:** the audit workbook (no photo or video is touched) · **Fixed:** 2026-10-21 (not yet committed)
+**Severity:** Low · **Found by:** Claude · **Affects:** the audit workbook (no photo or video is touched) · **Fixed in:** `15b699c`
 
 Working out today's workbook name renamed an old-style `media_audit_<date>.xlsx` to `<folder>_<type>_media_audit_<date>.xlsx` on every run, previews included. With `media_audit_<date>.xlsx` in a folder named `2014`, `--flatten --dry-run` renamed it to `2014_photos_media_audit_<date>.xlsx`.
 **Fix:** A dry run leaves the workbook's name alone and records itself in the old-style workbook. The next run with `--apply` renames it. Fixed with US-27, which made every step a dry run unless `--apply` is given. `tests/test_dry_run.py` covers it.
