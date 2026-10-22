@@ -1,6 +1,6 @@
 ---
 name: final-check-report
-description: Use this skill when the user wants a last look at what is left over after their photos and videos have been organized. Triggers include "run the final check," "final check report," "what's left behind," "what still needs cleaning up," "are my year folders clean," "anything left in _ads or _incomplete," "which folders didn't get flattened," or "what audit files are lying around." It reports, for each year folder, files still sitting in _ads, files still in _incomplete, photos filed among videos (or videos among photos), subfolders that were not flattened, name collisions (each pair, identical or different), and audit workbooks left behind. Its only change is renaming audit workbooks so each carries its folder name and media type; no photo or video is moved, renamed or deleted. Do NOT use to fix dates or move files — that is the media-date-organizer skill.
+description: Use this skill when the user wants a last look at what is left over after their photos and videos have been organized. Triggers include "run the final check," "final check report," "what's left behind," "what still needs cleaning up," "are my year folders clean," "anything left in _ads, _junk or _incomplete," "which folders didn't get flattened," or "what audit files are lying around." It reports, for each year folder, files still sitting in _ads, files still in _incomplete and _junk, photos filed among videos (or videos among photos), subfolders that were not flattened, name collisions (each pair, identical or different), and audit workbooks left behind. Its only change is renaming audit workbooks so each carries its folder name and media type; no photo or video is moved, renamed or deleted. Do NOT use to fix dates or move files — that is the media-date-organizer skill.
 ---
 
 # final-check-report
@@ -25,6 +25,7 @@ Every folder in `<MediaRoot>` whose name starts with a year (`2014`, `2013 West`
 
 - **Files in `_ads`** — `IN ADS: 2014/_ads (120 file(s))`. Ads `--quarantine-ads` set aside that the user has not yet reviewed and deleted. Counted as `ads-files`.
 - **Files in `_incomplete`** — `INCOMPLETE: 2014/_incomplete (4 file(s))`. Empty or broken files `--move-incomplete` set aside (an older `_no-image-data` folder counts too). Counted as `incomplete-files`.
+- **Files in `_junk`** — `IN JUNK: 2014/_junk (35 file(s))`. `.AAE`, `Thumbs.db` and macOS `._` files `--move-junk` set aside, and Sony sidecars `--flatten` found without their video. Counted as `junk-files`.
 - **Opposite-type files** — `PHOTO IN VIDEO FOLDER: 2016/DSC00323.JPG` or `VIDEO IN PHOTO FOLDER: ...`, one line per file. Whichever kind `<MediaRoot>` holds more of decides what it is; `_ads` and `_incomplete` are not counted. A file's kind goes by its extension. Counted as `photos-in-video-folders` or `videos-in-photo-folders`.
 - **Folders not flattened** — `NOT FLATTENED: 2014/7-17-2014 (3 file(s))`. Each subfolder still inside a year folder, with how many files it holds at any depth. `--flatten` leaves a folder when it holds undated files, name collisions or non-media files. Counted as `folders-not-flattened`.
 - **Collisions** — one line per pair of files that share a name, saying whether the two are the same file and how `--flatten` handled the clash:
@@ -34,7 +35,7 @@ Every folder in `<MediaRoot>` whose name starts with a year (`2014`, `2013 West`
   `identical` means byte for byte the same, a true duplicate; `different` means the two only share a name. Counted as `collisions`, `collisions-identical` and `collisions-different`. Only these name clashes are found; the ones `--apply-moves` skips between dated folders need every file's date read, so use `--compare-collisions` on that year folder for those.
 - **Audit workbooks** — `AUDIT FILE: 2014/2014_videos_media_audit_2026-10-07.xlsx`. Every `*media_audit*.xlsx` in a year folder (at any depth) or loose in `<MediaRoot>`, except the workbook this run is recorded in. Counted as `audit-files`.
 
-It ends with one line per year folder (`2014: 120 in _ads, 4 in _incomplete, 0 photo(s) among videos, 3 folder(s) not flattened, 2 collision(s), 1 audit file(s)`, or `2015: clean`) and a `FINAL CHECK` total line.
+It ends with one line per year folder (`2014: 120 in _ads, 4 in _incomplete, 35 in _junk, 0 photo(s) among videos, 3 folder(s) not flattened, 2 collision(s), 1 audit file(s)`, or `2015: clean`) and a `FINAL CHECK` total line.
 
 ## The one change it makes
 
@@ -47,8 +48,8 @@ An audit workbook whose name does not start with its folder's name and media typ
 
 ## Deliverables
 
-1. A short summary: the six totals (collisions split into identical and different) and how many year folders have something left.
-2. A table of the year folders that are not clean, one row each, with the six counts.
+1. A short summary: the seven totals (collisions split into identical and different) and how many year folders have something left.
+2. A table of the year folders that are not clean, one row each, with the seven counts.
 3. For short lists, the files and folders themselves; for long ones, point to the Run log sheet of the audit workbook, where the run is recorded in full.
 4. The audit workbook: `<MediaRoot folder name>_<photos|videos>_media_audit_<date>.xlsx` in `<MediaRoot>` (`Videos_videos_media_audit_2026-10-09.xlsx`). The run, with or without `--apply`, is appended to its Run log and Run counts sheets. It must be closed in Excel while the check runs, or the run is not recorded.
 
@@ -58,6 +59,7 @@ Suggest, do not do; each of these changes files and needs the user's go-ahead.
 
 - `_ads` files: the user reviews and deletes them by hand.
 - `_incomplete` files: the user re-copies them from the original source, or deletes them.
+- `_junk` files: the user looks them over and deletes them by hand. An `.AAE` holds the edits made on an iPhone, so keep it if those edits matter.
 - Opposite-type files: the user moves them to the matching year folder under the other root.
 - Folders not flattened: run `--flatten` (without `--apply`) on that year folder to see why each file was left (`LEFT`, `COLLISION`), then `--fill-blanks` or `--compare-collisions` as the reason calls for.
 - Collisions: an `identical` pair is a duplicate, so one of the two can be deleted (the user's call which). For a `different` pair, `--visual-compare` on that year folder says whether they are the same picture saved twice or two unrelated files.

@@ -3,14 +3,12 @@ never failed on, renamed, moved or deleted (US-28, BUG-25).
 Run with: py -m unittest discover tests -v"""
 
 import datetime
-import os
 import pathlib
 import shutil
-import subprocess
 import tempfile
 import unittest
 
-from test_dry_run import SCRIPTS, powershell, snapshot
+from test_dry_run import snapshot
 from test_smoke import make_image, names, organize, run
 
 # What an iPhone .AAE edit file holds
@@ -68,15 +66,12 @@ class PlistTests(unittest.TestCase):
         # The real undated photo still got its date
         self.assertIn('undated.jpg', names(self.day))
 
-    @unittest.skipUnless(os.name == 'nt' and powershell(), 'needs PowerShell on Windows')
     def test_fix_extensions_reports_them_as_not_media(self):
-        r = subprocess.run([powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-                            str(SCRIPTS / 'Fix-Extensions.ps1'), '-Path', str(self.root), '-Apply'],
-                           capture_output=True, text=True, timeout=120)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('NOT MEDIA (plist)', r.stdout)
-        self.assertIn('NOT MEDIA (XMP)', r.stdout)
-        self.assertNotIn('UNKNOWN', r.stdout)
+        code, out = run(self.root, '--fix-extensions', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertIn('NOT MEDIA (plist file named .JPG, left alone)', out)
+        self.assertIn('NOT MEDIA (XMP file named', out)
+        self.assertNotIn('UNKNOWN', out)
         self.assertIn('img_e5239.jpg', names(self.day))
 
 

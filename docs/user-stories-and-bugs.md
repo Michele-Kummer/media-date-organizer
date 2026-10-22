@@ -7,6 +7,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **User stories:** written with Claude Code (Claude Opus 5.5) by reading the plugin's code, docs and git history. Each story's acceptance criteria describe how the plugin behaves today.
 - **Open bugs:** found by Claude while writing the stories. Each one was reproduced on synthetic files.
 - **Resolved bugs:** taken from the git history. Michele Kummer, the project's author, said which ones they found.
+- **Updated 2026-10-22:** Michele Kummer asked for `--all` to fix extensions, for junk to be moved aside instead of deleted, and for the step-by-step run to ask about cleanup. Those gaps are recorded as BUG-26 to BUG-28, and US-31 records the new requirements.
 
 **Status** on each story is *Done* when every criterion holds, or *Partly done* when some do not, with the gap named.
 
@@ -25,12 +26,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 7 |
-| User stories | 28 (26 Done, 2 Partly done) |
-| Bugs | 25 (2 open, 23 resolved) |
+| User stories | 31 (29 Done, 2 Partly done) |
+| Bugs | 28 (2 open, 26 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 7 | 7 |
+| Michele Kummer | 0 | 10 | 10 |
 | Claude | 2 | 16 | 18 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -74,19 +75,22 @@ As a media owner, I want to see everything the plugin can do, with what to type 
 </details>
 
 <details>
-<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08)</summary>
+<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29)</summary>
 
 Make every photo and video report its real format and its real date, and make Windows Explorer show it.
 
 #### US-04 Correct wrong extensions on photos and videos
 As a media owner, I want photos and videos whose extension does not match their content renamed, so that every tool reads them correctly.
 
-- `Fix-Extensions.ps1` reads the start of every file (recursively) and recognises:
+- `organize.py --fix-extensions` reads the start of every file named as a photo or video, or with no extension, in the folder and every subfolder, and recognises:
   - photos: PNG, JPEG, HEIC/HEIF, GIF, WEBP, TIFF and BMP;
   - videos: MP4/MOV, 3GP/3G2, M2TS/MTS, MPG, WMV and AVI.
-- A mismatched extension is corrected, for example a `.PNG` that is really HEIC, or a `.HEIC` that is really a QuickTime video. 3GP/3G2 keep their own extension.
-- Empty files are listed as `EMPTY`. Unrecognised non-empty files are listed as `UNKNOWN`. Sony `.modd`/`.moff` video sidecars are counted, not reported as unknown.
-- It lists the renames and changes nothing unless `-Apply` is given (US-27).
+- A mismatched extension is corrected, for example a `.PNG` that is really HEIC, or a `.HEIC` that is really a QuickTime video. 3GP/3G2 keep their own extension, and the extension keeps its case.
+- `--all` runs it first (BUG-26).
+- A name that is already taken is a `COLLISION`, and both files are left alone. Other files, such as an `.m4a` song, are never renamed.
+- Empty files are listed as `EMPTY`. Unrecognised photo and video files are listed as `UNKNOWN FORMAT`, including a container brand it does not know (a HEIF burst, an AVIF photo), which is left alone rather than renamed to `.mp4` (see BUG-04). Sony `.modd`/`.moff` video sidecars are left alone.
+- It lists the renames and changes nothing unless `--apply` is given (US-27).
+- It is the only extension fixer. The PowerShell version, `Fix-Extensions.ps1`, was moved to `_review` so there is one set of rules to maintain.
 
 **Status:** Done
 
@@ -131,6 +135,18 @@ As a photo owner, I want PNG screenshots converted to JPEG, so that Windows Expl
 - A `.png` that cannot be read is reported as `FAILED to convert` and the rest still convert. A half-written JPEG is removed.
 - The original PNG is left for the cleanup script (US-11).
 - Without `--apply` it lists each PNG that would be converted (`WOULD CONVERT`) and writes nothing. Claude adds `--apply` only after the user confirms.
+
+**Status:** Done
+
+#### US-29 Give BMP pictures a date
+As a photo owner, I want my BMP pictures turned into JPEGs with the right Date Taken, so that they sort with my other photos. A BMP has no field for a date, so it can never show one as it is.
+
+- `--convert-bmp` converts each BMP in the folder and every subfolder to a JPEG of the same name at quality 95. The picture is unchanged.
+- The JPEG gets the date `--fill-blanks` would use: the date in the filename (`IMG_20210503_101500.bmp`), else the folder's date at 12:00:00. Moving and flattening then treat it like any other photo.
+- A `.bmp` that is really another format is reported as `NOT A BMP` and left alone. BMPs with transparent pixels stay BMP.
+- The original is left in place. `Cleanup-Pictures.ps1` deletes it only once the JPEG is confirmed to be the same picture (same size, pixels within 1%), as for PNGs (US-11).
+- Not part of `--all`; add `--convert-bmp` to include it. It previews unless `--apply` is given. `--fill-blanks` ends with a `NOTE` pointing to it when it skipped BMPs.
+- `tests/test_bmp_and_ads.py` covers conversion, the date, a misnamed BMP and the cleanup.
 
 **Status:** Done
 
@@ -185,7 +201,7 @@ As a photo owner, I want the PNG left behind by a conversion removed, and empty 
 </details>
 
 <details>
-<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14)</summary>
+<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30)</summary>
 
 Move ads and broken files out of the way, and delete files that hold no picture or recording.
 
@@ -198,6 +214,22 @@ As a media owner, I want ad and app-cache images and videos moved out of my medi
 
 **Status:** Done
 
+#### US-30 Recognise game ads by name
+As a media owner, I want the game ads that phones save among my pictures recognised as ads, so that `--quarantine-ads` clears them out of my dated folders too.
+
+- Found in `E:\Pictures\2023`, where they were the only files left in the dated folders after flattening. These name forms are now ads (each may carry a `_YYYY-MM-DD` ending or a ` (2)` copy marker):
+  - an id, a 13-digit millisecond time and a 5-character id: `492887-1648448524975-3d62u.webp`;
+  - a CDN address saved as the name: `__d2duuy9yo5pldo.cloudfront.net_codigames_<uuid>.gif`;
+  - 8, 7 and 16 letters and digits joined by `_`: `lbay6fy2_fftxeca_itehyhqsmpyyszx7.gif`;
+  - `icon.webp`;
+  - for `.raw` only, `draw_` plus a word: `draw_title.raw`. A camera RAW, recognised by its header, is kept.
+- The camera check still applies: a name match with camera information is kept.
+- There is no rule for numbered BMPs (`8824_1269.bmp`, `imagebmp (5).bmp`, `37038.bmp`). In this library they are as often the user's own pictures as game ads, and the name cannot tell them apart. Numbered BMPs that are ads are moved to `_ads` by hand.
+- On `E:\Pictures\2023` it moved all 13 leftovers that are not BMPs into `_ads`, plus 9 loose JPGs with the same names. The run also included the 3 numbered BMPs, under a BMP rule that has since been removed.
+- `tests/test_bmp_and_ads.py` checks every name above, and that camera, phone and screenshot names are not matched.
+
+**Status:** Done
+
 #### US-13 Set incomplete files aside
 As a media owner, I want failed copies moved out of the way, so that they stop showing up as photos or videos with no date.
 
@@ -207,13 +239,16 @@ As a media owner, I want failed copies moved out of the way, so that they stop s
 
 **Status:** Done
 
-#### US-14 Delete leftover sidecar files
-As a media owner, I want files that hold no picture or recording deleted, so that they don't clutter my media folders.
+#### US-14 Set leftover sidecar files aside
+As a media owner, I want files that hold no picture or recording moved out of my media folders, but not deleted, so that they don't clutter the folders and I can still get one back.
 
-- `--delete-junk` deletes `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, and macOS `._` sidecars.
-- A `._` file is deleted only when its contents carry the AppleDouble signature.
+- `--move-junk` moves `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, and macOS `._` sidecars into `_junk`, keeping their subfolder path. Nothing is deleted (BUG-27).
+- A `._` file is treated as junk only when its contents carry the AppleDouble signature.
 - Thumbnail caches are matched by whole file name only, so `west sucking thumb.jpg` is safe.
-- This is a real delete. Without `--apply` it only lists the files, and Claude asks before adding `--apply`.
+- A path already taken in `_junk` is a `COLLISION`, and the file stays where it is.
+- `--flatten` moves Sony `.modd`/`.moff` sidecars whose file is gone into `_junk` too.
+- The final check reports what is still in `_junk` (`IN JUNK`). `--delete-junk` still works as the old name of the flag, and moves too.
+- Without `--apply` it only lists the files.
 
 **Status:** Done
 
@@ -274,7 +309,7 @@ As a media owner, I want to know which of my "photos" are really plist or XMP fi
 
 - `--find-plists` searches the folder at every depth, holding folders included, and lists each file with a photo or video name that holds plist (XML or binary), XMP or other XML text, as `NOT MEDIA (plist file named .JPG): 2023-08-07/IMG_E5239.JPG`. It counts them by kind.
 - Real photos and videos are never listed: they never start with `<` or `bplist`.
-- Every other step reports these files as `NOT MEDIA (... left alone)` and skips them. `--fill-blanks` no longer reports `FAILED to write`, `--convert-png` does not try to convert them, and `--apply-moves` gives them no date suffix (BUG-25). `Fix-Extensions.ps1` reports `NOT MEDIA (plist)` instead of `UNKNOWN`.
+- Every other step reports these files as `NOT MEDIA (... left alone)` and skips them. `--fill-blanks` no longer reports `FAILED to write`, `--convert-png` does not try to convert them, and `--apply-moves` gives them no date suffix (BUG-25). `--fix-extensions` reports `NOT MEDIA` instead of `UNKNOWN FORMAT`.
 - Nothing is moved, renamed or deleted. The user decides.
 - `tests/test_plists.py` covers each of these.
 
@@ -283,14 +318,14 @@ As a media owner, I want to know which of my "photos" are really plist or XMP fi
 </details>
 
 <details>
-<summary><strong>Epic 6 — Workflow, safety and record-keeping</strong> (US-19 to US-23, US-26, US-27)</summary>
+<summary><strong>Epic 6 — Workflow, safety and record-keeping</strong> (US-19 to US-23, US-26, US-27, US-31)</summary>
 
 Run the steps together, preview them, never lose a photo or video by surprise, and keep a history.
 
 #### US-19 Run every step in one command
 As a media owner, I want one command that runs the routine steps in the right order, so that I don't have to remember it.
 
-- `--all` runs, in order: delete junk, move incomplete files, fill blanks, convert PNG, apply moves, sync timestamps.
+- `--all` runs, in order: fix extensions, move junk, move incomplete files, fill blanks, convert PNG, apply moves, sync timestamps. It deletes nothing.
 - `--quarantine-ads` and `--flatten` can be added to it.
 - It ends with one summary of every step's counts and up to 50 problems per step.
 - Without `--apply` it previews every step against the folder as it is now, and says that a later step may do more once the earlier ones have run.
@@ -311,8 +346,9 @@ As a media owner, I want Date Created and Date Modified to match when the photo 
 #### US-21 Never delete without saying so
 As a media owner, I want photos and videos moved aside rather than deleted, except in steps that say they delete, so that mistakes can be undone.
 
-- `_ads`, `_incomplete` and `_empty_folders` hold what was set aside. Every step skips them.
-- Only `--delete-junk` (non-media sidecars) and `Cleanup-Pictures.ps1` (PNGs already converted to JPEG) delete files.
+- `_ads`, `_junk`, `_incomplete` and `_empty_folders` hold what was set aside. Every step skips them.
+- Only `Cleanup-Pictures.ps1` deletes files: PNGs and BMPs already converted to JPEG. `organize.py` deletes nothing (BUG-27).
+- The README's **Guardrails** section lists every safety rule in one place.
 
 **Status:** Done
 
@@ -339,8 +375,8 @@ As a media owner, I want `/fix-media-dates` and `/flatten-media` to show me what
 
 - `/fix-media-dates <folder>` and `/flatten-media <folder>` are dry runs. Every step runs as a preview, and nothing is renamed, written, converted, moved or deleted.
 - A dry run ends by telling the user what to type to go ahead: `/fix-media-dates <folder> --apply` or `/flatten-media <folder> --apply`.
-- `/fix-media-dates <folder> --apply` and `/flatten-media <folder> --apply` make the changes. Optional steps (PNG conversion, timestamp sync, flatten, ads) run only when the user asked for them.
-- `/fix-media-dates <folder> --all` previews `organize.py --all` (delete junk, move incomplete, fill blanks, convert PNG, apply moves, sync timestamps) in one go, and ends by telling the user to type `/fix-media-dates <folder> --all --apply`, which makes those changes. As before, ad quarantine and flatten are left out unless `--quarantine-ads` or `--flatten` is added, and fixing extensions and cleanup run on their own.
+- `/fix-media-dates <folder> --apply` and `/flatten-media <folder> --apply` make the changes. Optional steps (ads, BMP conversion, PNG conversion, timestamp sync, flatten, cleaning up converted files) run only when the user asked for them.
+- `/fix-media-dates <folder> --all` previews `organize.py --all` (fix extensions, move junk, move incomplete, fill blanks, convert PNG, apply moves, sync timestamps) in one go, and ends by telling the user to type `/fix-media-dates <folder> --all --apply`, which makes those changes. Ad quarantine and flatten are left out unless `--quarantine-ads` or `--flatten` is added, and cleanup runs on its own.
 - Both commands show `[--apply]` in their argument hint (`/fix-media-dates` also shows `[--all]`), and `/media-help` lists every form.
 - `/report-opposite-type` only reports, so it has no `--apply`.
 - `tests/test_commands.py` checks each of these, and that no command, skill or guide still says `--dry-run` or `-WhatIf`.
@@ -350,13 +386,24 @@ As a media owner, I want `/fix-media-dates` and `/flatten-media` to show me what
 #### US-27 Every step that changes files has a dry run, and it is the default
 As a media owner, I want every step that changes my photos and videos to preview by default, so that I never have to remember a preview flag to stay safe.
 
-- Every `organize.py` step that writes, converts, moves, renames or deletes files lists what it would do (`WOULD WRITE`, `WOULD CONVERT`, `WOULD MOVE`, `WOULD SYNC`, `WOULD DELETE`, ...) and changes nothing unless `--apply` is given. This covers `--delete-junk`, `--move-incomplete`, `--quarantine-ads`, `--fill-blanks`, `--convert-png`, `--apply-moves`, `--sync-timestamps`, `--flatten`, `--final-check` and `--all`.
+- Every `organize.py` step that writes, converts, moves, renames or deletes files lists what it would do (`WOULD WRITE`, `WOULD CONVERT`, `WOULD MOVE`, `WOULD SYNC`, `WOULD DELETE`, ...) and changes nothing unless `--apply` is given. This covers `--fix-extensions`, `--move-junk`, `--move-incomplete`, `--quarantine-ads`, `--fill-blanks`, `--convert-png`, `--apply-moves`, `--sync-timestamps`, `--flatten`, `--final-check` and `--all`.
 - A dry run ends with `DRY RUN: nothing was changed. Run the same command again with --apply to make these changes.`
-- `Fix-Extensions.ps1` and `Cleanup-Pictures.ps1` preview unless `-Apply` is given. `-WhatIf` still works.
+- `Cleanup-Pictures.ps1` previews unless `-Apply` is given. `-WhatIf` still works.
 - Reports (`--report-only`, `--compare-collisions`, `--visual-compare`, `--opposite-type`, `--find-plists`, `find_duplicates.py`) change nothing, so they run the same either way. `--visual-compare` no longer needs a flag.
 - `--dry-run` is still accepted and means the default. It cannot be combined with `--apply`.
 - A dry run is recorded in the audit workbook, marked `yes` in the Dry run column, and never renames the workbook (BUG-05).
 - `tests/test_dry_run.py` runs each step without `--apply` and checks that no file's content, name or timestamp changed, then runs it with `--apply` and checks that something did. A new step that changes files fails the test until it is added there.
+
+**Status:** Done
+
+#### US-31 Choose between step by step and all in one go
+As a media owner, I want to know how the two ways of running `/fix-media-dates` differ and in what order to run the steps, so that I pick the right one and don't run the steps twice or in the wrong order.
+
+- `/fix-media-dates <folder>` walks through every step and asks which optional steps the user wants: ads, BMP conversion, PNG conversion, timestamp sync, flatten, and cleaning up converted files. It always asks about cleanup, the one step that deletes (BUG-28).
+- `/fix-media-dates <folder> --all` runs the routine steps in one go with no questions, fixing extensions first (BUG-26). It deletes nothing.
+- The README has a table showing which steps each way runs, says to choose one of them for a folder, and gives the recommended order of every step, from fixing extensions to the final check.
+- The README's **Guardrails** section lists the safety rules that hold for every step.
+- In the recommended order, the visual compare comes before cleaning up converted files, because cleanup removes one file of each PNG/JPG pair it would compare.
 
 **Status:** Done
 
@@ -370,7 +417,7 @@ Change and test the plugin safely.
 #### US-24 Test without real photos or videos
 As a maintainer, I want tests that run on generated files, so that I can check a change without risking my own photos and videos.
 
-- `py -m unittest discover tests -v` runs the suite. It currently has 36 tests.
+- `py -m unittest discover tests -v` runs the suite. It currently has 48 tests.
 - `sample-data/generate.py` makes synthetic test photos. The video tests generate their own small videos with ffmpeg.
 - Video tests are skipped when ffmpeg is missing. The video date-writing test is skipped when ExifTool is missing. The Date Created test runs only on Windows.
 - The PowerShell scripts are tested only for their dry run (`-Apply`), and only on Windows.
@@ -424,7 +471,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (23: 7 found by Michele Kummer, 16 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (26: 10 found by Michele Kummer, 16 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -452,7 +499,10 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-01 | Cleanup deleted Live Photo videos and sidecar files | Photos and videos | High | Claude | `1111480` |
 | BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | `2b6ea1d` |
 | BUG-05 | A dry run renamed an audit workbook | Audit workbook | Low | Claude | `15b699c` |
-| BUG-25 | Plist files named as photos failed to get a date and were renamed | Photos (non-media files with a photo name) | Low | Michele Kummer | 2026-10-21 (uncommitted) |
+| BUG-25 | Plist files named as photos failed to get a date and were renamed | Photos (non-media files with a photo name) | Low | Michele Kummer | `a8631ce` |
+| BUG-26 | `--all` did not fix extensions | Photos and videos | Medium | Michele Kummer | not yet committed |
+| BUG-27 | Junk and orphan sidecar files were permanently deleted | Non-media files (sidecars and thumbnail caches) | Medium | Michele Kummer | not yet committed |
+| BUG-28 | The step-by-step run never asked about cleanup | Workflow | Low | Michele Kummer | not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -587,9 +637,27 @@ Working out today's workbook name renamed an old-style `media_audit_<date>.xlsx`
 **Fix:** A dry run leaves the workbook's name alone and records itself in the old-style workbook. The next run with `--apply` renames it. Fixed with US-27, which made every step a dry run unless `--apply` is given. `tests/test_dry_run.py` covers it.
 
 #### BUG-25 Plist files named as photos failed to get a date and were renamed
-**Severity:** Low · **Found by:** Michele Kummer · **Affects:** files with a photo name that are really plist or XMP text · **Fixed:** 2026-10-21 (not yet committed)
+**Severity:** Low · **Found by:** Michele Kummer · **Affects:** files with a photo name that are really plist or XMP text · **Fixed in:** `a8631ce`
 
 On `E:\Pictures\2023`, `--fill-blanks` reported `FAILED to write 2023-08-07/IMG_E5239_2023-08-07.JPG: Error: Not a valid JPG (looks more like a XMP)`, and the same for `IMG_E6230_2023-12-10.JPG`. The files are plist text (iPhone `.AAE` edit data) saved under a `.JPG` name. Every step treated them as undated photos: `--fill-blanks` handed them to ExifTool, which refused them; `--convert-png` failed on a `.png` one; and `--apply-moves` gave them a `_<folder-date>` suffix, which is how they got `_2023-08-07` in their names.
 **Fix:** Files whose content is plist, XMP or other XML text are recognised by their first bytes. Every step reports them as `NOT MEDIA` and leaves them alone, and the new `--find-plists` lists them all (US-28). They are never deleted, so the user decides. The `_2023-08-07` suffixes already added are not removed.
+
+#### BUG-26 `--all` did not fix extensions
+**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** not yet committed
+
+Fixing extensions was only in `Fix-Extensions.ps1`, which `--all` does not run. A JPEG saved as `.PNG` or a HEIC saved as `.JPG` went through `--all` under its wrong name, so the date steps read it as the wrong format, even though the README listed fixing extensions as step 1 of `/fix-media-dates`.
+**Fix:** New `organize.py --fix-extensions`, with the same rules as the PowerShell script, runs first in `--all`. `tests/test_fix_extensions_and_junk.py` covers it.
+
+#### BUG-27 Junk and orphan sidecar files were permanently deleted
+**Found by:** Michele Kummer · **Affects:** non-media files (`.AAE`, `Thumbs.db`, macOS `._` and Sony `.modd`/`.moff` sidecars) · **Fixed in:** not yet committed
+
+`--delete-junk`, and so `--all`, deleted `.AAE` edit files, thumbnail caches and macOS sidecars, and `--flatten` deleted Sony sidecars whose video was gone. An `.AAE` holds the edits made on the iPhone, so deleting it cannot be undone, and it went against the project's rule of moving things aside instead of deleting them.
+**Fix:** `--move-junk` (with `--delete-junk` kept as its old name) and `--flatten` move these files into `_junk`, keeping their path, and never overwrite. Every step skips `_junk`, and the final check reports what is in it.
+
+#### BUG-28 The step-by-step run never asked about cleanup
+**Found by:** Michele Kummer · **Affects:** workflow · **Fixed in:** not yet committed
+
+`/fix-media-dates` asked about the optional steps but treated cleanup as a reminder at the end, so the one step that deletes was never offered as a choice.
+**Fix:** Cleanup is now step 13, "Clean up converted files", an optional step the command always asks about, before the dry run ends and again after `--apply` if it was not run.
 
 </details>

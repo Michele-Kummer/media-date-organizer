@@ -160,9 +160,10 @@ class SmokeTests(unittest.TestCase):
         code, _ = run(self.root, '--all', '--apply')
 
         self.assertEqual(code, 0)
-        # Junk deleted, the incomplete file set aside
+        # Junk and the incomplete file set aside, nothing deleted
         self.assertNotIn('img_0001.aae', names(day))
         self.assertNotIn('thumbs.db', names(day))
+        self.assertEqual(names(self.root / '_junk' / '2020-01-01'), ['img_0001.aae', 'thumbs.db'])
         self.assertEqual(names(self.root / '_incomplete' / '2020-01-01'), ['empty.jpg'])
         # Blank date filled from the filename, then both strays moved to their real day
         self.assertEqual(names(self.root / '2020-02-02'), ['wrong.jpg'])
@@ -219,6 +220,31 @@ class SmokeTests(unittest.TestCase):
         after = sorted(str(p) for p in self.root.rglob('*') if p.suffix != '.xlsx')
         self.assertEqual(after, before, 'a report must not move anything')
 
+    def test_other_year_counts_media_taken_in_another_year(self):
+        year = self.root / '2020'
+        make_image(year / 'right.jpg', taken=datetime.datetime(2020, 5, 1, 10, 0, 0))
+        make_image(year / 'Trip' / 'early.jpg', taken=datetime.datetime(2019, 12, 31, 23, 0, 0))
+        make_image(year / 'late.jpg', taken=datetime.datetime(2021, 1, 1, 9, 0, 0))
+        make_image(year / 'undated.jpg')
+        make_image(year / '_ads' / 'ad.jpg', taken=datetime.datetime(2018, 1, 1, 9, 0, 0))
+        before = sorted(str(p) for p in self.root.rglob('*'))
+
+        code, out = run(year, '--other-year')
+
+        self.assertEqual(code, 0)
+        self.assertIn('OTHER YEAR (2019): Trip/early.jpg', out)
+        self.assertIn('OTHER YEAR (2021): late.jpg', out)
+        self.assertNotIn('ad.jpg', out)
+        self.assertIn('OTHER YEAR: 2 of 4 media item(s) are from a different year (2019: 1, 2021: 1); '
+                      '1 have no Date Taken', out)
+        after = sorted(str(p) for p in self.root.rglob('*') if p.suffix != '.xlsx')
+        self.assertEqual(after, before, 'a report must not move anything')
+
+        # Given the folder holding the year folders, each is checked against its own year
+        _, out = run(self.root, '--other-year')
+        self.assertIn('OTHER YEAR (2019): 2020/Trip/early.jpg', out)
+        self.assertIn('2020: 2 from another year', out)
+
     def test_final_check_reports_what_is_left_by_year_folder(self):
         for rel in ('2014/a.mp4', '2014/7-17-2014/b.avi', '2015/c.mov'):
             path = self.root / rel
@@ -247,7 +273,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('WOULD RENAME ' + renamed, out)
         self.assertIn('COLLISION, identical files (renamed with a date): 2014/a_2014-07-17.mp4 | 2014/a.mp4', out)
         self.assertIn('COLLISION, different files (left in its subfolder): 2014/7-17-2014/a.mp4 | 2014/a.mp4', out)
-        self.assertIn('2014: 2 in _ads, 1 in _incomplete, 1 photo(s) among videos, '
+        self.assertIn('2014: 2 in _ads, 1 in _incomplete, 0 in _junk, 1 photo(s) among videos, '
                       '1 folder(s) not flattened, 3 collision(s), 1 audit file(s)', out)
         self.assertIn('3 collision(s) (1 identical, 2 different)', out)
         self.assertIn('2015: clean', out)
@@ -268,7 +294,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('2014_videos_media_audit_2020-01-01.xlsx', names(self.root / '2014'))
         self.assertNotIn('media_audit_2020-01-01.xlsx', names(self.root / '2014'))
 
-    def test_mac_sidecars_do_not_stop_convert_and_are_deleted_as_junk(self):
+    def test_mac_sidecars_do_not_stop_convert_and_are_moved_aside_as_junk(self):
         day = self.root / '2020-01-01'
         make_image(day / 'shot.png')
         (day / '._shot.png').write_bytes(organize.APPLEDOUBLE_MAGIC + b'\x00' * 60)
@@ -280,13 +306,14 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('shot.jpg', os.listdir(day), 'the new JPEG gets a lowercase extension')
         self.assertNotIn('._shot.jpg', names(day))
 
-        code, _ = run(self.root, '--delete-junk')
+        code, _ = run(self.root, '--move-junk')
         self.assertEqual(code, 0)
-        self.assertIn('._shot.png', names(day), 'a dry run must not delete anything')
+        self.assertIn('._shot.png', names(day), 'a dry run must not move anything')
 
-        code, _ = run(self.root, '--delete-junk', '--apply')
+        code, _ = run(self.root, '--move-junk', '--apply')
         self.assertEqual(code, 0)
         self.assertNotIn('._shot.png', names(day))
+        self.assertEqual(names(self.root / '_junk' / '2020-01-01'), ['._shot.png'])
         self.assertIn('._real.png', names(day))
         self.assertIn('shot.png', names(day))
 

@@ -19,7 +19,7 @@ List the photos sitting among the videos in `$ARGUMENTS`, or the videos sitting 
 - Whichever kind `$ARGUMENTS` holds more of decides what it is: a video folder is checked for photos, a photo folder for videos.
 - Every folder whose name starts with a year (`2014`, `2013 West`) is searched at every depth. Other folders in `$ARGUMENTS`, and files loose in it, are not looked at.
 - `_ads` and `_incomplete` folders are not counted.
-- A file's kind goes by its extension, so run `Fix-Extensions.ps1` first if extensions may be wrong.
+- A file's kind goes by its extension, so run `organize.py --fix-extensions` first if extensions may be wrong.
 - Each file found is listed as `PHOTO IN VIDEO FOLDER: 2014/7-17-2014/IMG_0001.jpg` (or `VIDEO IN PHOTO FOLDER: ...`), followed by one line per year folder (`2014: 3 photo(s), 412 video(s)`) and an `OPPOSITE TYPE` total.
 - If `$ARGUMENTS` has no year folders, it is reported as one folder.
 

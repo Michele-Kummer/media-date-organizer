@@ -1,15 +1,19 @@
 <#
 .SYNOPSIS
-    Housekeeping for the pictures tree: removes PNGs left behind after
-    organize.py --convert-png (a PNG with a JPG of the same name, the same
-    picture size and the same pixels beside it), and moves empty folders into
+    Housekeeping for the pictures tree: removes PNGs and BMPs left behind
+    after organize.py --convert-png or --convert-bmp (a PNG or BMP with a JPG
+    of the same name, the same picture size and the same pixels beside it),
+    and moves empty folders into
     an _empty_folders folder, keeping their path, instead of deleting them.
+    Ends by counting the photos and videos whose Date Taken is in a
+    different year from the folder (organize.py --other-year); that count
+    changes nothing.
 
 .DESCRIPTION
-    Only that one pair is ever deleted from. A Live Photo video next to its
+    Only those pairs are ever deleted from. A Live Photo video next to its
     photo (IMG_1.HEIC / IMG_1.MOV), a sidecar (IMG_1.JPG / IMG_1.xmp), a
-    HEIC next to a JPG, or a PNG whose JPG is a different size or a different
-    picture are all kept. _ads, _incomplete, _no-image-data and
+    HEIC next to a JPG, or a PNG or BMP whose JPG is a different size or a different
+    picture are all kept. _ads, _incomplete, _no-image-data, _junk and
     _empty_folders are left alone.
 
 .PARAMETER Path
@@ -96,19 +100,20 @@ function Get-PixelDifference([string]$a, [string]$b) {
 
 $root = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\')
 # Same holding folders organize.py leaves alone (HOLDING_DIRS)
-$holding = '_ads', '_incomplete', '_no-image-data', '_empty_folders'
+$holding = '_ads', '_incomplete', '_no-image-data', '_empty_folders', '_junk'
 function Test-InHolding([string]$dir) {
     if ($dir.Length -le $root.Length) { return $false }
     $first = $dir.Substring($root.Length + 1).Split('\')[0]
     return $holding -contains $first
 }
 
-# ---- Pass 1: remove PNGs already converted to JPG ----
+# ---- Pass 1: remove PNGs and BMPs already converted to JPG ----
 $deletedDupes = 0
 $keptPairs = 0
-$pngs = Get-ChildItem -LiteralPath $root -File -Recurse -Filter '*.png' |
-    Where-Object { $_.Extension -eq '.png' -and -not (Test-InHolding $_.DirectoryName) }
+$pngs = Get-ChildItem -LiteralPath $root -File -Recurse |
+    Where-Object { ('.png', '.bmp') -contains $_.Extension.ToLower() -and -not (Test-InHolding $_.DirectoryName) }
 foreach ($png in $pngs) {
+    $kind = $png.Extension.TrimStart('.').ToUpper()
     $jpg = foreach ($ext in '.jpg', '.jpeg') {
         $candidate = Join-Path $png.DirectoryName ($png.BaseName + $ext)
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { Get-Item -LiteralPath $candidate; break }
@@ -120,7 +125,7 @@ foreach ($png in $pngs) {
         # Not a finished conversion of this PNG: a different picture that
         # happens to share its name, or a file that cannot be read
         $keptPairs++
-        $why = if (-not $pngSize -or -not $jpgSize) { 'cannot read picture size' } else { "PNG $pngSize, JPG $jpgSize" }
+        $why = if (-not $pngSize -or -not $jpgSize) { 'cannot read picture size' } else { "$kind $pngSize, JPG $jpgSize" }
         Write-Host ("KEPT (not the same picture, $why): " + $png.FullName) -ForegroundColor DarkCyan
         $audit.Add("KEPT (not the same picture, $why): " + $png.FullName)
         continue
@@ -135,10 +140,10 @@ foreach ($png in $pngs) {
         $audit.Add("KEPT (not the same picture, $why): " + $png.FullName)
         continue
     }
-    Write-Host ("Converted PNG in " + $png.DirectoryName + ":") -ForegroundColor Cyan
+    Write-Host ("Converted $kind in " + $png.DirectoryName + ":") -ForegroundColor Cyan
     Write-Host ("  KEEP: " + $jpg.Name) -ForegroundColor Green
     Write-Host ("  DROP: " + $png.Name) -ForegroundColor Yellow
-    if ($PSCmdlet.ShouldProcess($png.FullName, 'Remove PNG already converted to ' + $jpg.Name)) {
+    if ($PSCmdlet.ShouldProcess($png.FullName, "Remove $kind already converted to " + $jpg.Name)) {
         Remove-Item -LiteralPath $png.FullName -Force
         $deletedDupes++
         $audit.Add("DELETED (converted to " + $jpg.Name + "): " + $png.FullName)
@@ -183,14 +188,53 @@ foreach ($e in ($empties | Sort-Object FullName)) {
     }
 }
 
+# ---- Pass 3: count media from a different year (report only) ----
+# organize.py --other-year reads each file's Date Taken (Media Created for a
+# video), which PowerShell cannot do for HEIC or MOV, and records its own
+# run in the audit workbook. Only its OTHER YEAR lines are shown here.
+$otherYear = $null
+$otherYearNote = 'not counted'
+$python = Get-PythonCommand
+if ($python) {
+    $previous = [Console]::OutputEncoding
+    $previousIo = $env:PYTHONIOENCODING
+    # File names can hold characters the console code page cannot
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $env:PYTHONIOENCODING = 'utf-8'
+    try {
+        $pyArgs = @($python | Select-Object -Skip 1) + @((Join-Path $PSScriptRoot 'organize.py'), '--root', $root, '--other-year')
+        $lines = & $python[0] @pyArgs 2>&1 | ForEach-Object { "$_" }
+    } finally {
+        [Console]::OutputEncoding = $previous
+        $env:PYTHONIOENCODING = $previousIo
+    }
+    foreach ($line in $lines) {
+        if ($line -match '^OTHER YEAR: (\d[\d,]*) of ') {
+            $otherYear = [int]($Matches[1] -replace ',', '')
+            $otherYearNote = $line.Substring('OTHER YEAR: '.Length)
+            Write-Host $line -ForegroundColor Cyan
+        } elseif ($line -like 'OTHER YEAR*') {
+            Write-Host $line -ForegroundColor DarkYellow
+        }
+    }
+    if ($null -eq $otherYear -and $LASTEXITCODE -ne 0) {
+        Write-Host "Could not count media from a different year:" -ForegroundColor DarkYellow
+        $lines | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
+    }
+} else {
+    Write-Host "Python not found; media from a different year were not counted." -ForegroundColor DarkYellow
+}
+
 $would = if ($WhatIfPreference) { 'would be ' } else { '' }
 Write-Host ""
 Write-Host "Cleanup summary:" -ForegroundColor Cyan
-Write-Host ("  Converted PNGs " + $would + "removed : " + $deletedDupes)
-Write-Host ("  PNG/JPG pairs kept (differ)   : " + $keptPairs)
+Write-Host ("  Converted PNGs/BMPs " + $would + "removed : " + $deletedDupes)
+Write-Host ("  PNG or BMP/JPG pairs kept (differ) : " + $keptPairs)
 Write-Host ("  Empty folders " + $would + "moved aside : " + $movedFolders + " (into _empty_folders)")
+Write-Host ("  Media from a different year : " + $(if ($null -eq $otherYear) { $otherYearNote } else { $otherYear }))
+if ($otherYear) { Write-Host "    (each is listed above as OTHER YEAR (<year>): <file>)" }
 
-$audit.Add("SUMMARY: converted PNGs ${would}removed $deletedDupes, PNG/JPG pairs kept $keptPairs, empty folders ${would}moved into _empty_folders $movedFolders")
+$audit.Add("SUMMARY: converted PNGs/BMPs ${would}removed $deletedDupes, PNG or BMP/JPG pairs kept $keptPairs, empty folders ${would}moved into _empty_folders $movedFolders, media from a different year $(if ($null -eq $otherYear) { $otherYearNote } else { $otherYear })")
 Write-AuditLog -Path $Path -Phase 'cleanup' -Lines $audit -DryRun:$WhatIfPreference
 if ($WhatIfPreference) {
     Write-Host ""

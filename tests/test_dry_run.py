@@ -16,11 +16,13 @@ SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / 'skills' / 'media-dat
 
 # Every organize.py phase that changes files, with its flag
 CHANGING = {
-    'delete_junk': '--delete-junk',
+    'fix_extensions': '--fix-extensions',
+    'move_junk': '--move-junk',
     'move_incomplete': '--move-incomplete',
     'quarantine_ads': '--quarantine-ads',
     'fill_blanks': '--fill-blanks',
     'convert_png': '--convert-png',
+    'convert_bmp': '--convert-bmp',
     'apply_moves': '--apply-moves',
     'sync_timestamps': '--sync-timestamps',
     'flatten': '--flatten',
@@ -35,6 +37,8 @@ def build(root):
     make_image(day / 'wrong.jpg', taken=datetime.datetime(2020, 1, 2, 9, 0, 0))   # move, sync
     make_image(day / 'undated.jpg')                                              # fill blanks
     make_image(day / 'shot.png', fmt='PNG')                                      # convert
+    make_image(day / 'scan.bmp', fmt='BMP')                                      # convert BMP
+    make_image(day / 'misnamed.gif', fmt='PNG')                                  # fix extensions
     make_image(day / '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg')                 # ad
     (day / 'empty.jpg').write_bytes(b'')                                         # incomplete
     (day / 'IMG_1.AAE').write_text('<plist/>')                                   # junk
@@ -177,14 +181,6 @@ class PowerShellDryRunTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         return r.stdout
 
-    def test_fix_extensions_previews_unless_apply(self):
-        make_image(self.root / 'day' / 'really_png.jpg', fmt='PNG')
-        out = self.ps('Fix-Extensions.ps1')
-        self.assertIn('really_png.jpg', names(self.root / 'day'), 'a preview must not rename')
-        self.assertIn('-Apply', out)
-        self.ps('Fix-Extensions.ps1', '-Apply')
-        self.assertIn('really_png.png', names(self.root / 'day'))
-
     def test_cleanup_previews_unless_apply(self):
         (self.root / 'empty').mkdir()
         out = self.ps('Cleanup-Pictures.ps1')
@@ -193,6 +189,17 @@ class PowerShellDryRunTests(unittest.TestCase):
         self.ps('Cleanup-Pictures.ps1', '-Apply')
         self.assertFalse((self.root / 'empty').exists())
         self.assertTrue((self.root / '_empty_folders' / 'empty').is_dir())
+
+    def test_cleanup_reports_media_from_a_different_year(self):
+        year = self.root / '2020'
+        make_image(year / 'right.jpg', taken=datetime.datetime(2020, 5, 1, 10, 0, 0))
+        make_image(year / 'early.jpg', taken=datetime.datetime(2019, 12, 31, 23, 0, 0))
+        r = subprocess.run([powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                            str(SCRIPTS / 'Cleanup-Pictures.ps1'), '-Path', str(year)],
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('OTHER YEAR (2019): early.jpg', r.stdout)
+        self.assertIn('Media from a different year : 1', r.stdout)
 
 
 if __name__ == '__main__':

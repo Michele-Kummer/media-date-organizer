@@ -11,22 +11,33 @@ run the same either way. --dry-run is still accepted and means the default.
 
 Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
-    --all               Shorthand for --delete-junk --move-incomplete
-                        --fill-blanks --convert-png --apply-moves
-                        --sync-timestamps. Add --quarantine-ads or --flatten
-                        to include those too.
-    --delete-junk       Permanently delete every Windows thumbnail cache
-                        (Thumbs.db, ehthumbs.db, ehthumbs_vista.db; matched by
-                        whole name, so photos with "thumb" in the name are
-                        safe) and every .AAE file in the root folder
-                        and every subfolder. AAE files are the
+    --all               Shorthand for --fix-extensions --move-junk
+                        --move-incomplete --fill-blanks --convert-png
+                        --apply-moves --sync-timestamps. Add
+                        --quarantine-ads or --flatten to include those too.
+    --fix-extensions    Rename every photo and video whose extension does not
+                        match its content, read from its first bytes (a HEIC
+                        photo named IMG_1.PNG becomes IMG_1.HEIC). Knows PNG,
+                        JPEG, HEIC, MOV/MP4/M4V, 3GP, M2TS, MPEG, WMV, AVI,
+                        GIF, WEBP, TIFF and BMP. A name already taken is a
+                        COLLISION and the file keeps its name. Looks in the
+                        root folder and every subfolder.
+    --move-junk         Move every Windows thumbnail cache (Thumbs.db,
+                        ehthumbs.db, ehthumbs_vista.db; matched by whole
+                        name, so photos with "thumb" in the name are safe)
+                        and every .AAE file in the root folder and every
+                        subfolder into a "_junk" folder inside the root,
+                        keeping their subfolder path. AAE files are the
                         edit-instruction sidecars iPhones export next to a
                         photo; they hold no image and nothing on Windows
-                        reads them. Also deletes macOS "._" sidecars
+                        reads them. Also moves macOS "._" sidecars
                         (._IMG_0001.png beside IMG_0001.png), which a Mac
                         writes when copying to a non-Mac drive; a file is
                         only treated as one when its contents carry the
-                        AppleDouble signature as well as the name.
+                        AppleDouble signature as well as the name. Nothing
+                        is deleted: look over _junk and delete it yourself.
+                        --delete-junk is the old name for this flag and still
+                        works (it moves too).
     --report-only       Scan and write audit XLSX; make no changes. Photos
                         and videos are found in the root and every subfolder
                         at any depth.
@@ -55,6 +66,15 @@ and a summary of every phase's counts and problems is printed at the end):
                         "-overlay" PNGs (Snapchat caption layers). A PNG that
                         cannot be read as a picture is reported, counted as
                         read-failed and left alone; the rest still convert.
+    --convert-bmp       Not part of --all (add it to include it). Re-encode BMP
+                        files as JPEG at quality 95. BMP has no field for a
+                        date, so Explorer can never show one; the JPEG is
+                        given the Date Taken --fill-blanks would write (the
+                        date in the filename, else the folder's date at
+                        12:00:00). Runs before --fill-blanks. A .bmp that is
+                        really another format, or holds transparent pixels,
+                        is left alone and reported. Leaves originals in
+                        place for Cleanup-Pictures.ps1.
     --apply-moves       Move files whose Date Taken does not match their current
                         folder name into a sibling folder named for the real
                         date. A file with no Date Taken or Media Created is
@@ -64,7 +84,7 @@ and a summary of every phase's counts and problems is printed at the end):
                         A suffix is never added to a file that has a date
                         and never stripped from any file. Extensions are
                         left exactly as they are, case included; correcting
-                        them is Fix-Extensions.ps1's job. Works at any depth:
+                        them is --fix-extensions's job. Works at any depth:
                         Trip/2019-08-30/x.jpg taken on the 31st moves to
                         Trip/2019-08-31. A file loose in the root is never
                         moved out of it.
@@ -120,8 +140,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         to the filename; ones with neither, or holding no
                         data, stay. A file's .modd/.moff sidecars
                         move with it. A .modd/.moff in the root or one of its
-                        subfolders whose file is not beside it is permanently
-                        deleted. Ends with an OPPOSITE TYPE line: how many
+                        subfolders whose file is not beside it is moved into
+                        _junk (not deleted). Ends with an OPPOSITE TYPE line: how many
                         files of the less common kind the root itself then
                         holds (videos in a photo folder, or photos in a video
                         folder), also counted as videos-in-photo-folder or
@@ -146,11 +166,22 @@ and a summary of every phase's counts and problems is printed at the end):
                         _ads and _incomplete are not counted. A root with no
                         year folders is reported as one folder. Nothing is
                         moved or deleted.
+    --other-year        Report only; not part of --all. Lists every photo and
+                        video whose Date Taken (Media Created for a video)
+                        is in a different year from the year folder it is
+                        filed in (OTHER YEAR (2019): ...), then a count, split
+                        by year, and how many have no Date Taken. --root is
+                        a year folder (D:\\Pictures\\2020) or the folder
+                        holding the year folders. Searches every depth;
+                        _ads and _incomplete are not counted.
+                        Cleanup-Pictures.ps1 runs it last. Nothing is
+                        moved or deleted.
     --final-check       Not part of --all. Give the folder that holds the
                         year folders as --root. For each year folder,
                         reports what the other phases left behind: files
                         still in an _ads folder (IN ADS), files still in an
-                        _incomplete folder (INCOMPLETE), photos among videos
+                        _incomplete folder (INCOMPLETE), files still in a
+                        _junk folder (IN JUNK), photos among videos
                         or videos among photos (as --opposite-type lists
                         them), subfolders still there after --flatten (NOT
                         FLATTENED, with how many files each holds), name
@@ -536,7 +567,12 @@ LEGACY_NO_DATA_DIR = '_no-image-data'
 # Every phase ignores it.
 EMPTY_FOLDERS_DIR = '_empty_folders'
 
-HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR)
+# Folder inside root that --move-junk (and --flatten, for Sony sidecars whose
+# file is gone) moves junk files into, keeping their path, instead of
+# deleting them. Every phase ignores it.
+JUNK_DIR = '_junk'
+
+HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR)
 
 
 def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
@@ -705,7 +741,7 @@ def scan(root: str) -> list:
         meta = read_metadata(full, ftype)
         dt = meta['date_taken']
         # The name is kept as it is: a _YYYY-MM-DD ending is never stripped,
-        # and the extension is Fix-Extensions.ps1's business
+        # and the extension is --fix-extensions's business
         p = pathlib.Path(name)
         # The same date source --fill-blanks would use
         if dt is not None:
@@ -1209,8 +1245,13 @@ def fill_blanks(root: str, dry_run: bool = False) -> dict:
         else:
             # GIF, BMP, WEBP: no Date Taken field this script can write
             counts['unsupported-format'] += 1
+            if ftype == '.bmp':
+                counts['bmp-needs-convert'] += 1
     if counts['empty-file']:
         print(f"NOTE: {counts['empty-file']} file(s) are empty (0 bytes) and were skipped.", file=sys.stderr)
+    if counts['bmp-needs-convert']:
+        print(f"NOTE: {counts['bmp-needs-convert']} BMP file(s) cannot hold a Date Taken; "
+              "--convert-bmp turns them into dated JPEGs.", file=sys.stderr)
     return dict(counts)
 
 
@@ -1229,16 +1270,32 @@ def _has_transparency(img) -> bool:
 def convert_pngs(root: str, dry_run: bool = False) -> dict:
     """Convert each PNG to a JPEG beside it. With dry_run, read each PNG and
     list the ones that would be converted, writing nothing."""
+    return _convert_to_jpeg(root, '.png', dry_run)
+
+
+def convert_bmps(root: str, dry_run: bool = False) -> dict:
+    """Convert each BMP to a JPEG beside it. BMP has nowhere to keep a date,
+    so the JPEG is given the Date Taken --fill-blanks would write: the date
+    in the filename, else the folder's date. With dry_run, write nothing."""
+    return _convert_to_jpeg(root, '.bmp', dry_run)
+
+
+def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
+    """Convert every <ext> file in root and every subfolder, holding folders
+    excepted, to a JPEG of the same name at quality 95, keeping its EXIF.
+    The original is left for Cleanup-Pictures.ps1 to remove."""
     counts = Counter()
+    kind_name = ext.lstrip('.').upper()
     if not HAS_PIL:
-        print('Pillow required for PNG conversion; pip install "pillow>=10.0"', file=sys.stderr)
+        print(f'Pillow required for {kind_name} conversion; pip install "pillow>=10.0"', file=sys.stderr)
         return {}
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(root, dirpath, dirs)
-        for name in files:
-            if not name.lower().endswith('.png'):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.lower().endswith(ext):
                 continue
-            if pathlib.Path(name).stem.lower().endswith('-overlay'):
+            if ext == '.png' and pathlib.Path(name).stem.lower().endswith('-overlay'):
                 # Snapchat caption layer: transparent, flattens to a blank image
                 counts['skipped-overlay'] += 1
                 continue
@@ -1251,6 +1308,20 @@ def convert_pngs(root: str, dry_run: bool = False) -> dict:
             if kind:
                 _report_not_media(os.path.relpath(p, root), kind, counts)
                 continue
+            real = detect_type(p)
+            if ext == '.bmp' and real != '.bmp':
+                # --fix-extensions gives it its real extension first
+                counts['not-bmp'] += 1
+                print(f"NOT A BMP (really {real or 'unknown'}, left alone): {os.path.relpath(p, root)}",
+                      file=sys.stderr)
+                continue
+            # BMP holds no date, so the JPEG gets the one --fill-blanks would write
+            dated = ''
+            fill_dt = None
+            if ext == '.bmp':
+                fill_dt, source = _fallback_date(name, os.path.basename(os.path.abspath(dirpath)))
+                if fill_dt is not None:
+                    dated = f" (Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} from {source})"
             try:
                 with Image.open(p) as img:
                     img.load()
@@ -1261,6 +1332,8 @@ def convert_pngs(root: str, dry_run: bool = False) -> dict:
                     if not dry_run:
                         exif_bytes = img.info.get('exif', b'')
                         img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
+                if not dry_run and fill_dt is not None:
+                    _write_exif_date_image(new, fill_dt)
             except (OSError, SyntaxError, ValueError, MemoryError) as e:
                 # Not a picture despite the name (a macOS "._" sidecar, a
                 # truncated download): report it and carry on with the rest
@@ -1271,7 +1344,10 @@ def convert_pngs(root: str, dry_run: bool = False) -> dict:
                     os.remove(new)
                 continue
             counts['converted'] += 1
-            print(f"{'WOULD CONVERT' if dry_run else 'CONVERTED'}: {os.path.relpath(p, root)} -> {os.path.basename(new)}")
+            if ext == '.bmp':
+                counts['converted-dated' if fill_dt else 'converted-undated'] += 1
+            print(f"{'WOULD CONVERT' if dry_run else 'CONVERTED'}: {os.path.relpath(p, root)} -> "
+                  f"{os.path.basename(new)}{dated}")
     return dict(counts)
 
 
@@ -1492,9 +1568,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         print(f"OPPOSITE TYPE: {kinds[minor]:,} {minor}(s) in this {major} folder "
               f"({kinds[major]:,} {major}(s)){' once flattened' if dry_run else ''}")
 
-    # A sidecar is only any use beside the file it describes: delete the ones
-    # in root and its subfolders whose file is not there
-    verb = 'WOULD DELETE' if dry_run else 'DELETED'
+    # A sidecar is only any use beside the file it describes: move the ones
+    # in root and its subfolders whose file is not there into _junk
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
     subfolders = sorted(d for d in os.listdir(root)
                         if os.path.isdir(os.path.join(root, d)) and d not in HOLDING_DIRS)
     for folder in [''] + subfolders:
@@ -1507,20 +1583,15 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             if os.path.exists(os.path.join(fp, p.stem)):
                 continue
             rel = f"{folder}/{name}" if folder else name
-            if not dry_run:
-                try:
-                    os.remove(full)
-                except OSError as e:
-                    counts['failed'] += 1
-                    print(f"FAILED {rel}: {e}", file=sys.stderr)
-                    continue
+            if not _move_to_junk(root, full, counts, dry_run):
+                continue
             gone.add(full)
-            counts['orphan-sidecars-deleted'] += 1
-            print(f"{verb} (sidecar with no file): {rel}")
+            counts['orphan-sidecars-moved'] += 1
+            print(f"{verb} (sidecar with no file): {rel} -> {JUNK_DIR}/{rel}")
 
     # Incomplete files stay in their dated folders: the name is their only date
     kept = tuple(os.path.join(root, d) + os.sep
-                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR))
+                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR))
     empty = []
     for dirpath, _dirs, _files in os.walk(root, topdown=False):
         if dirpath in (root, ads) or (dirpath + os.sep).startswith(kept):
@@ -1626,6 +1697,51 @@ def opposite_type(root: str) -> dict:
     return counts
 
 
+# ---------------- Other year ----------------
+
+def other_year(root: str) -> dict:
+    """Report photos and videos whose Date Taken (Media Created for a video)
+    is in a different year from the year folder they are filed in. root is
+    a year folder (D:\\Pictures\\2020, "2013 West"), or the folder holding
+    the year folders, each then checked against its own year. Searched at
+    every depth, holding folders excepted. A file with no Date Taken has no
+    year to compare and is counted apart. Nothing is changed."""
+    name = os.path.basename(os.path.normpath(os.path.abspath(root)))
+    if _YEAR_FOLDER_RE.match(name):
+        tops = [(name, root, '')]
+    else:
+        tops = [(y, p, f'{y}/') for y, p in _year_folders(root) if _YEAR_FOLDER_RE.match(y)]
+    counts = Counter({'other-year': 0, 'no-date-taken': 0, 'media-checked': 0})
+    years = Counter()
+    for label, top, prefix in tops:
+        year = int(label[:4])
+        found = 0
+        for rel, _name, full, ftype, _folders in _iter_media_deep(top):
+            if not_media_kind(full):
+                continue
+            counts['media-checked'] += 1
+            dt = read_metadata(full, ftype)['date_taken']
+            if dt is None:
+                counts['no-date-taken'] += 1
+            elif dt.year != year:
+                found += 1
+                years[dt.year] += 1
+                print(f"OTHER YEAR ({dt.year}): {prefix}{rel}")
+        counts['other-year'] += found
+        if prefix:
+            print(f"{label}: {found:,} from another year")
+    for y in sorted(years):
+        counts[f'from-{y}'] = years[y]
+    if not tops:
+        print(f"OTHER YEAR: {name} is not a year folder and holds none; nothing to compare")
+        return dict(counts)
+    split = ', '.join(f'{y}: {n:,}' for y, n in sorted(years.items()))
+    print(f"OTHER YEAR: {counts['other-year']:,} of {counts['media-checked']:,} media item(s) "
+          f"are from a different year{f' ({split})' if split else ''}; "
+          f"{counts['no-date-taken']:,} have no Date Taken")
+    return dict(counts)
+
+
 # ---------------- Find plist files ----------------
 
 def find_plists(root: str) -> dict:
@@ -1696,7 +1812,7 @@ def _audit_prefix(folder: str) -> str:
 
 def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False) -> dict:
     """Report what the other phases left behind, one year folder at a time:
-    files still in _ads, files still in _incomplete, photos among videos (or
+    files still in _ads, _incomplete and _junk, photos among videos (or
     videos among photos), subfolders --flatten did not remove, and audit
     workbooks. own_xlsx is the workbook this run is recorded in, which is
     not reported. With no year folders in root, root itself is reported as
@@ -1705,7 +1821,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
     tops = _year_folders(root)
     found, major, minor = _media_by_kind(root, tops)
     opposite = f'{minor}s-in-{major}-folders'
-    counts = Counter({'ads-files': 0, 'incomplete-files': 0, opposite: 0,
+    counts = Counter({'ads-files': 0, 'incomplete-files': 0, 'junk-files': 0, opposite: 0,
                       'folders-not-flattened': 0, 'collisions': 0, 'collisions-identical': 0,
                       'collisions-different': 0, 'audit-files': 0,
                       'year-folders': len(tops), 'year-folders-with-oddities': 0})
@@ -1760,10 +1876,11 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
                 n = _count_files(os.path.join(dirpath, d))
                 if not n:
                     continue
-                key = 'ads-files' if d == QUARANTINE_DIR else 'incomplete-files'
+                key, tag = {QUARANTINE_DIR: ('ads-files', 'IN ADS'),
+                            JUNK_DIR: ('junk-files', 'IN JUNK')}.get(d, ('incomplete-files', 'INCOMPLETE'))
                 year[key] += n
                 rel = os.path.relpath(os.path.join(dirpath, d), root).replace(os.sep, '/')
-                print(f"{'IN ADS' if d == QUARANTINE_DIR else 'INCOMPLETE'}: {rel} ({n:,} file(s))")
+                print(f"{tag}: {rel} ({n:,} file(s))")
             dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
         for rel in found[label][minor]:
             print(f"{minor.upper()} IN {major.upper()} FOLDER: {rel}")
@@ -1796,6 +1913,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
             counts['year-folders-with-oddities'] += 1
         summary.append(
             f"{label}: {year['ads-files']:,} in _ads, {year['incomplete-files']:,} in _incomplete, "
+            f"{year['junk-files']:,} in _junk, "
             f"{year[opposite]:,} {minor}(s) among {major}s, "
             f"{year['folders-not-flattened']:,} folder(s) not flattened, "
             f"{year['collisions']:,} collision(s), "
@@ -1804,6 +1922,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
     for line in summary:
         print(line)
     print(f"FINAL CHECK: {counts['ads-files']:,} in _ads, {counts['incomplete-files']:,} in _incomplete, "
+          f"{counts['junk-files']:,} in _junk, "
           f"{counts[opposite]:,} {minor}(s) among {major}s, "
           f"{counts['folders-not-flattened']:,} folder(s) not flattened, "
           f"{counts['collisions']:,} collision(s) "
@@ -1828,8 +1947,15 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
 #   Update_Now_Video_V2_720x1280_15s___fudxlv
 #                                          pixel dimensions somewhere in the
 #                                          name, ending ___ + 6-char id
-# optionally followed by the _YYYY-MM-DD suffix --flatten adds on a name
-# clash, or a " (2)" copy marker.
+#   492887-1648448524975-3d62u             id + 13-digit millisecond time
+#                                          + 5-char id (game ad creatives)
+#   __d2duuy9yo5pldo.cloudfront.net_codigames_6e945046-...
+#                                          a CDN address saved as the name
+#   lbay6fy2_fftxeca_itehyhqsmpyyszx7      8, 7 and 16 lowercase letters and
+#                                          digits joined by _
+#   icon                                   an app's icon
+# optionally followed by the _YYYY-MM-DD suffix --flatten or --apply-moves
+# adds, or a " (2)" copy marker.
 _AD_NAME_RE = re.compile(
     r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
     r'|(?=\d*[a-f])[0-9a-f]{9}_\d+'
@@ -1837,9 +1963,19 @@ _AD_NAME_RE = re.compile(
     r'|news_images%2F\d+'
     r'|UnityAdsCache-[0-9a-f]{64}'
     r'|(?=\d*[a-f])[0-9a-f]{24}(?:[-_][0-9a-z]+)+'
-    r'|.*(?<!\d)\d{3,4}x\d{3,4}(?!\d).*___[0-9a-z]{6})'
+    r'|.*(?<!\d)\d{3,4}x\d{3,4}(?!\d).*___[0-9a-z]{6}'
+    r'|\d{4,7}-1\d{12}-[0-9a-z]{5}'
+    r'|_*[0-9a-z-]+\.cloudfront\.net_.+'
+    r'|(?=[0-9_]*[a-z])[0-9a-z]{8}_[0-9a-z]{7}_[0-9a-z]{16}'
+    r'|icon)'
     r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?',
     re.IGNORECASE)
+
+# Stems that mark a .raw file as an ad: raw pixel dumps games write
+# (draw_title.raw, draw_subtitle.raw). Only when the file is not a camera RAW,
+# which starts with a TIFF or Panasonic header.
+_AD_RAW_NAME_RE = re.compile(r'draw_[a-z_]+(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?', re.IGNORECASE)
+_CAMERA_RAW_HEADERS = (b'II*\x00', b'MM\x00*', b'IIU\x00')
 
 
 # Stems that mark a video (only) as an ad, with the same optional suffixes:
@@ -1860,9 +1996,22 @@ _AD_VIDEO_NAME_RE = re.compile(
 
 def is_ad_name(name: str) -> bool:
     p = pathlib.Path(name)
+    ext = p.suffix.lower()
+    if ext == '.raw':
+        return _AD_RAW_NAME_RE.fullmatch(p.stem) is not None
     if _AD_NAME_RE.fullmatch(p.stem):
         return True
-    return p.suffix.lower() in VIDEO_EXTS and _AD_VIDEO_NAME_RE.fullmatch(p.stem) is not None
+    # No rule for BMP: numbered BMPs (8824_1269.bmp, imagebmp (5).bmp) are as
+    # often the user's own pictures as game ads, and names cannot tell them apart
+    return ext in VIDEO_EXTS and _AD_VIDEO_NAME_RE.fullmatch(p.stem) is not None
+
+
+def _is_camera_raw(path: str) -> bool:
+    try:
+        with open(path, 'rb') as f:
+            return f.read(4) in _CAMERA_RAW_HEADERS
+    except OSError:
+        return True  # cannot tell: leave it alone
 
 
 def quarantine_ads(root: str, dry_run: bool = False) -> dict:
@@ -1881,12 +2030,18 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
         _prune_holding(root, dirpath, dirs)
         dirs.sort()
         for name in sorted(files):
-            if pathlib.Path(name).suffix.lower() not in MEDIA_EXTS or not is_ad_name(name):
+            ext = pathlib.Path(name).suffix.lower()
+            if (ext not in MEDIA_EXTS and ext != '.raw') or not is_ad_name(name):
                 continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
-            ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
-            camera = read_metadata(full, ftype)['camera']
+            if ext == '.raw':
+                # A game's raw pixel dump has no metadata to check; a camera
+                # RAW is recognised by its header and kept
+                camera = 'camera RAW header' if _is_camera_raw(full) else None
+            else:
+                ftype = detect_type(full) or ext
+                camera = read_metadata(full, ftype)['camera']
             if camera:
                 counts['kept-camera-info'] += 1
                 print(f"KEPT (camera: {camera}): {rel}")
@@ -2013,7 +2168,142 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
     return dict(counts)
 
 
-# ---------------- Delete junk files ----------------
+# ---------------- Fix extensions ----------------
+
+# The extensions that name the same format as each one _detect_format
+# returns. A file already carrying one of them is left alone.
+EXT_EQUIVALENTS = {
+    '.jpg': ('.jpg', '.jpeg'),
+    '.tif': ('.tif', '.tiff'),
+    '.heic': ('.heic', '.heif'),
+    '.m2ts': ('.m2ts', '.mts'),
+    # DVD (.vob) and JVC/Panasonic camcorder (.mod) files are MPEG too
+    '.mpg': ('.mpg', '.mpeg', '.mpe', '.vob', '.mod'),
+    # The same container holds Windows Media audio
+    '.wmv': ('.wmv', '.asf', '.wma'),
+    '.avi': ('.avi', '.divx'),
+}
+
+# Files --fix-extensions looks at: those named as a photo or video, and
+# those with no extension at all. Anything else (an .m4a song, a .docx) is
+# never renamed, whatever its first bytes say.
+_RENAMEABLE_EXTS = (MEDIA_EXTS | set(CAMCORDER_EXTS)
+                    | {e for same in EXT_EQUIVALENTS.values() for e in same} | {''})
+
+
+# ftyp brands detect_type names on purpose. Any other brand (a HEIF burst,
+# an AVIF photo) comes back as .mp4 by default (BUG-04), so --fix-extensions
+# leaves those files alone rather than rename a photo to .mp4.
+_KNOWN_FTYP_BRANDS = (b'heic', b'heix', b'mif1', b'msf1', b'qt  ', b'mp41', b'mp42', b'isom')
+
+
+def _unknown_ftyp_brand(path: str) -> bool:
+    try:
+        with open(path, 'rb') as f:
+            h = f.read(12)
+    except OSError:
+        return False
+    brand = h[8:12]
+    return (h[4:8] == b'ftyp' and brand not in _KNOWN_FTYP_BRANDS
+            and not brand.startswith((b'M4V', b'3g')))
+
+
+def _detect_format(path: str) -> Optional[str]:
+    """detect_type, plus the camcorder and older video formats that only
+    --fix-extensions and --flatten deal with (M2TS, MPEG, WMV, AVI)."""
+    real = detect_type(path)
+    if real:
+        return real
+    try:
+        with open(path, 'rb') as f:
+            h = f.read(200)
+    except OSError:
+        return None
+    if len(h) < 12:
+        return None
+    # AVCHD: 192-byte packets, sync byte 0x47 after a 4-byte timecode
+    if len(h) >= 197 and h[4] == 0x47 and h[196] == 0x47:
+        return '.m2ts'
+    # MPEG program stream (pack header) or bare video stream (sequence header)
+    if h[:3] == b'\x00\x00\x01' and h[3] in (0xBA, 0xB3):
+        return '.mpg'
+    # ASF container header GUID
+    if h[:8] == b'\x30\x26\xb2\x75\x8e\x66\xcf\x11':
+        return '.wmv'
+    if h[:4] == b'RIFF' and h[8:12] == b'AVI ':
+        return '.avi'
+    return None
+
+
+def fix_extensions(root: str, dry_run: bool = False) -> dict:
+    """Rename every photo and video in root and every subfolder, holding
+    folders excepted, whose extension does not match the format its first
+    bytes show (a HEIC named IMG_1.PNG becomes IMG_1.HEIC), keeping the
+    extension's case. A name that is already taken, or that another file in
+    the folder is being renamed to, is a COLLISION and the file is left
+    alone. Empty files, unknown formats and plist or XMP text named as a
+    photo are reported and left alone."""
+    counts = Counter()
+    verb = 'WOULD RENAME' if dry_run else 'RENAMED'
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(root, dirpath, dirs)
+        dirs.sort()
+        claimed = set()
+        for name in sorted(files):
+            p = pathlib.Path(name)
+            ext = p.suffix.lower()
+            if ext not in _RENAMEABLE_EXTS:
+                continue
+            full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, root)
+            if _is_appledouble(full):
+                continue  # --move-junk sets these aside
+            try:
+                size = os.path.getsize(full)
+            except OSError as e:
+                counts['failed'] += 1
+                print(f"FAILED {rel}: {e}", file=sys.stderr)
+                continue
+            if size == 0:
+                if ext:
+                    counts['empty'] += 1
+                    print(f"EMPTY (0 bytes, left for --move-incomplete): {rel}", file=sys.stderr)
+                continue
+            real = _detect_format(full)
+            if real == '.mp4' and _unknown_ftyp_brand(full):
+                real = None
+            if real is None:
+                kind = not_media_kind(full)
+                if kind:
+                    _report_not_media(rel, kind, counts)
+                elif ext in MEDIA_EXTS or ext in CAMCORDER_EXTS:
+                    counts['unknown-format'] += 1
+                    print(f"UNKNOWN FORMAT (left alone): {rel}", file=sys.stderr)
+                continue
+            if ext in EXT_EQUIVALENTS.get(real, (real,)):
+                counts['correct'] += 1
+                continue
+            new_ext = real.upper() if p.suffix.upper() == p.suffix else real
+            new_name = (p.stem if ext else name) + new_ext
+            dst = os.path.join(dirpath, new_name)
+            if new_name.lower() in claimed or os.path.lexists(dst):
+                counts['collision'] += 1
+                print(f"COLLISION, not renaming: {rel} ({new_name} is taken)", file=sys.stderr)
+                continue
+            if not dry_run:
+                try:
+                    os.rename(full, dst)
+                except OSError as e:
+                    counts['failed'] += 1
+                    print(f"FAILED to rename {rel}: {e}", file=sys.stderr)
+                    continue
+            claimed.add(new_name.lower())
+            counts['renamed'] += 1
+            print(f"{verb}: {rel} -> {new_name} (really {real.lstrip('.').upper()})")
+    return dict(counts)
+
+
+# ---------------- Move junk files aside ----------------
 
 # Thumbnail caches Windows leaves in picture folders (usually hidden). Whole
 # names, not a pattern: "west sucking thumb.jpg" is a photo.
@@ -2037,40 +2327,59 @@ def _is_appledouble(full: str) -> bool:
         return False
 
 
-def delete_junk(root: str, dry_run: bool = False) -> dict:
-    """Delete every .AAE file (iPhone edit sidecar), Windows thumbnail cache
-    (Thumbs.db) and macOS "._" sidecar in root and every subfolder. Emptied
-    folders are left for --flatten or the cleanup script."""
+def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool) -> bool:
+    """Move full into root/_junk at its path relative to root, so the user
+    can look it over and delete it. Never overwrites: a path already taken
+    in _junk is reported as a COLLISION and the file stays. Returns True if
+    the file was (or, in a dry run, would be) moved."""
+    rel = os.path.relpath(full, root)
+    dst = os.path.join(root, JUNK_DIR, rel)
+    if os.path.lexists(dst):
+        counts['collision'] += 1
+        print(f"COLLISION, skipping: {rel} ({JUNK_DIR}/{rel.replace(os.sep, '/')} exists)", file=sys.stderr)
+        return False
+    if not dry_run:
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.rename(full, dst)
+        except OSError:
+            try:
+                # Another drive, or a read-only Thumbs.db: copy then remove
+                shutil.move(full, dst)
+            except OSError as e:
+                counts['failed'] += 1
+                print(f"FAILED {rel}: {e}", file=sys.stderr)
+                return False
+    return True
+
+
+def move_junk(root: str, dry_run: bool = False) -> dict:
+    """Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache
+    (Thumbs.db) and macOS "._" sidecar in root and every subfolder into
+    root/_junk, keeping its path. Nothing is deleted: the user looks over
+    _junk and deletes it. Emptied folders are left for --flatten or the
+    cleanup script."""
     counts = Counter()
-    verb = 'WOULD DELETE' if dry_run else 'DELETED'
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
     for dirpath, dirs, files in os.walk(root):
+        _prune_holding(root, dirpath, dirs)
         dirs.sort()
         for name in sorted(files):
             full = os.path.join(dirpath, name)
             # Checked first: "._IMG_0001.AAE" is a sidecar, not an AAE file
             if _is_appledouble(full):
-                kind = 'deleted-mac-sidecars'
+                kind, label = 'moved-mac-sidecars', 'Mac sidecar'
             elif pathlib.Path(name).suffix.lower() == '.aae':
-                kind = 'deleted'
+                kind, label = 'moved-aae', 'AAE'
             elif name.lower() in THUMBS_NAMES:
-                kind = 'deleted-thumbs'
+                kind, label = 'moved-thumbs', 'thumbnail cache'
             else:
                 continue
-            rel = os.path.relpath(full, root)
-            if not dry_run:
-                try:
-                    try:
-                        os.remove(full)
-                    except PermissionError:
-                        # Thumbs.db is often read-only as well as hidden
-                        os.chmod(full, 0o666)
-                        os.remove(full)
-                except OSError as e:
-                    counts['failed'] += 1
-                    print(f"FAILED {rel}: {e}", file=sys.stderr)
-                    continue
+            if not _move_to_junk(root, full, counts, dry_run):
+                continue
             counts[kind] += 1
-            print(f"{verb}: {rel}")
+            rel = os.path.relpath(full, root)
+            print(f"{verb} ({label}): {rel} -> {os.path.join(JUNK_DIR, rel)}")
     return dict(counts)
 
 
@@ -2224,13 +2533,14 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # Order phases run in when several are given on one command line: clear out
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
-PHASE_ORDER = ('delete_junk', 'move_incomplete', 'quarantine_ads', 'fill_blanks', 'convert_png',
+PHASE_ORDER = ('fix_extensions', 'move_junk', 'move_incomplete', 'quarantine_ads', 'convert_bmp', 'fill_blanks', 'convert_png',
                'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
-               'opposite_type', 'find_plists', 'final_check')
-ALL_PHASES = ('delete_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
+               'opposite_type', 'other_year', 'find_plists', 'final_check')
+ALL_PHASES = ('fix_extensions', 'move_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
 # Phases that only report. Every other phase changes files, and only when
 # --apply is given; without it, it lists what it would do.
-REPORT_PHASES = ('report_only', 'compare_collisions', 'visual_compare', 'opposite_type', 'find_plists')
+REPORT_PHASES = ('report_only', 'compare_collisions', 'visual_compare', 'opposite_type', 'other_year',
+                 'find_plists')
 
 
 def _default_xlsx(root: str, rename: bool = True) -> str:
@@ -2293,8 +2603,10 @@ class _IssueTee:
 
 def _run_phase(phase: str, args) -> dict:
     dry_run = not args.apply
-    if phase == 'delete_junk':
-        return delete_junk(args.root, dry_run)
+    if phase == 'fix_extensions':
+        return fix_extensions(args.root, dry_run)
+    if phase == 'move_junk':
+        return move_junk(args.root, dry_run)
     if phase == 'move_incomplete':
         return move_incomplete(args.root, dry_run)
     if phase == 'quarantine_ads':
@@ -2303,6 +2615,8 @@ def _run_phase(phase: str, args) -> dict:
         return fill_blanks(args.root, dry_run)
     if phase == 'convert_png':
         return convert_pngs(args.root, dry_run)
+    if phase == 'convert_bmp':
+        return convert_bmps(args.root, dry_run)
     if phase == 'sync_timestamps':
         return sync_timestamps(args.root, dry_run)
     if phase == 'flatten':
@@ -2311,6 +2625,8 @@ def _run_phase(phase: str, args) -> dict:
         return find_plists(args.root)
     if phase == 'opposite_type':
         return opposite_type(args.root)
+    if phase == 'other_year':
+        return other_year(args.root)
     if phase == 'final_check':
         return final_check(args.root, os.path.join(args.root, args.xlsx), dry_run)
     if phase == 'compare_collisions':
@@ -2350,9 +2666,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
     ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
-    ap.add_argument('--all', action='store_true', help='Run --delete-junk, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
+    ap.add_argument('--all', action='store_true', help='Run --fix-extensions, --move-junk, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
     ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos whose Media Created is blank, in the root and every subfolder at any depth, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
+    ap.add_argument('--convert-bmp', action='store_true', help='Convert BMP files to JPEG at quality 95. BMP cannot hold a Date Taken, so each JPEG gets the date in the filename, else the folder date. Originals are left for Cleanup-Pictures.ps1. Not part of --all; add it to include it.')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
@@ -2360,14 +2677,16 @@ def main(argv=None):
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. Every other phase leaves these alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
-    ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, files still in _incomplete, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
+    ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')
+    ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, _incomplete and _junk, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
-    ap.add_argument('--delete-junk', action='store_true', help='Permanently delete every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder.')
+    ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
+    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder into a _junk folder, keeping their subfolder path, for you to look over and delete. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
     ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
     ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
-    ap.add_argument('--audit-log', metavar='NAME', help='Record lines read from standard input in the audit workbook as phase NAME, then exit. Used by Fix-Extensions.ps1 and Cleanup-Pictures.ps1.')
+    ap.add_argument('--audit-log', metavar='NAME', help='Record lines read from standard input in the audit workbook as phase NAME, then exit. Used by Cleanup-Pictures.ps1.')
     args = ap.parse_args(argv)
     if args.apply and args.dry_run:
         ap.error('--apply and --dry-run cannot be combined: leave out --dry-run to make the changes')
