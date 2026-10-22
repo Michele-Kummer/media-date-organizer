@@ -500,9 +500,9 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-03 | Report and `--apply-moves` only looked one folder deep | Photos and videos | Medium | Claude | `2b6ea1d` |
 | BUG-05 | A dry run renamed an audit workbook | Audit workbook | Low | Claude | `15b699c` |
 | BUG-25 | Plist files named as photos failed to get a date and were renamed | Photos (non-media files with a photo name) | Low | Michele Kummer | `a8631ce` |
-| BUG-26 | `--all` did not fix extensions | Photos and videos | Medium | Michele Kummer | not yet committed |
-| BUG-27 | Junk and orphan sidecar files were permanently deleted | Non-media files (sidecars and thumbnail caches) | Medium | Michele Kummer | not yet committed |
-| BUG-28 | The step-by-step run never asked about cleanup | Workflow | Low | Michele Kummer | not yet committed |
+| BUG-26 | `--all` did not fix extensions | Photos and videos | Medium | Michele Kummer | `b6166b8` |
+| BUG-27 | Junk and orphan sidecar files were permanently deleted | Non-media files (sidecars and thumbnail caches) | Medium | Michele Kummer | `b6166b8` |
+| BUG-28 | The step-by-step run never asked about cleanup | Workflow | Low | Michele Kummer | `b6166b8` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -643,19 +643,19 @@ On `E:\Pictures\2023`, `--fill-blanks` reported `FAILED to write 2023-08-07/IMG_
 **Fix:** Files whose content is plist, XMP or other XML text are recognised by their first bytes. Every step reports them as `NOT MEDIA` and leaves them alone, and the new `--find-plists` lists them all (US-28). They are never deleted, so the user decides. The `_2023-08-07` suffixes already added are not removed.
 
 #### BUG-26 `--all` did not fix extensions
-**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** `b6166b8`
 
 Fixing extensions was only in `Fix-Extensions.ps1`, which `--all` does not run. A JPEG saved as `.PNG` or a HEIC saved as `.JPG` went through `--all` under its wrong name, so the date steps read it as the wrong format, even though the README listed fixing extensions as step 1 of `/fix-media-dates`.
 **Fix:** New `organize.py --fix-extensions`, with the same rules as the PowerShell script, runs first in `--all`. `tests/test_fix_extensions_and_junk.py` covers it.
 
 #### BUG-27 Junk and orphan sidecar files were permanently deleted
-**Found by:** Michele Kummer · **Affects:** non-media files (`.AAE`, `Thumbs.db`, macOS `._` and Sony `.modd`/`.moff` sidecars) · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** non-media files (`.AAE`, `Thumbs.db`, macOS `._` and Sony `.modd`/`.moff` sidecars) · **Fixed in:** `b6166b8`
 
 `--delete-junk`, and so `--all`, deleted `.AAE` edit files, thumbnail caches and macOS sidecars, and `--flatten` deleted Sony sidecars whose video was gone. An `.AAE` holds the edits made on the iPhone, so deleting it cannot be undone, and it went against the project's rule of moving things aside instead of deleting them.
 **Fix:** `--move-junk` (with `--delete-junk` kept as its old name) and `--flatten` move these files into `_junk`, keeping their path, and never overwrite. Every step skips `_junk`, and the final check reports what is in it.
 
 #### BUG-28 The step-by-step run never asked about cleanup
-**Found by:** Michele Kummer · **Affects:** workflow · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** workflow · **Fixed in:** `b6166b8`
 
 `/fix-media-dates` asked about the optional steps but treated cleanup as a reminder at the end, so the one step that deletes was never offered as a choice.
 **Fix:** Cleanup is now step 13, "Clean up converted files", an optional step the command always asks about, before the dry run ends and again after `--apply` if it was not run.
