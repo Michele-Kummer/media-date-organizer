@@ -7,7 +7,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **User stories:** written with Claude Code (Claude Opus 5.5) by reading the plugin's code, docs and git history. Each story's acceptance criteria describe how the plugin behaves today.
 - **Open bugs:** found by Claude while writing the stories. Each one was reproduced on synthetic files.
 - **Resolved bugs:** taken from the git history. Michele Kummer, the project's author, said which ones they found.
-- **Updated 2026-10-22:** Michele Kummer asked for `--all` to fix extensions, for junk to be moved aside instead of deleted, and for the step-by-step run to ask about cleanup. Those gaps are recorded as BUG-26 to BUG-28, and US-31 records the new requirements.
+- **Updated 2026-10-22:** Michele Kummer asked for `--all` to fix extensions, for junk to be moved aside instead of deleted, and for the step-by-step run to ask about cleanup. Those gaps are recorded as BUG-26 to BUG-28, and US-31 records the new requirements. US-32 was added at Michele Kummer's request.
 
 **Status** on each story is *Done* when every criterion holds, or *Partly done* when some do not, with the gap named.
 
@@ -26,7 +26,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 7 |
-| User stories | 31 (29 Done, 2 Partly done) |
+| User stories | 32 (30 Done, 2 Partly done) |
 | Bugs | 28 (2 open, 26 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -410,7 +410,7 @@ As a media owner, I want to know how the two ways of running `/fix-media-dates` 
 </details>
 
 <details>
-<summary><strong>Epic 7 — Maintain the plugin</strong> (US-24 to US-25)</summary>
+<summary><strong>Epic 7 — Maintain the plugin</strong> (US-24 to US-25, US-32)</summary>
 
 Change and test the plugin safely.
 
@@ -428,6 +428,13 @@ As a maintainer, I want tests that run on generated files, so that I can check a
 As a maintainer, I want to load my local copy into Claude Code, so that I can try a change before publishing it.
 
 - `claude --plugin-dir .` from the clone loads the plugin for that session.
+
+**Status:** Done
+
+#### US-32 Keep the docs current
+As a maintainer, I want the README, cheat sheet, skills and this file updated with each change, so that the docs match the scripts.
+
+- Each feature commit since this file was added (`8c6d76f`) updated the README, cheat sheet, skills and this file wherever the change affected them.
 
 **Status:** Done
 

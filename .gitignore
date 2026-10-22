@@ -1,16 +1,24 @@
+# A file that's already tracked won't be ignored just by adding it here — remove it from the index first:
+
 # Audit outputs
 *.xlsx
+!docs/example-audit.xlsx
+
 
 # Python
+# Python bytecode cache
 __pycache__/
 *.pyc
+# virtualenvs
 .venv/
 venv/
 
 # OS
-.DS_Store
+# Windows file explorer thumbnails
 Thumbs.db
 desktop.ini
+# macOS equivalent
+.DS_Store
 
 # IDE
 .vscode/
