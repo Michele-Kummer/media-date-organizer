@@ -131,7 +131,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         root gets a _<date-taken> suffix. Exception: inside the
                         _ads folder every file moves up from its subfolder into
                         _ads itself, with or without a Date Taken (a name clash
-                        gets a _<subfolder-name> suffix). Camcorder videos
+                        gets a _<subfolder-name> suffix). The same holds when
+                        the root is an _ads folder itself
+                        (--root E:\\Pictures\\2020\\_ads), and for files in
+                        subfolders at any depth inside _ads. Camcorder videos
                         (.m2ts, .mts) and older MPEG, Windows Media and AVI
                         videos (.mpg, .mpeg, .wmv, .avi), which no other phase handles, are moved
                         too, going by the date in the filename
@@ -1462,17 +1465,43 @@ def sync_timestamps(root: str, dry_run: bool = False) -> dict:
 
 # ---------------- Flatten into root ----------------
 
+def _iter_ads(ads: str, exts):
+    """Yield (folder, filename, full_path) for every file with one of exts in
+    a subfolder of ads at any depth, folder being its path relative to ads
+    with / separators. Files loose in ads itself are already flat."""
+    for dirpath, dirs, files in os.walk(ads):
+        dirs[:] = sorted(d for d in dirs if d not in HOLDING_DIRS)
+        if dirpath == ads:
+            continue
+        folder = os.path.relpath(dirpath, ads).replace(os.sep, '/')
+        for name in sorted(files):
+            if pathlib.Path(name).suffix.lower() in exts:
+                yield folder, name, os.path.join(dirpath, name)
+
+
 def flatten(root: str, dry_run: bool = False) -> dict:
     """Move dated files up from their subfolder into root, then move the
     subfolders that end up empty into _empty_folders. Undated files are left
     in place, except inside the _ads folder: ads rarely have a Date Taken, so
     there every file moves up from its subfolder into _ads itself, dated or
-    not."""
+    not. A root that is itself an _ads folder (E:\\Pictures\\2020\\_ads) is
+    flattened the same way, and its emptied subfolders go into the
+    _empty_folders beside it, as they would from a run on its parent."""
     counts = Counter()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     gone = set()  # paths moved or removed, so a dry run can tell what empties
-    ads = os.path.join(root, QUARANTINE_DIR)
-    for base in (root, ads):
+    root_names = set()
+    # One spelling of root (no trailing slash, native separators), so the
+    # paths in gone match the ones os.walk gives back
+    root = os.path.normpath(root)
+    ads_root = os.path.basename(root).lower() == QUARANTINE_DIR
+    if ads_root:
+        ads = root
+        bases = (ads,)
+    else:
+        ads = os.path.join(root, QUARANTINE_DIR)
+        bases = (root, ads)
+    for base in bases:
         if not os.path.isdir(base):
             continue
         in_ads = base == ads
@@ -1481,12 +1510,17 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         taken = {n.lower() for n in os.listdir(base)}
         if not in_ads:
             root_names = taken
-        exts = MEDIA_EXTS if in_ads else MEDIA_EXTS | set(CAMCORDER_EXTS)
-        for folder, name, full in iter_media(base, exts):
+        if in_ads:
+            # Ads sit at any depth: --quarantine-ads keeps their subfolder path
+            # (_ads/Temp/2020-01-06), and a game's .raw dumps are ads too
+            files = _iter_ads(base, MEDIA_EXTS | {'.raw'})
+        else:
+            files = iter_media(base, MEDIA_EXTS | set(CAMCORDER_EXTS))
+        for folder, name, full in files:
             from_folder = False
             if in_ads:
                 # The subfolder name is the only date an ad has
-                suffix = folder
+                suffix = folder.rsplit('/', 1)[-1]
             elif pathlib.Path(name).suffix.lower() in CAMCORDER_EXTS:
                 dt = _filename_date(pathlib.Path(name).stem)
                 if dt is None:
@@ -1570,10 +1604,11 @@ def flatten(root: str, dry_run: bool = False) -> dict:
 
     # A sidecar is only any use beside the file it describes: move the ones
     # in root and its subfolders whose file is not there into _junk
+    # (not in _ads, which a run on its parent leaves alone too)
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     subfolders = sorted(d for d in os.listdir(root)
                         if os.path.isdir(os.path.join(root, d)) and d not in HOLDING_DIRS)
-    for folder in [''] + subfolders:
+    for folder in ([] if ads_root else [''] + subfolders):
         fp = os.path.join(root, folder)
         for name in sorted(os.listdir(fp)):
             p = pathlib.Path(name)
@@ -1601,7 +1636,8 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             continue
         gone.add(dirpath)
         empty.append(dirpath)
-    _quarantine_empty_folders(root, empty, dry_run, counts)
+    # An _ads root's emptied folders go beside it, as from a run on its parent
+    _quarantine_empty_folders(os.path.dirname(ads) if ads_root else root, empty, dry_run, counts)
     return dict(counts)
 
 
@@ -2674,7 +2710,7 @@ def main(argv=None):
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
-    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, files move up into _ads itself even with no Date Taken.')
+    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, or with an _ads folder as the root, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. Every other phase leaves these alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')

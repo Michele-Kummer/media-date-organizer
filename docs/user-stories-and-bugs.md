@@ -8,6 +8,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Open bugs:** found by Claude while writing the stories. Each one was reproduced on synthetic files.
 - **Resolved bugs:** taken from the git history. Michele Kummer, the project's author, said which ones they found.
 - **Updated 2026-10-22:** Michele Kummer asked for `--all` to fix extensions, for junk to be moved aside instead of deleted, and for the step-by-step run to ask about cleanup. Those gaps are recorded as BUG-26 to BUG-28, and US-31 records the new requirements. US-32 was added at Michele Kummer's request.
+- **Updated 2026-10-23:** Michele Kummer found that `--flatten` left the ads in `E:\Pictures\2020\_ads` in their subfolders (BUG-29).
 
 **Status** on each story is *Done* when every criterion holds, or *Partly done* when some do not, with the gap named.
 
@@ -27,11 +28,11 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 |---|---|
 | Epics | 7 |
 | User stories | 32 (30 Done, 2 Partly done) |
-| Bugs | 28 (2 open, 26 resolved) |
+| Bugs | 29 (2 open, 27 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 10 | 10 |
+| Michele Kummer | 0 | 11 | 11 |
 | Claude | 2 | 16 | 18 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -174,7 +175,7 @@ As a media owner, I want every dated photo and video moved up into the media fol
 
 - `--flatten` (or `/flatten-media`) moves photos and videos that have a date up out of their subfolders. A name already taken in the root gets a `_<date-taken>` ending.
 - Camcorder, MPEG, WMV and AVI videos move too, going by the date in the filename, else the subfolder name. The date is appended to the name when it came from the folder.
-- Inside `_ads`, files move up into `_ads` itself, dated or not.
+- Inside `_ads`, files in subfolders at any depth, game `.raw` ads included, move up into `_ads` itself, dated or not. The same holds when the root given is an `_ads` folder itself (`E:\Pictures\2020\_ads`), whose emptied subfolders go into the `_empty_folders` beside it (BUG-29).
 - Subfolders left empty are moved into `_empty_folders`, keeping their path. Nothing is deleted.
 - Without `--apply` it only previews.
 
@@ -417,7 +418,7 @@ Change and test the plugin safely.
 #### US-24 Test without real photos or videos
 As a maintainer, I want tests that run on generated files, so that I can check a change without risking my own photos and videos.
 
-- `py -m unittest discover tests -v` runs the suite. It currently has 48 tests.
+- `py -m unittest discover tests -v` runs the suite. It currently has 64 tests.
 - `sample-data/generate.py` makes synthetic test photos. The video tests generate their own small videos with ffmpeg.
 - Video tests are skipped when ffmpeg is missing. The video date-writing test is skipped when ExifTool is missing. The Date Created test runs only on Windows.
 - The PowerShell scripts are tested only for their dry run (`-Apply`), and only on Windows.
@@ -478,7 +479,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (26: 10 found by Michele Kummer, 16 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (27: 11 found by Michele Kummer, 16 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -510,6 +511,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-26 | `--all` did not fix extensions | Photos and videos | Medium | Michele Kummer | `b6166b8` |
 | BUG-27 | Junk and orphan sidecar files were permanently deleted | Non-media files (sidecars and thumbnail caches) | Medium | Michele Kummer | `b6166b8` |
 | BUG-28 | The step-by-step run never asked about cleanup | Workflow | Low | Michele Kummer | `b6166b8` |
+| BUG-29 | `--flatten` left ads in their subfolders | Photos and videos (ads) | Medium | Michele Kummer | not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -666,5 +668,16 @@ Fixing extensions was only in `Fix-Extensions.ps1`, which `--all` does not run. 
 
 `/fix-media-dates` asked about the optional steps but treated cleanup as a reminder at the end, so the one step that deletes was never offered as a choice.
 **Fix:** Cleanup is now step 13, "Clean up converted files", an optional step the command always asks about, before the dry run ends and again after `--apply` if it was not run.
+
+#### BUG-29 `--flatten` left ads in their subfolders
+**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+
+`--flatten --root E:\Pictures\2020\_ads` moved none of the 340 ads, and the dry run reported every folder as kept. There were three causes:
+- `flatten` only looked one subfolder deep inside `_ads`, but `--quarantine-ads` keeps each ad's subfolder path, so these ads were two levels down (`_ads\Temp\2020-01-06\`).
+- It only recognised the ads folder as `<root>/_ads`. With the `_ads` folder itself as the root, it looked for `_ads\_ads` and treated the ads like ordinary files, leaving any without a Date Taken (most ads) as `LEFT (no Date Taken)`.
+- It skipped game `.raw` ads, which `--quarantine-ads` moves into `_ads`.
+
+A root typed with a trailing backslash would also have made every emptied folder look kept. Separately, the `--help` text added for this fix had a backslash path that Python warned about (`SyntaxWarning: "\P" is an invalid escape sequence`).
+**Fix:** Inside `_ads`, flatten now finds ads in subfolders at any depth, `.raw` included, and moves them up into `_ads`. A root named `_ads` is flattened as the ads folder, and its emptied subfolders go into the `_empty_folders` beside it (`E:\Pictures\2020\_empty_folders\_ads`), as a run on the year folder would put them. The root path is normalised before folders are compared, and the help text escapes its backslashes. Two tests in `tests/test_smoke.py` cover flattening `_ads` from the year folder, and from `_ads` itself with ads two levels down, a `.raw` ad and a trailing backslash.
 
 </details>

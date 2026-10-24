@@ -18,7 +18,7 @@ Move the dated photos and videos in the media folder up one level, out of their 
 
 - Every file one level down that has a Date Taken moves into `<folder>` itself.
 - Files with no Date Taken stay where they are, so their folders are kept. Run `/fix-media-dates` first if the user wants those dated and moved too.
-- Exception: inside `<folder>/_ads`, every file moves up from its subfolder into `_ads` itself, with or without a Date Taken. A name already taken there gets a `_<subfolder-name>` suffix.
+- Exception: inside `<folder>/_ads`, every file in a subfolder at any depth (`_ads/Temp/2020-01-06/ad.png`, as `--quarantine-ads` files them) moves up into `_ads` itself, with or without a Date Taken. Game `.raw` ads move too. A name already taken there gets a `_<subfolder-name>` suffix. The same happens when `<folder>` is itself an `_ads` folder (`E:\Pictures\2020\_ads`); its emptied subfolders go into the `_empty_folders` beside it.
 - Camcorder videos (`.m2ts`, `.mts`) and older MPEG, Windows Media and AVI videos (`.mpg`, `.mpeg`, `.wmv`, `.avi`) move up as well, going by the date in the filename. One with no date in its name goes by the date in its subfolder's name and has that date appended (`7-17-2014/SDC13837.AVI` → `SDC13837_2014-07-17.AVI`). Ones with neither, or holding no data, stay.
 - Sony `.modd`/`.moff` sidecar files move with the file they belong to. A sidecar whose file is not beside it is moved into `<folder>/_junk`, keeping its path, not deleted; the dry run lists these as `WOULD MOVE (sidecar with no file)`.
 - A name already taken in the root gets a `_<date-taken>` suffix; if that is taken as well, the file is skipped and reported.

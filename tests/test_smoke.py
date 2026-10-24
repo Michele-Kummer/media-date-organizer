@@ -403,6 +403,46 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(names(self.root / '_empty_folders'), ['2020-01-01', '2020-01-02'])
         self.assertEqual(names(self.root / 'misc'), ['undated.jpg'])
 
+    def test_flatten_moves_undated_ads_up_into_ads(self):
+        ads = self.root / '_ads'
+        make_image(ads / '2020-01-01' / 'ad.jpg')
+        make_image(ads / '2020-01-02' / 'ad.jpg', color=(0, 0, 200))
+
+        code, out = run(self.root, '--flatten', '--apply')
+
+        self.assertEqual(code, 0)
+        # Same name from two folders: the second gets its folder name as a suffix
+        self.assertEqual(names(ads), ['ad.jpg', 'ad_2020-01-02.jpg'])
+        self.assertEqual(names(self.root / '_empty_folders' / '_ads'), ['2020-01-01', '2020-01-02'])
+        self.assertIn('"ads-moved": 2', out)
+
+    def test_flatten_with_ads_folder_as_root_moves_undated_ads_up(self):
+        # Laid out as --quarantine-ads leaves it: the subfolder path is kept,
+        # so ads sit two levels down
+        ads = self.root / '_ads'
+        make_image(ads / 'Temp' / '2020-01-01' / 'ad.jpg')
+        make_image(ads / 'Temp' / '2020-01-02' / 'ad.jpg', color=(0, 0, 200))
+        (ads / 'Temp' / '2020-01-02' / 'draw_title.raw').write_bytes(b'\0' * 64)
+
+        # A trailing separator must not stop the emptied folders being found
+        code, out = run(str(ads) + os.sep, '--flatten')
+        self.assertEqual(code, 0)
+        self.assertIn('WOULD MOVE: _ads/Temp/2020-01-01/ad.jpg -> _ads/ad.jpg', out)
+        self.assertIn('WOULD MOVE: _ads/Temp/2020-01-02/ad.jpg -> _ads/ad_2020-01-02.jpg', out)
+        self.assertIn('WOULD MOVE EMPTY', out)
+        self.assertNotIn('LEFT', out)
+        self.assertTrue((ads / 'Temp' / '2020-01-01' / 'ad.jpg').exists(), 'a dry run must not move anything')
+
+        code, out = run(ads, '--flatten', '--apply')
+
+        self.assertEqual(code, 0)
+        self.assertEqual([n for n in names(ads) if not n.endswith('.xlsx')],
+                         ['ad.jpg', 'ad_2020-01-02.jpg', 'draw_title.raw'])
+        # Emptied folders go beside _ads, as from a run on its parent
+        self.assertEqual(names(self.root / '_empty_folders' / '_ads'), ['temp'])
+        self.assertFalse((ads / 'Temp').exists())
+        self.assertFalse((ads / '_empty_folders').exists())
+
     def test_flatten_moves_nested_empty_folders_aside_once_and_never_overwrites(self):
         taken = datetime.datetime(2020, 1, 1, 10, 0, 0)
         day = self.root / '2020-01-01'
