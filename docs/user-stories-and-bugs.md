@@ -511,7 +511,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-26 | `--all` did not fix extensions | Photos and videos | Medium | Michele Kummer | `b6166b8` |
 | BUG-27 | Junk and orphan sidecar files were permanently deleted | Non-media files (sidecars and thumbnail caches) | Medium | Michele Kummer | `b6166b8` |
 | BUG-28 | The step-by-step run never asked about cleanup | Workflow | Low | Michele Kummer | `b6166b8` |
-| BUG-29 | `--flatten` left ads in their subfolders | Photos and videos (ads) | Medium | Michele Kummer | not yet committed |
+| BUG-29 | `--flatten` left ads in their subfolders | Photos and videos (ads) | Medium | Michele Kummer | `98dfd1f` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -670,7 +670,7 @@ Fixing extensions was only in `Fix-Extensions.ps1`, which `--all` does not run. 
 **Fix:** Cleanup is now step 13, "Clean up converted files", an optional step the command always asks about, before the dry run ends and again after `--apply` if it was not run.
 
 #### BUG-29 `--flatten` left ads in their subfolders
-**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** `98dfd1f`
 
 `--flatten --root E:\Pictures\2020\_ads` moved none of the 340 ads, and the dry run reported every folder as kept. There were three causes:
 - `flatten` only looked one subfolder deep inside `_ads`, but `--quarantine-ads` keeps each ad's subfolder path, so these ads were two levels down (`_ads\Temp\2020-01-06\`).
