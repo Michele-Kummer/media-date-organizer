@@ -80,6 +80,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
 | Find photos or videos that are copies of each other | `Find duplicates in D:\Pictures\2012` |
 | See photos filed among videos, or videos among photos | `/report-opposite-type D:\Videos` |
+| Find photos and videos taken in a different year from their year folder (changes nothing) | `Find the files from another year in D:\Pictures\2020` |
 | Find plist or XMP files saved with a photo name (changes nothing) | `Check D:\Pictures\2023 for plist files` |
 | See what is left over after organizing | `Run the final check on D:\Videos` |
 | Fill in only the missing dates | `Fill in the missing dates in D:\Pictures\2026` |
@@ -150,11 +151,12 @@ These are the steps inside, in the order they run:
 |---|---|---|---|
 | 13 | Find duplicates (report) | Files that are byte-for-byte identical, and pairs that are likely the same picture saved twice. | `Find duplicates in D:\Pictures\2026` |
 | 14 | Find the opposite type (report) | Photos filed among videos, or videos among photos, by year folder. | `/report-opposite-type D:\Pictures` |
-| 15 | Visual compare (report) | Compares the pixels of each possible copy, including each PNG and BMP with its new JPEG, and gives a verdict with a confidence level. Run it before step 16, which removes one file of each of those pairs. | `--visual-compare` |
-| 16 | Clean up converted files | Deletes each PNG and BMP already converted to JPEG, once it has checked they are the same picture, and moves empty folders into `_empty_folders`. The step-by-step route asks about it as its last step. | `Cleanup-Pictures.ps1` |
-| 17 | Final check (report) | What is left in `_ads`, `_junk` and `_incomplete`, folders not flattened, name collisions and audit workbooks. | `Run the final check on D:\Pictures` |
+| 15 | Find files from another year (report) | Photos and videos whose Date Taken (Media Created for a video) is in a different year from the year folder they are filed in, with a count for each year and how many have no date. Give one year folder or the folder that holds them. `Cleanup-Pictures.ps1` also runs it at the end. | `--other-year` |
+| 16 | Visual compare (report) | Compares the pixels of each possible copy, including each PNG and BMP with its new JPEG, and gives a verdict with a confidence level. Run it before step 17, which removes one file of each of those pairs. | `--visual-compare` |
+| 17 | Clean up converted files | Deletes each PNG and BMP already converted to JPEG, once it has checked they are the same picture, and moves empty folders into `_empty_folders`. The step-by-step route asks about it as its last step. | `Cleanup-Pictures.ps1` |
+| 18 | Final check (report) | What is left in `_ads`, `_junk` and `_incomplete`, folders not flattened, name collisions and audit workbooks. | `Run the final check on D:\Pictures` |
 
-Steps 2, 6, 13, 14, 15 and 17 only report. Run them whenever you like.
+Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 
 ## Guardrails
 

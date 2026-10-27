@@ -109,6 +109,12 @@ Run this last: once files are in the root, the other phases no longer see them (
 - A file's kind goes by its extension, so run Phase 1 first if extensions may be wrong.
 - Nothing is moved, renamed or deleted; share the counts and the list with the user and let them decide what to move.
 
+### Other year report (report only, any time; not part of `--all`)
+`python scripts/organize.py --root "<YearFolder or FolderOfYearFolders>" --other-year`. Lists every photo and video whose Date Taken (Media Created for a video) is in a different year from the year folder it is filed in, as `OTHER YEAR (2019): ...`, then a count split by year and how many have no Date Taken. `--root` is one year folder (`D:\Pictures\2020`) or the folder that holds them.
+- Each year folder is searched at every depth. `_ads` and `_incomplete` are not counted.
+- `Cleanup-Pictures.ps1` runs it at the end.
+- Nothing is moved, renamed or deleted; share the list with the user and let them decide what to refile.
+
 ### Find plist files named as photos (report only, any time; not part of `--all`)
 `python scripts/organize.py --root "<MediaRoot>" --find-plists`. Lists every file in `<MediaRoot>` and every subfolder, holding folders included, that has a photo or video name but holds plist, XMP or other XML text: usually an iPhone `.AAE` edit file, or an XMP sidecar, saved under a picture's name (`IMG_E5239.JPG`). Each is listed as `NOT MEDIA (plist file named .JPG): 2023-08-07/IMG_E5239.JPG` and counted by kind (`plist-files`, `XMP-files`, `binary-plist-files`, `XML-files`) and in total (`not-media`).
 - Every other phase recognises these files too. It leaves them where they are and reports them as `NOT MEDIA (... left alone)`, instead of failing to write a date into them (ExifTool's `Not a valid JPG (looks more like a XMP)`), converting them, or giving them a `_<folder-date>` suffix. `--fix-extensions` reports them as `NOT MEDIA` instead of `UNKNOWN FORMAT`.

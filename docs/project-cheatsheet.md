@@ -47,6 +47,7 @@ py skills\media-date-organizer\scripts\organize.py --root $root --visual-compare
 py -m unittest discover tests -v
 
 py skills\media-date-organizer\scripts\organize.py --root $root --opposite-type
+py skills\media-date-organizer\scripts\organize.py --root $root --other-year
 ```
 
 
