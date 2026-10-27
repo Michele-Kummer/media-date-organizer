@@ -11,8 +11,10 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-10-23:** Michele Kummer found that `--flatten` left the ads in `E:\Pictures\2020\_ads` in their subfolders (BUG-29).
 - **Updated 2026-10-23:** Michele Kummer found that `--quarantine-ads` run on `E:\Pictures` put every year's ads in one `E:\Pictures\_ads` (BUG-31), and that `--flatten` then left the ads in `E:\Pictures\_ads\2022` in their subfolders (BUG-30).
 - **Updated 2026-10-26:** Claude found, while checking those fixes, that the other steps still went into a year's own `_ads` when run on `E:\Pictures` (BUG-32).
+- **Updated 2026-10-26:** Michele Kummer asked for a desktop app: a button for each step, project settings, checkboxes choosing the steps of a full run with a default, PNG and BMP quality settings, **Run all selected** and **Preview all selected**, tooltips, Montserrat, light and dark themes in the SK SkyOrbit logo's colors, and WCAG Level A. Epic 8 (US-33 to US-43) records these requirements. Claude measured the contrast of the logo's colors to choose the theme colors.
+- **Updated 2026-10-27:** Michele Kummer asked for the quality options to be a story of their own. US-44 adds them to `organize.py`, and US-38 depends on it. Michele Kummer chose Vue 3 with pywebview for the desktop app, recorded at the top of Epic 8.
 
-**Status** on each story is *Done* when every criterion holds, or *Partly done* when some do not, with the gap named.
+**Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
 Each epic below can be expanded and collapsed.
 
@@ -28,8 +30,8 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 
 | | Count |
 |---|---|
-| Epics | 7 |
-| User stories | 32 (30 Done, 2 Partly done) |
+| Epics | 8 |
+| User stories | 44 (30 Done, 2 Partly done, 12 Not started) |
 | Bugs | 32 (2 open, 30 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -78,7 +80,7 @@ As a media owner, I want to see everything the plugin can do, with what to type 
 </details>
 
 <details>
-<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29)</summary>
+<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29, US-44)</summary>
 
 Make every photo and video report its real format and its real date, and make Windows Explorer show it.
 
@@ -152,6 +154,20 @@ As a photo owner, I want my BMP pictures turned into JPEGs with the right Date T
 - `tests/test_bmp_and_ads.py` covers conversion, the date, a misnamed BMP and the cleanup.
 
 **Status:** Done
+
+#### US-44 Choose the JPEG quality for PNG and BMP conversions
+As a photo owner, I want to set the JPEG quality that PNG and BMP conversions use, so that I can choose between smaller files and pictures closer to the original.
+
+- `--png-quality N` sets the quality `--convert-png` uses, and `--bmp-quality N` the quality `--convert-bmp` uses. N is a whole number from 1 to 100. Without them, both stay at 95, as today.
+- A value that is not a whole number from 1 to 100 stops the run before anything changes, with a message giving the allowed range.
+- `--all` passes `--png-quality` on to its PNG conversion.
+- The preview (`WOULD CONVERT`) and the audit workbook give the quality each file was, or would be, converted at.
+- `--help`, the README, the cheat sheet, the `media-date-organizer` skill and `/fix-media-dates` describe both options, and say that JPEG drops some detail at any quality below 100.
+- Converting the test pictures at falling qualities finds the highest quality at which `Cleanup-Pictures.ps1` no longer counts the JPEG as the same picture (more than 1% apart, US-11). The README states it, and the app's quality note uses it (US-38).
+- Tests cover the default, each option, a value out of range, and that the picture is saved at the quality given.
+- The desktop app's quality settings (US-38) depend on this story.
+
+**Status:** Not started
 
 </details>
 
@@ -441,6 +457,200 @@ As a maintainer, I want the README, cheat sheet, skills and this file updated wi
 - Each feature commit since this file was added (`8c6d76f`) updated the README, cheat sheet, skills and this file wherever the change affected them.
 
 **Status:** Done
+
+</details>
+
+<details>
+<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43)</summary>
+
+Run every step from a window with buttons, checkboxes and settings instead of typing commands. The app runs the existing scripts on this computer, with the same preview-first rules, so it adds no new way to lose a file. Requested by Michele Kummer on 2026-10-26; nothing is built yet.
+
+**Stack** (chosen by Michele Kummer on 2026-10-27): the interface is written in **Vue 3** with plain CSS and built with **Vite**. It is shown in a window by **pywebview**, which uses the Edge WebView2 already in Windows. A small Python layer builds each step's command line, runs `organize.py` or `Cleanup-Pictures.ps1`, and streams their output back to the window. The app starts with `py app.py` and needs nothing beyond the plugin's own Python packages and pywebview. Chosen because the plugin already needs Python, the author knows Vue and CSS, and no second runtime (Node, Rust or a bundled Chromium) has to ship. Electron would be the alternative if a standalone installer for people without Python is ever needed.
+
+#### US-33 Set the project's parameters once
+As a media owner, I want to set the folder and the options that every step uses in one place, so that I don't have to repeat them for each button.
+
+- A **Project** panel at the top holds:
+  - **Folder to organize** (required): a text box with a **Browse** button, for example `D:\Pictures\2026`. It is passed to every step as `--root`.
+  - **Library folder**: the folder that holds the year folders, for example `D:\Pictures`. It is used by **Final check** and **Find the opposite type**. When the folder to organize is named for a year, it fills in with the folder above it.
+  - **Audit workbook name**: blank uses the default name (`<folder>_<photos|videos>_media_audit_<date>.xlsx`). Anything typed is passed as `--xlsx`.
+  - **PNG quality** and **BMP quality** (US-38).
+  - **Cleanup pixel difference limit**: the most two pictures may differ, from 0.1% to 5%, for **Clean up converted files** to count a PNG or BMP as converted. Default 1%. Passed as `-MaxPixelDifference`.
+- Every step button and both **Run all selected** and **Preview all selected** are unavailable until the folder exists. A folder that does not exist is named in a message next to the box.
+- The settings are saved for each folder on this computer (not in the media folder) and come back when that folder is chosen again.
+- **Reset to defaults** puts every setting except the folders back to its default.
+
+**Status:** Not started
+
+#### US-34 A button for each step
+As a media owner, I want a button for every step the plugin can do, so that I can run any one of them on its own.
+
+- One row per step, in the README's recommended order, grouped under **Fix the dates** and **Check and tidy**. Each row has a checkbox (US-35) and a button named for the step:
+
+| # | Button | Runs | In a full run by default |
+|---|---|---|---|
+| 1 | Fix extensions | `--fix-extensions` | Yes |
+| 2 | Scan | `--report-only` | No |
+| 3 | Set junk aside | `--move-junk` | Yes |
+| 4 | Set incomplete files aside | `--move-incomplete` | Yes |
+| 5 | Set ads aside | `--quarantine-ads` | No |
+| 6 | Find plist and XMP files | `--find-plists` | No |
+| 7 | Convert BMP to JPEG | `--convert-bmp` | No |
+| 8 | Fill in missing dates | `--fill-blanks` | Yes |
+| 9 | Convert PNG to JPEG | `--convert-png` | Yes |
+| 10 | Move to date folders | `--apply-moves` | Yes |
+| 11 | Sync timestamps | `--sync-timestamps` | Yes |
+| 12 | Flatten | `--flatten` | No |
+| 13 | Find duplicates | `find_duplicates.py` | No |
+| 14 | Find the opposite type | `--opposite-type` on the library folder | No |
+| 15 | Find files from another year | `--other-year` | No |
+| 16 | Compare collisions | `--compare-collisions` | No |
+| 17 | Visual compare | `--visual-compare` | No |
+| 18 | Clean up converted files | `Cleanup-Pictures.ps1` | No |
+| 19 | Final check | `--final-check` on the library folder | No |
+
+- A button for a step that changes files runs its preview. When the preview ends, an **Apply** button appears with the results, and runs the same step with `--apply` (`-Apply` for cleanup) after the user confirms.
+- A button for a report runs it straight away, since a report changes nothing.
+- Steps that only report are marked **Report** next to their name, in text, not by color alone.
+- Each row shows when the step last ran on this folder and whether that was a preview.
+
+**Status:** Not started
+
+#### US-35 Choose which steps a full run includes
+As a media owner, I want to tick the steps I want in a full run, starting from a sensible default, so that I can run my usual set without ticking it every time.
+
+- Each step's checkbox is labelled "Include <step> in a full run".
+- The default is ticked for the seven steps `--all` runs (fix extensions, set junk aside, set incomplete files aside, fill in missing dates, convert PNG to JPEG, move to date folders, sync timestamps), and unticked for the rest, so a full run with the defaults does what `--all` does.
+- **Reset to default selection** puts the ticks back to the default. **Select all** and **Clear all** do what they say.
+- Ticking **Flatten** while **Move to date folders** is ticked (or the other way round) shows a note that they are alternatives, with a button to untick the other one. It does not block the choice.
+- Ticking **Clean up converted files**, the only step that deletes, shows a note saying so.
+- The selection is saved with the project's parameters (US-33).
+
+**Status:** Not started
+
+#### US-36 Preview or run every selected step
+As a media owner, I want one button that previews every ticked step and one that runs them, so that I can check the whole plan and then carry it out.
+
+- **Preview all selected** runs each ticked step without `--apply`, in the recommended order, and changes nothing. It says, as `--all` does, that a later step may do more once the earlier ones have really run.
+- **Run all selected** first asks for confirmation, listing the steps that will change files. When **Clean up converted files** is ticked, the confirmation says it deletes the PNGs and BMPs it has checked. When no preview has run since the selection or settings changed, it says so and offers **Preview first**.
+- **Run all selected** runs each ticked step with `--apply`, in the recommended order, so **Visual compare** always comes before **Clean up converted files**.
+- Each step is recorded in the audit workbook as it would be from the command line.
+- Both buttons are unavailable while nothing is ticked, and say why.
+
+**Status:** Not started
+
+#### US-37 Follow a run and see what it did
+As a media owner, I want to see each step's progress and results in the app, so that I know what happened without reading a terminal.
+
+- A results panel shows which step is running and what it prints, as it prints it.
+- When a run ends, it shows one summary: each step's counts and its problems (`COLLISION`, `FAILED`, `NOT MEDIA` and so on), as `--all` does.
+- **Stop** stops the run after the current step finishes, so no step is cut off halfway through a file. The steps not run are listed.
+- A step that fails stops the run, names the step and shows its error. The steps after it are listed as not run.
+- **Open audit workbook** opens the workbook in Excel, and **Open folder** opens the folder in Explorer.
+- **Show command** shows the exact command each step ran, so the user can run it again from a terminal.
+
+**Status:** Not started
+
+#### US-38 Set the quality of PNG and BMP conversions
+As a photo owner, I want to choose the JPEG quality used when PNGs and BMPs are converted, so that I can trade file size against picture quality.
+
+- **PNG quality** and **BMP quality** each have a slider and a number box from 1 to 100, kept in step. The default for both is 95, as today.
+- A note next to each says that JPEG drops some detail at any setting below 100, more as the number goes down, and that 90 to 95 is hard to tell from the original.
+- A number outside 1 to 100, or not a number, is named in a message next to the box, and the conversion buttons are unavailable until it is fixed.
+- The app passes the values to **Convert PNG to JPEG** and **Convert BMP to JPEG** as `--png-quality` and `--bmp-quality`.
+- At a low quality the converted JPEG may differ from the original by more than the cleanup limit, and **Clean up converted files** then keeps the original. The quality note says this, giving the quality US-44 measured.
+
+**Depends on:** US-44, which adds the two options to `organize.py`.
+
+**Status:** Not started
+
+#### US-39 Explain each button with a tooltip
+As a media owner, I want every button to explain briefly what it does and what it might cost me, so that I can choose without opening the README.
+
+- Every button, checkbox and setting has a tooltip. It appears on mouse hover and on keyboard focus, stays while the pointer is over it, and closes with **Esc**.
+- A button that is unavailable still shows its tooltip, ending with why it is unavailable.
+- Each step's tooltip says what it does, and leads with any side effect. These are the main ones:
+
+| Button | Side effect named in the tooltip |
+|---|---|
+| Fix extensions | Renames files whose extension is wrong. |
+| Set junk aside, Set incomplete files aside, Set ads aside | Moves files into `_junk`, `_incomplete` or `_ads`. Nothing is deleted. |
+| Convert BMP to JPEG, Convert PNG to JPEG | Re-encodes the picture as JPEG, which loses some quality (US-38). Pictures with transparency are left as they are. The original is kept until cleanup. |
+| Fill in missing dates | Writes a Date Taken or Media Created into files that have none. Videos and HEIC need ExifTool. |
+| Move to date folders, Flatten | Moves files between folders. Use one or the other. |
+| Sync timestamps | Changes Date Created, and Date Modified on files that look unedited. The old times are not kept. |
+| Clean up converted files | Deletes each PNG and BMP already converted, after checking they are the same picture. This cannot be undone. |
+| Any report | Changes nothing. |
+
+- **Run all selected**, **Preview all selected**, **Apply** and **Stop** have tooltips too.
+- The tooltip text is written once and used for the tooltip and the button's accessible description (US-42).
+
+**Status:** Not started
+
+#### US-40 A modern look in Montserrat
+As a media owner, I want the app to look clean and modern, so that it is pleasant and easy to read.
+
+- All text is in Montserrat: regular (400) for body text, semibold (600) for buttons and labels, bold (700) for headings. Body text is at least 14 px.
+- The font files ship with the app, under the SIL Open Font License, so it works offline and looks the same on every computer. If they cannot be loaded, it falls back to Segoe UI, then any sans serif.
+- Rounded corners, consistent spacing and clear grouping of the Project, Steps and Results panels.
+- The window works from 1024 x 700 upwards, and at 200% text zoom without text being cut off.
+
+**Status:** Not started
+
+#### US-41 Light and dark themes in the logo's colors
+As a media owner, I want to choose a light or a dark theme, in colors taken from the SK SkyOrbit logo, so that the app is comfortable to use and matches the brand.
+
+- A **Theme** dropdown offers **Light** and **Dark**. The choice is remembered. The first time, it follows the Windows setting.
+- The colors come from `SK SkyOrbit Color SVG 3.svg`: navy `#18415E`, mid blue `#66A1C8`, light blue `#9CC4E2` and gold `#F8D274`. White `#FFFFFF`, a pale tint `#F4F8FB` and a deep navy `#0F2A3D`, made by darkening the logo's navy, are added for backgrounds.
+- Every pair of text and background colors below has been measured, and each reaches 4.5:1, the AA contrast level:
+
+| Use | Light theme | Dark theme |
+|---|---|---|
+| Page background | `#FFFFFF` | `#0F2A3D` |
+| Panel background | `#F4F8FB` | `#18415E` |
+| Text | `#18415E` (10.7:1 on white) | `#FFFFFF` (14.8:1 on deep navy, 10.7:1 on navy) |
+| Secondary text | `#18415E` | `#9CC4E2` (8.0:1 on deep navy, 5.8:1 on navy) |
+| Step buttons | `#FFFFFF` on `#18415E` (10.7:1) | `#0F2A3D` on `#9CC4E2` (8.0:1) |
+| Run all selected | `#18415E` on `#F8D274` (7.4:1) | `#0F2A3D` on `#F8D274` (10.2:1) |
+| Selected row | `#18415E` on `#9CC4E2` (5.8:1) | `#FFFFFF` on `#18415E` (10.7:1) |
+| Borders and checkboxes | `#18415E` | `#66A1C8` (5.3:1 on deep navy) |
+| Keyboard focus outline | `#18415E`, 2 px | `#F8D274`, 2 px (10.2:1 on deep navy) |
+
+- Mid blue on white (2.8:1) and gold on white (1.5:1) are too faint for text, so in the light theme they are only used for decoration, never for text, borders or focus.
+
+**Status:** Not started
+
+#### US-42 Usable with a keyboard and a screen reader (WCAG 2.2 Level A)
+As a media owner who uses the keyboard or a screen reader, I want the app to meet the basic accessibility rules, so that I can use every part of it.
+
+The app meets every WCAG 2.2 Level A success criterion. The ones that matter most here:
+
+- **1.1.1 Non-text content:** every icon has a text name; decorative images are hidden from screen readers.
+- **1.3.1 Info and relationships:** each setting has a visible label tied to it; the step checkboxes are a named group (**Steps for a full run**); panels have headings.
+- **1.3.2 Meaningful sequence** and **2.4.3 Focus order:** **Tab** moves through Project, Steps (in step order) and Results, in reading order.
+- **1.4.1 Use of color:** reports, deleting steps, errors and unavailable buttons are marked with text or an icon as well as color.
+- **2.1.1 Keyboard** and **2.1.2 No keyboard trap:** every button, checkbox, slider, dropdown and tooltip works from the keyboard, and focus never gets stuck, including in the confirmation dialogs.
+- **2.2.2 Pause, stop, hide:** the live run output can be paused.
+- **2.4.2 Page titled:** the window title names the app and the folder.
+- **2.5.3 Label in name:** each control's accessible name starts with its visible label.
+- **3.3.1 Error identification** and **3.3.2 Labels or instructions:** an invalid folder or quality is named in text next to its box, with what is allowed.
+- **4.1.2 Name, role, value:** every control reports its name, role and state (ticked, unavailable, running) to screen readers.
+
+Beyond Level A, the app also aims for these AA criteria, which the palette already allows: **1.4.3** text contrast 4.5:1, **1.4.11** control and focus contrast 3:1, **1.4.13** tooltips that can be dismissed and hovered, and **2.4.7** a visible focus outline.
+
+**Status:** Not started
+
+#### US-43 Test the app
+As a maintainer, I want tests for the app, so that a change cannot quietly break a button, a default or the accessibility.
+
+- The Python layer's tests run in the existing `unittest` suite. Each button is checked to build the same command line the README gives for its step, with the project's parameters and quality settings.
+- The default selection is checked to equal the steps `--all` runs.
+- **Run all selected** is checked to run the ticked steps in the recommended order, and to run nothing with `--apply` until the user confirms.
+- Each theme's colors are checked to reach the contrast ratios in US-41.
+- An automated accessibility check (axe-core) reports no Level A failures in either theme.
+- `docs/` has a keyboard and screen reader checklist, run by hand before each release.
+
+**Status:** Not started
 
 </details>
 
