@@ -897,19 +897,19 @@ A root typed with a trailing backslash would also have made every emptied folder
 **Fix:** Inside `_ads`, flatten now finds ads in subfolders at any depth, `.raw` included, and moves them up into `_ads`. A root named `_ads` is flattened as the ads folder, and its emptied subfolders go into the `_empty_folders` beside it (`E:\Pictures\2020\_empty_folders\_ads`), as a run on the year folder would put them. The root path is normalised before folders are compared, and the help text escapes its backslashes. Two tests in `tests/test_smoke.py` cover flattening `_ads` from the year folder, and from `_ads` itself with ads two levels down, a `.raw` ad and a trailing backslash.
 
 #### BUG-30 `--flatten` left ads in a year folder inside `_ads`
-**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** 8b96016
 
 `--flatten --root E:\Pictures\_ads\2022` moved none of the 2,446 ads and listed nothing as `LEFT`. The fix for BUG-29 only treated the root as an ads folder when the root itself was named `_ads`. This root was named `2022`, so it was flattened as an ordinary photo folder, which looks only one subfolder deep, and the ads sat two levels down (`Temp\2022-02-14\`). The folder was laid out this way because of BUG-31.
 **Fix:** A root anywhere inside an `_ads` folder is flattened as an ads folder: every file at any depth moves up into the root, dated or not. Its emptied subfolders go into its own `_empty_folders`, not into the folder above `_ads`, and each move is listed under the root's own name (`2022/Temp/2022-02-14/ad.png -> 2022/ad.png`). A test in `tests/test_smoke.py` flattens `_ads\2022` with ads two levels down and a `.raw` ad.
 
 #### BUG-31 `--quarantine-ads` put every year's ads in one `_ads`
-**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** 8b96016
 
 Run on `E:\Pictures`, the folder that holds the year folders, `--quarantine-ads` moved each ad to `<root>\_ads\<its path>`, so `2022\Temp\ad.png` went to `_ads\2022\Temp\ad.png`. That put every year's ads in a single `E:\Pictures\_ads` instead of keeping them with their year. It also skipped holding folders only at the top level, so once ads were inside a year folder, a later run would have moved them again.
 **Fix:** When the root holds year folders, an ad in a year folder goes into that year's own `_ads` (`2022\_ads\Temp\ad.png`). Day folders such as `2022-02-14` are not taken for years, so a run on one year folder is not split by day. Holding folders are skipped at every depth, and each moved file is listed with where it went. Ads already gathered in `E:\Pictures\_ads\2022` are not moved back into `E:\Pictures\2022\_ads`; flattening that folder works where it is (BUG-30). Two tests in `tests/test_smoke.py` cover a run on the folder holding the years and a run on one year folder.
 
 #### BUG-32 Other steps went into a year's own `_ads`
-**Found by:** Claude · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+**Found by:** Claude · **Affects:** photos and videos (ads) · **Fixed in:** 8b96016
 
 After the fix for BUG-31, a run of `--quarantine-ads` on `E:\Pictures` puts ads in each year's own `_ads` (`2022\_ads`). Every other step skipped holding folders such as `_ads`, `_junk` and `_incomplete` only at the top of the root, so a run on `E:\Pictures` went into `2022\_ads`. `--fill-blanks` would have given each ad a Date Taken from its day folder, and `--apply-moves` would then have filed it with the real photos, which is what setting ads aside is meant to prevent. `Cleanup-Pictures.ps1` had the same top-level check. Found by a dry run on synthetic files, before any real run.
 **Fix:** `organize.py` and `Cleanup-Pictures.ps1` now skip holding folders at any depth, and the `--quarantine-ads` help text describes the per-year `_ads`. A test in `tests/test_smoke.py` runs `--all --apply` on a root with an ad in `2022\_ads` and junk in `2022\_junk` and checks both are left alone and the ad stays undated. A test in `tests/test_bmp_and_ads.py` checks that `Cleanup-Pictures.ps1` leaves a converted BMP in `2022\_ads` alone.
