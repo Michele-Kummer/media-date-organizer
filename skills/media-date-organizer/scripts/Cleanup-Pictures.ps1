@@ -103,8 +103,11 @@ $root = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\')
 $holding = '_ads', '_incomplete', '_no-image-data', '_empty_folders', '_junk'
 function Test-InHolding([string]$dir) {
     if ($dir.Length -le $root.Length) { return $false }
-    $first = $dir.Substring($root.Length + 1).Split('\')[0]
-    return $holding -contains $first
+    # At any depth: --quarantine-ads gives each year folder its own _ads
+    foreach ($part in $dir.Substring($root.Length + 1).Split('\')) {
+        if ($holding -contains $part) { return $true }
+    }
+    return $false
 }
 
 # ---- Pass 1: remove PNGs and BMPs already converted to JPG ----

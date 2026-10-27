@@ -72,6 +72,22 @@ class BmpTests(unittest.TestCase):
         self.assertIn('scan.jpg', names(self.day))
         self.assertIn('other.bmp', names(self.day), 'a BMP whose JPG differs must be kept')
 
+    @unittest.skipUnless(os.name == 'nt' and powershell(), 'needs PowerShell on Windows')
+    def test_cleanup_leaves_a_years_own_ads_alone(self):
+        # The same pair in a day folder and in 2022/_ads, where
+        # --quarantine-ads puts a year's ads when run on the folder above
+        day = self.root / '2022' / '2022-02-14'
+        ads = self.root / '2022' / '_ads' / 'Temp'
+        for folder in (day, ads):
+            make_image(folder / 'scan.bmp', fmt='BMP')
+            make_image(folder / 'scan.jpg', fmt='JPEG')
+        r = subprocess.run([powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                            str(SCRIPTS / 'Cleanup-Pictures.ps1'), '-Path', str(self.root), '-Apply'],
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn('scan.bmp', names(day))
+        self.assertEqual(names(ads), ['scan.bmp', 'scan.jpg'])
+
 
 class GameAdTests(unittest.TestCase):
     """The names left in E:\\Pictures\\2023's dated folders, with the date

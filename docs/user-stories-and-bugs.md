@@ -9,6 +9,8 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Resolved bugs:** taken from the git history. Michele Kummer, the project's author, said which ones they found.
 - **Updated 2026-10-22:** Michele Kummer asked for `--all` to fix extensions, for junk to be moved aside instead of deleted, and for the step-by-step run to ask about cleanup. Those gaps are recorded as BUG-26 to BUG-28, and US-31 records the new requirements. US-32 was added at Michele Kummer's request.
 - **Updated 2026-10-23:** Michele Kummer found that `--flatten` left the ads in `E:\Pictures\2020\_ads` in their subfolders (BUG-29).
+- **Updated 2026-10-23:** Michele Kummer found that `--quarantine-ads` run on `E:\Pictures` put every year's ads in one `E:\Pictures\_ads` (BUG-31), and that `--flatten` then left the ads in `E:\Pictures\_ads\2022` in their subfolders (BUG-30).
+- **Updated 2026-10-26:** Claude found, while checking those fixes, that the other steps still went into a year's own `_ads` when run on `E:\Pictures` (BUG-32).
 
 **Status** on each story is *Done* when every criterion holds, or *Partly done* when some do not, with the gap named.
 
@@ -28,12 +30,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 |---|---|
 | Epics | 7 |
 | User stories | 32 (30 Done, 2 Partly done) |
-| Bugs | 29 (2 open, 27 resolved) |
+| Bugs | 32 (2 open, 30 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 11 | 11 |
-| Claude | 2 | 16 | 18 |
+| Michele Kummer | 0 | 13 | 13 |
+| Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
 ---
@@ -175,7 +177,7 @@ As a media owner, I want every dated photo and video moved up into the media fol
 
 - `--flatten` (or `/flatten-media`) moves photos and videos that have a date up out of their subfolders. A name already taken in the root gets a `_<date-taken>` ending.
 - Camcorder, MPEG, WMV and AVI videos move too, going by the date in the filename, else the subfolder name. The date is appended to the name when it came from the folder.
-- Inside `_ads`, files in subfolders at any depth, game `.raw` ads included, move up into `_ads` itself, dated or not. The same holds when the root given is an `_ads` folder itself (`E:\Pictures\2020\_ads`), whose emptied subfolders go into the `_empty_folders` beside it (BUG-29).
+- Inside `_ads`, files in subfolders at any depth, game `.raw` ads included, move up into `_ads` itself, dated or not. The same holds when the root given is an `_ads` folder itself (`E:\Pictures\2020\_ads`), whose emptied subfolders go into the `_empty_folders` beside it (BUG-29). It also holds for a root anywhere inside an `_ads` folder (`E:\Pictures\_ads\2022`), whose emptied subfolders go into its own `_empty_folders` (BUG-30).
 - Subfolders left empty are moved into `_empty_folders`, keeping their path. Nothing is deleted.
 - Without `--apply` it only previews.
 
@@ -211,6 +213,7 @@ As a media owner, I want ad and app-cache images and videos moved out of my medi
 
 - `--quarantine-ads` moves photos and videos with an ad-style name and no camera information into `_ads`. Examples of ad-style names: a UUID, `UnityAdsCache-<hash>`, `news_images%2F…`.
 - Camera information is EXIF Make/Model on a photo, or a device-make tag on a video. A file that has it is never treated as an ad.
+- Run on the folder that holds the year folders (`E:\Pictures`), an ad in a year folder goes into that year's own `_ads` (`2022\_ads`), keeping the rest of its path. Only ads in other folders, or loose in the root, go into the root's `_ads`. Ads already in an `_ads` folder at any depth are not moved again (BUG-31), and the other steps leave a year's own `_ads` alone (BUG-32).
 - Nothing is deleted. Without `--apply` it only previews.
 
 **Status:** Done
@@ -479,7 +482,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (27: 11 found by Michele Kummer, 16 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (30: 13 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -512,6 +515,9 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-27 | Junk and orphan sidecar files were permanently deleted | Non-media files (sidecars and thumbnail caches) | Medium | Michele Kummer | `b6166b8` |
 | BUG-28 | The step-by-step run never asked about cleanup | Workflow | Low | Michele Kummer | `b6166b8` |
 | BUG-29 | `--flatten` left ads in their subfolders | Photos and videos (ads) | Medium | Michele Kummer | `98dfd1f` |
+| BUG-30 | `--flatten` left ads in a year folder inside `_ads` | Photos and videos (ads) | Medium | Michele Kummer | not yet committed |
+| BUG-31 | `--quarantine-ads` put every year's ads in one `_ads` | Photos and videos (ads) | Medium | Michele Kummer | not yet committed |
+| BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -679,5 +685,23 @@ Fixing extensions was only in `Fix-Extensions.ps1`, which `--all` does not run. 
 
 A root typed with a trailing backslash would also have made every emptied folder look kept. Separately, the `--help` text added for this fix had a backslash path that Python warned about (`SyntaxWarning: "\P" is an invalid escape sequence`).
 **Fix:** Inside `_ads`, flatten now finds ads in subfolders at any depth, `.raw` included, and moves them up into `_ads`. A root named `_ads` is flattened as the ads folder, and its emptied subfolders go into the `_empty_folders` beside it (`E:\Pictures\2020\_empty_folders\_ads`), as a run on the year folder would put them. The root path is normalised before folders are compared, and the help text escapes its backslashes. Two tests in `tests/test_smoke.py` cover flattening `_ads` from the year folder, and from `_ads` itself with ads two levels down, a `.raw` ad and a trailing backslash.
+
+#### BUG-30 `--flatten` left ads in a year folder inside `_ads`
+**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+
+`--flatten --root E:\Pictures\_ads\2022` moved none of the 2,446 ads and listed nothing as `LEFT`. The fix for BUG-29 only treated the root as an ads folder when the root itself was named `_ads`. This root was named `2022`, so it was flattened as an ordinary photo folder, which looks only one subfolder deep, and the ads sat two levels down (`Temp\2022-02-14\`). The folder was laid out this way because of BUG-31.
+**Fix:** A root anywhere inside an `_ads` folder is flattened as an ads folder: every file at any depth moves up into the root, dated or not. Its emptied subfolders go into its own `_empty_folders`, not into the folder above `_ads`, and each move is listed under the root's own name (`2022/Temp/2022-02-14/ad.png -> 2022/ad.png`). A test in `tests/test_smoke.py` flattens `_ads\2022` with ads two levels down and a `.raw` ad.
+
+#### BUG-31 `--quarantine-ads` put every year's ads in one `_ads`
+**Found by:** Michele Kummer · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+
+Run on `E:\Pictures`, the folder that holds the year folders, `--quarantine-ads` moved each ad to `<root>\_ads\<its path>`, so `2022\Temp\ad.png` went to `_ads\2022\Temp\ad.png`. That put every year's ads in a single `E:\Pictures\_ads` instead of keeping them with their year. It also skipped holding folders only at the top level, so once ads were inside a year folder, a later run would have moved them again.
+**Fix:** When the root holds year folders, an ad in a year folder goes into that year's own `_ads` (`2022\_ads\Temp\ad.png`). Day folders such as `2022-02-14` are not taken for years, so a run on one year folder is not split by day. Holding folders are skipped at every depth, and each moved file is listed with where it went. Ads already gathered in `E:\Pictures\_ads\2022` are not moved back into `E:\Pictures\2022\_ads`; flattening that folder works where it is (BUG-30). Two tests in `tests/test_smoke.py` cover a run on the folder holding the years and a run on one year folder.
+
+#### BUG-32 Other steps went into a year's own `_ads`
+**Found by:** Claude · **Affects:** photos and videos (ads) · **Fixed in:** not yet committed
+
+After the fix for BUG-31, a run of `--quarantine-ads` on `E:\Pictures` puts ads in each year's own `_ads` (`2022\_ads`). Every other step skipped holding folders such as `_ads`, `_junk` and `_incomplete` only at the top of the root, so a run on `E:\Pictures` went into `2022\_ads`. `--fill-blanks` would have given each ad a Date Taken from its day folder, and `--apply-moves` would then have filed it with the real photos, which is what setting ads aside is meant to prevent. `Cleanup-Pictures.ps1` had the same top-level check. Found by a dry run on synthetic files, before any real run.
+**Fix:** `organize.py` and `Cleanup-Pictures.ps1` now skip holding folders at any depth, and the `--quarantine-ads` help text describes the per-year `_ads`. A test in `tests/test_smoke.py` runs `--all --apply` on a root with an ad in `2022\_ads` and junk in `2022\_junk` and checks both are left alone and the ad stays undated. A test in `tests/test_bmp_and_ads.py` checks that `Cleanup-Pictures.ps1` leaves a converted BMP in `2022\_ads` alone.
 
 </details>

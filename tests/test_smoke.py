@@ -377,6 +377,54 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(names(day), ['img_20200101_120000.jpg'])
         self.assertEqual(names(self.root / '_ads' / '2020-01-01'), sorted(ads))
 
+    def test_quarantine_ads_keeps_ads_under_their_year_folder(self):
+        # Run on the folder that holds the year folders (E:\Pictures)
+        ad = '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg'
+        make_image(self.root / '2022' / 'Temp' / '2022-02-14' / ad)
+        make_image(self.root / '2013 West' / ad)
+        make_image(self.root / ad)
+        # Ads already set aside in a year are not set aside again
+        make_image(self.root / '2021' / '_ads' / ad)
+
+        code, out = run(self.root, '--quarantine-ads', '--apply')
+
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.root / '2022' / '_ads' / 'Temp' / '2022-02-14'), [ad])
+        self.assertEqual(names(self.root / '2013 West' / '_ads'), [ad])
+        self.assertEqual(names(self.root / '2021' / '_ads'), [ad])
+        # Only the ad loose in the root goes into the root's _ads
+        self.assertEqual(names(self.root / '_ads'), [ad])
+        self.assertIn(f'QUARANTINED: 2022/Temp/2022-02-14/{ad} -> 2022/_ads/Temp/2022-02-14/{ad}', out)
+
+    def test_quarantine_ads_in_a_year_folder_does_not_split_by_day(self):
+        year = self.root / '2022'
+        ad = '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg'
+        make_image(year / '2022-02-14' / ad)
+
+        code, out = run(year, '--quarantine-ads', '--apply')
+
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(year / '_ads' / '2022-02-14'), [ad])
+        self.assertFalse((year / '2022-02-14' / '_ads').exists())
+
+    def test_all_leaves_ads_in_a_year_folders_own_ads_alone(self):
+        # --quarantine-ads on E:\Pictures files ads in 2022/_ads; a later run
+        # on E:\Pictures must not date them or file them with real photos
+        ad = '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg'
+        ads = self.root / '2022' / '_ads' / 'Temp' / '2022-02-14'
+        make_image(ads / ad)
+        (self.root / '2022' / '_junk').mkdir()
+        (self.root / '2022' / '_junk' / 'Thumbs.db').write_bytes(b'\0' * 64)
+
+        code, out = run(self.root, '--all', '--apply')
+
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('_ads', out)
+        self.assertEqual(names(ads), [ad])
+        self.assertIsNone(date_taken(ads / ad))
+        self.assertEqual(names(self.root / '2022' / '_junk'), ['thumbs.db'])
+        self.assertFalse((self.root / '_junk').exists())
+
     def test_flatten_moves_dated_files_up_and_keeps_undated(self):
         make_image(self.root / '2020-01-01' / 'a.jpg', taken=datetime.datetime(2020, 1, 1, 10, 0, 0))
         make_image(self.root / '2020-01-02' / 'a.jpg', color=(0, 0, 200),
@@ -442,6 +490,33 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(names(self.root / '_empty_folders' / '_ads'), ['temp'])
         self.assertFalse((ads / 'Temp').exists())
         self.assertFalse((ads / '_empty_folders').exists())
+
+    def test_flatten_with_year_folder_inside_ads_as_root_moves_undated_ads_up(self):
+        # Ads gathered by year (E:\Pictures\_ads\2022): the root is not named
+        # _ads, but everything in it is an ad
+        year = self.root / '_ads' / '2022'
+        make_image(year / 'Temp' / '2022-02-14' / 'ad.png', fmt='PNG')
+        make_image(year / 'Temp' / '2022-02-15' / 'ad.png', color=(0, 0, 200), fmt='PNG')
+        (year / 'Temp' / '2022-02-15' / 'game.raw').write_bytes(b'\0' * 64)
+
+        code, out = run(year, '--flatten')
+        self.assertEqual(code, 0)
+        self.assertIn('WOULD MOVE: 2022/Temp/2022-02-14/ad.png -> 2022/ad.png', out)
+        self.assertIn('WOULD MOVE: 2022/Temp/2022-02-15/ad.png -> 2022/ad_2022-02-15.png', out)
+        self.assertNotIn('LEFT', out)
+        self.assertTrue((year / 'Temp' / '2022-02-14' / 'ad.png').exists(), 'a dry run must not move anything')
+
+        code, out = run(year, '--flatten', '--apply')
+
+        self.assertEqual(code, 0)
+        self.assertEqual([n for n in names(year) if not n.endswith('.xlsx')],
+                         ['_empty_folders', 'ad.png', 'ad_2022-02-15.png', 'game.raw'])
+        self.assertIn('"ads-moved": 3', out)
+        # Emptied folders stay inside the year folder, not in _ads or above it
+        self.assertEqual(names(year / '_empty_folders'), ['temp'])
+        self.assertFalse((year / 'Temp').exists())
+        self.assertFalse((self.root / '_ads' / '_empty_folders').exists())
+        self.assertFalse((self.root / '_empty_folders').exists())
 
     def test_flatten_moves_nested_empty_folders_aside_once_and_never_overwrites(self):
         taken = datetime.datetime(2020, 1, 1, 10, 0, 0)

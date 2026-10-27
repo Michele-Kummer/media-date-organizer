@@ -133,7 +133,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         _ads itself, with or without a Date Taken (a name clash
                         gets a _<subfolder-name> suffix). The same holds when
                         the root is an _ads folder itself
-                        (--root E:\\Pictures\\2020\\_ads), and for files in
+                        (--root E:\\Pictures\\2020\\_ads) or a folder inside
+                        one (--root E:\\Pictures\\_ads\\2022), and for files in
                         subfolders at any depth inside _ads. Camcorder videos
                         (.m2ts, .mts) and older MPEG, Windows Media and AVI
                         videos (.mpg, .mpeg, .wmv, .avi), which no other phase handles, are moved
@@ -202,7 +203,13 @@ and a summary of every phase's counts and problems is printed at the end):
                         else is moved, renamed or deleted.
     --quarantine-ads    Move ad images and videos into an _ads folder inside
                         the root, keeping their subfolder path, for the user to
-                        review and delete. A file is an ad only if BOTH hold:
+                        review and delete. Given the folder that holds the
+                        year folders (--root E:\\Pictures), an ad in a year
+                        folder goes into that year's own _ads instead
+                        (2022/Temp/ad.png -> 2022/_ads/Temp/ad.png). Each move
+                        is listed as <from> -> <to>. Ads already in an _ads
+                        folder at any depth are not moved again. A file is an
+                        ad only if BOTH hold:
                         its name is a UUID
                         (0c4cda27-b4cc-4e92-a446-d6b780f24a64), a 9-character
                         hex id plus a number (bed51b94a_1595), gmsnet plus an
@@ -553,8 +560,8 @@ VIDEO_EXTS = ('.mov', '.mp4', '.m4v', '.3gp', '.3g2')
 MEDIA_EXTS = {'.png', '.jpg', '.jpeg', '.heic', '.heif', *VIDEO_EXTS,
               '.tif', '.tiff', '.gif', '.bmp', '.webp'}
 
-# Folder inside root that --quarantine-ads moves ad images into. Every phase
-# ignores it.
+# Folder inside root, or inside each year folder, that --quarantine-ads moves
+# ad images into. Every phase ignores it, at any depth.
 QUARANTINE_DIR = '_ads'
 
 # Folder inside root that --move-incomplete moves empty, null-filled and
@@ -578,10 +585,10 @@ JUNK_DIR = '_junk'
 HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR)
 
 
-def _prune_holding(root: str, dirpath: str, dirs: list) -> None:
-    """Stop an os.walk of root from descending into the holding folders."""
-    if dirpath == root:
-        dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
+def _prune_holding(dirs: list) -> None:
+    """Stop an os.walk from descending into the holding folders, at any
+    depth: --quarantine-ads gives each year folder its own (2022/_ads)."""
+    dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
 
 
 # AVCHD camcorder video, and the older MPEG, Windows Media and AVI video that
@@ -1170,7 +1177,7 @@ def _iter_media_deep(root: str):
     first, ending with root's own name."""
     root_name = os.path.basename(os.path.abspath(root))
     for dirpath, dirs, files in os.walk(root):
-        _prune_holding(root, dirpath, dirs)
+        _prune_holding(dirs)
         dirs.sort()
         rel = os.path.relpath(dirpath, root)
         parts = [] if rel == '.' else rel.split(os.sep)
@@ -1293,7 +1300,7 @@ def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
         print(f'Pillow required for {kind_name} conversion; pip install "pillow>=10.0"', file=sys.stderr)
         return {}
     for dirpath, dirs, files in os.walk(root):
-        _prune_holding(root, dirpath, dirs)
+        _prune_holding(dirs)
         dirs.sort()
         for name in sorted(files):
             if not name.lower().endswith(ext):
@@ -1486,7 +1493,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     there every file moves up from its subfolder into _ads itself, dated or
     not. A root that is itself an _ads folder (E:\\Pictures\\2020\\_ads) is
     flattened the same way, and its emptied subfolders go into the
-    _empty_folders beside it, as they would from a run on its parent."""
+    _empty_folders beside it, as they would from a run on its parent. So is a
+    root anywhere inside an _ads folder (E:\\Pictures\\_ads\\2022), whose
+    emptied subfolders go into its own _empty_folders."""
     counts = Counter()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     gone = set()  # paths moved or removed, so a dry run can tell what empties
@@ -1494,7 +1503,8 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     # One spelling of root (no trailing slash, native separators), so the
     # paths in gone match the ones os.walk gives back
     root = os.path.normpath(root)
-    ads_root = os.path.basename(root).lower() == QUARANTINE_DIR
+    root_is_ads = os.path.basename(root).lower() == QUARANTINE_DIR
+    ads_root = any(part.lower() == QUARANTINE_DIR for part in pathlib.Path(root).parts)
     if ads_root:
         ads = root
         bases = (ads,)
@@ -1505,7 +1515,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         if not os.path.isdir(base):
             continue
         in_ads = base == ads
-        prefix = QUARANTINE_DIR + '/' if in_ads else ''
+        # Named after the folder files move into: _ads/, or 2022/ for a root
+        # inside _ads (E:\Pictures\_ads\2022)
+        prefix = os.path.basename(ads) + '/' if in_ads else ''
         # Names already claimed in base, lowercased (Windows is case-insensitive)
         taken = {n.lower() for n in os.listdir(base)}
         if not in_ads:
@@ -1636,8 +1648,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             continue
         gone.add(dirpath)
         empty.append(dirpath)
-    # An _ads root's emptied folders go beside it, as from a run on its parent
-    _quarantine_empty_folders(os.path.dirname(ads) if ads_root else root, empty, dry_run, counts)
+    # An _ads root's emptied folders go beside it, as from a run on its
+    # parent; a root inside _ads keeps its own
+    _quarantine_empty_folders(os.path.dirname(ads) if root_is_ads else root, empty, dry_run, counts)
     return dict(counts)
 
 
@@ -1675,6 +1688,12 @@ def _quarantine_empty_folders(root: str, empty: list, dry_run: bool, counts: Cou
 
 # A year folder: "2014", "2013 West"
 _YEAR_FOLDER_RE = re.compile(r'^(19|20)\d{2}(?!\d)')
+
+
+def _is_year_folder(name: str) -> bool:
+    """True for a year folder name ("2014", "2013 West", "2002 - 2003") but
+    not a day folder ("2022-02-14", "2022_02_14")."""
+    return bool(_YEAR_FOLDER_RE.match(name)) and not re.match(r'^\d{4}[-_.]\d', name)
 
 
 def _year_folders(root: str) -> list:
@@ -2054,7 +2073,10 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
     """Move ad images and videos from root and every subfolder into root/_ads,
     keeping their relative path. A file is an ad only if its name matches AND
     it has no camera info (EXIF Make/Model for a photo, a device-make tag for
-    a video); name matches with camera info are kept and listed.
+    a video); name matches with camera info are kept and listed. Given the
+    folder that holds the year folders (E:\\Pictures), an ad in a year folder
+    goes into that year's own _ads (2022/Temp/ad.png -> 2022/_ads/Temp/ad.png),
+    not one _ads for every year.
     Emptied folders are left for --flatten or the cleanup script."""
     counts = Counter()
     if not HAS_PIL:
@@ -2062,8 +2084,13 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
         print('Pillow required to check for camera info; pip install "pillow>=10.0"', file=sys.stderr)
         return {}
     verb = 'WOULD QUARANTINE' if dry_run else 'QUARANTINED'
+    root = os.path.normpath(root)
+    # A root that is a year folder itself splits no further: its 2022-02-14
+    # day folders are not years
+    years = set() if _is_year_folder(os.path.basename(root)) else {
+        d for d in os.listdir(root) if _is_year_folder(d) and os.path.isdir(os.path.join(root, d))}
     for dirpath, dirs, files in os.walk(root):
-        _prune_holding(root, dirpath, dirs)
+        _prune_holding(dirs)
         dirs.sort()
         for name in sorted(files):
             ext = pathlib.Path(name).suffix.lower()
@@ -2082,7 +2109,11 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
                 counts['kept-camera-info'] += 1
                 print(f"KEPT (camera: {camera}): {rel}")
                 continue
-            dst = os.path.join(root, QUARANTINE_DIR, rel)
+            year, _, rest = rel.partition(os.sep)
+            if rest and year in years:
+                dst = os.path.join(root, year, QUARANTINE_DIR, rest)
+            else:
+                dst = os.path.join(root, QUARANTINE_DIR, rel)
             if os.path.exists(dst):
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {rel}", file=sys.stderr)
@@ -2096,7 +2127,7 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
                     print(f"FAILED {rel}: {e}", file=sys.stderr)
                     continue
             counts['quarantined'] += 1
-            print(f"{verb}: {rel}")
+            print(f"{verb}: {rel.replace(os.sep, '/')} -> {os.path.relpath(dst, root).replace(os.sep, '/')}")
     return dict(counts)
 
 
@@ -2171,7 +2202,7 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     _fold_legacy_no_data(root, dry_run, counts)
     for dirpath, dirs, files in os.walk(root):
-        _prune_holding(root, dirpath, dirs)
+        _prune_holding(dirs)
         dirs.sort()
         for name in sorted(files):
             if pathlib.Path(name).suffix.lower() not in MEDIA_EXTS:
@@ -2282,7 +2313,7 @@ def fix_extensions(root: str, dry_run: bool = False) -> dict:
     counts = Counter()
     verb = 'WOULD RENAME' if dry_run else 'RENAMED'
     for dirpath, dirs, files in os.walk(root):
-        _prune_holding(root, dirpath, dirs)
+        _prune_holding(dirs)
         dirs.sort()
         claimed = set()
         for name in sorted(files):
@@ -2398,7 +2429,7 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
     counts = Counter()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     for dirpath, dirs, files in os.walk(root):
-        _prune_holding(root, dirpath, dirs)
+        _prune_holding(dirs)
         dirs.sort()
         for name in sorted(files):
             full = os.path.join(dirpath, name)

@@ -135,7 +135,7 @@ These are the steps inside, in the order they run:
 | 2 | Scan (report) | Reads every file's real date and writes the audit workbook. Changes nothing. | `--report-only` |
 | 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db` and macOS `._` sidecars into `_junk`. | `--move-junk` |
 | 4 | Set incomplete files aside | Moves empty, null-filled and headerless files, the remains of failed copies, into `_incomplete`. | `--move-incomplete` |
-| 5 | Set ads aside (optional) | Moves app and game ad images and videos into `_ads`. Runs before dates are filled, so ads are not dated and filed with real photos. | `--quarantine-ads` |
+| 5 | Set ads aside (optional) | Moves app and game ad images and videos into `_ads`. When run on the folder that holds the year folders, each year gets its own `_ads`. Runs before dates are filled, so ads are not dated and filed with real photos. | `--quarantine-ads` |
 | 6 | Find plist and XMP files (report) | Lists iPhone edit data and XMP text saved under a photo name. Changes nothing. | `--find-plists` |
 | 7 | Convert BMP to JPEG (optional) | BMP can't hold a date, so each BMP becomes a JPEG dated from its filename or folder. | `--convert-bmp` |
 | 8 | Fill in missing dates | Writes Date Taken (Media Created for video) from a date in the filename, else from the folder name. File modified time is never trusted, because copying resets it. | `--fill-blanks` |
