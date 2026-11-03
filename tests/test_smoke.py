@@ -178,7 +178,7 @@ class SmokeTests(unittest.TestCase):
         self.assertNotIn('img_0001.aae', names(day))
         self.assertNotIn('thumbs.db', names(day))
         self.assertEqual(names(self.root / '_junk'), ['img_0001.aae', 'thumbs.db'])
-        self.assertEqual(names(self.root / '_incomplete'), ['empty.jpg'])
+        self.assertEqual(names(self.root / '_incomplete'), ['empty_2020-01-01.jpg'])
         # Blank date filled from the filename, and both strays stay where they are
         self.assertIn('wrong.jpg', names(day))
         self.assertFalse((self.root / '2020-02-02').exists())
@@ -415,7 +415,7 @@ class SmokeTests(unittest.TestCase):
         code, _ = run(self.root, '--quarantine-ads', '--apply')
         self.assertEqual(code, 0)
         self.assertEqual(names(day), ['img_20200101_120000.jpg'])
-        self.assertEqual(names(self.root / '_ads'), sorted(ads))
+        self.assertEqual(names(self.root / '_ads'), sorted(a.replace('.jpg', '_2020-01-01.jpg') for a in ads))
 
     def test_quarantine_ads_keeps_ads_under_their_year_folder(self):
         # Run on the folder that holds the year folders (E:\Pictures)
@@ -429,12 +429,12 @@ class SmokeTests(unittest.TestCase):
         code, out = run(self.root, '--quarantine-ads', '--apply')
 
         self.assertEqual(code, 0, out)
-        self.assertEqual(names(self.root / '2022' / '_ads'), [ad])
+        self.assertEqual(names(self.root / '2022' / '_ads'), [ad.replace('.jpg', '_2022-02-14.jpg')])
         self.assertEqual(names(self.root / '2013 West' / '_ads'), [ad])
         self.assertEqual(names(self.root / '2021' / '_ads'), [ad])
         # Only the ad loose in the root goes into the root's _ads
         self.assertEqual(names(self.root / '_ads'), [ad])
-        self.assertIn(f'QUARANTINED: 2022/Temp/2022-02-14/{ad} -> 2022/_ads/{ad}', out)
+        self.assertIn(f'QUARANTINED: 2022/Temp/2022-02-14/{ad} -> 2022/_ads/{ad.replace(".jpg", "_2022-02-14.jpg")}', out)
 
     def test_quarantine_ads_in_a_year_folder_does_not_split_by_day(self):
         year = self.root / '2022'
@@ -444,7 +444,7 @@ class SmokeTests(unittest.TestCase):
         code, out = run(year, '--quarantine-ads', '--apply')
 
         self.assertEqual(code, 0, out)
-        self.assertEqual(names(year / '_ads'), [ad])
+        self.assertEqual(names(year / '_ads'), [ad.replace('.jpg', '_2022-02-14.jpg')])
         self.assertFalse((year / '2022-02-14' / '_ads').exists())
 
     def test_all_leaves_ads_in_a_year_folders_own_ads_alone(self):

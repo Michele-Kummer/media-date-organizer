@@ -208,8 +208,13 @@ and a summary of every phase's counts and problems is printed at the end):
                         else is moved, renamed or deleted.
     --quarantine-ads    Move ad images and videos straight into an _ads folder
                         inside the root, with no subfolders, for the user to
-                        review and delete (a name clash gets a
-                        _<subfolder-name> suffix, as in _junk). Given the
+                        review and delete. An ad with no Date Taken gets the
+                        date of the nearest dated folder above it appended to
+                        its name (2022-02-14/ad.png -> _ads/ad_2022-02-14.png),
+                        unless its name holds a date already; if that name is
+                        taken, it is a COLLISION and the ad stays. Any other
+                        name clash gets a _<subfolder-name> suffix, as in
+                        _junk. Given the
                         folder that holds the year folders (--root
                         E:\\Pictures), an ad in a year folder goes into that
                         year's own _ads instead
@@ -239,8 +244,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         folder and every subfolder. Nothing is deleted.
     --move-incomplete   Move incomplete media files straight into an
                         "_incomplete" folder inside the root, with no
-                        subfolders (a name clash gets a _<subfolder-name>
-                        suffix, as in _junk). A file is
+                        subfolders. Each gets the date of the nearest dated
+                        folder above it appended to its name, as an undated
+                        ad does (2018-08-19/clip.mp4 ->
+                        _incomplete/clip_2018-08-19.mp4). A file is
                         incomplete if it is 0 bytes, nothing but null bytes,
                         or a video with no video header (a stub or truncated
                         copy that no player can open): the remains of a
@@ -599,18 +606,29 @@ def _prune_holding(dirs: list) -> None:
     dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
 
 
-def _flat_dest(holding: str, rel: str, claimed: set) -> Optional[str]:
+def _flat_dest(holding: str, rel: str, claimed: set, undated: bool = False) -> Optional[str]:
     """Where a file at rel (relative to the folder it was found under) goes
     in the holding folder (_ads, _incomplete, _junk): straight into it, not
     into a copy of its subfolder path. A name already there, or claimed
     earlier in this run, gets a _<subfolder-name> suffix, as --flatten gives
     ads (2020-01-01/Thumbs.db -> Thumbs_2020-01-01.db). Returns None when
-    that is taken too, or the file had no subfolder to name it after."""
+    that is taken too, or the file had no subfolder to name it after.
+    undated is for a photo or video with no Date Taken: the date of the
+    nearest folder above it is appended to its name instead, so the date
+    survives leaving the folder (2018-08-19/clip.mp4 -> clip_2018-08-19.mp4),
+    and only that name is tried. A name holding a date already, or a file
+    with no dated folder above it, is treated as above."""
     name = os.path.basename(rel)
     folder = os.path.basename(os.path.dirname(rel))
+    p = pathlib.Path(name)
     candidates = [name]
-    if folder:
-        p = pathlib.Path(name)
+    dt = None
+    if undated and _filename_date(p.stem) is None:
+        dt = next((d for d in map(_folder_name_date, reversed(pathlib.Path(rel).parent.parts))
+                   if d is not None), None)
+    if dt is not None:
+        candidates = [f"{p.stem}_{dt:%Y-%m-%d}{p.suffix}"]
+    elif folder:
         candidates.append(f"{p.stem}_{folder}{p.suffix}")
     for n in candidates:
         dst = os.path.join(holding, n)
@@ -2135,18 +2153,20 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
                 # A game's raw pixel dump has no metadata to check; a camera
                 # RAW is recognised by its header and kept
                 camera = 'camera RAW header' if _is_camera_raw(full) else None
+                taken = None
             else:
                 ftype = detect_type(full) or ext
-                camera = read_metadata(full, ftype)['camera']
+                meta = read_metadata(full, ftype)
+                camera, taken = meta['camera'], meta['date_taken']
             if camera:
                 counts['kept-camera-info'] += 1
                 print(f"KEPT (camera: {camera}): {rel}")
                 continue
             year, _, rest = rel.partition(os.sep)
             if rest and year in years:
-                dst = _flat_dest(os.path.join(root, year, QUARANTINE_DIR), rest, claimed)
+                dst = _flat_dest(os.path.join(root, year, QUARANTINE_DIR), rest, claimed, taken is None)
             else:
-                dst = _flat_dest(os.path.join(root, QUARANTINE_DIR), rel, claimed)
+                dst = _flat_dest(os.path.join(root, QUARANTINE_DIR), rel, claimed, taken is None)
             if dst is None:
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {rel}", file=sys.stderr)
@@ -2205,7 +2225,7 @@ def _fold_legacy_no_data(root: str, dry_run: bool, counts: Counter, claimed: set
         for name in sorted(files):
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, legacy)
-            dst = _flat_dest(os.path.join(root, INCOMPLETE_DIR), rel, claimed)
+            dst = _flat_dest(os.path.join(root, INCOMPLETE_DIR), rel, claimed, True)
             if dst is None:
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {LEGACY_NO_DATA_DIR}{os.sep}{rel}", file=sys.stderr)
@@ -2250,7 +2270,12 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
                 continue
             if kind is None:
                 continue
-            dst = _flat_dest(os.path.join(root, INCOMPLETE_DIR), rel, claimed)
+            try:
+                ftype = detect_type(full) or pathlib.Path(name).suffix.lower()
+                taken = read_metadata(full, ftype)['date_taken']
+            except Exception:
+                taken = None  # a broken file's metadata is often unreadable
+            dst = _flat_dest(os.path.join(root, INCOMPLETE_DIR), rel, claimed, taken is None)
             if dst is None:
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {rel}", file=sys.stderr)

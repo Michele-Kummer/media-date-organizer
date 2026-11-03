@@ -171,17 +171,43 @@ class MoveJunkTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(names(self.root / '_junk'), ['thumbs.db', 'thumbs_2020-01-02.db'])
 
-    def test_incomplete_files_and_ads_go_straight_into_their_folder(self):
-        ad = '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg'
+    def test_undated_files_set_aside_keep_their_folders_date(self):
+        # US-46
+        ad = '0c4cda27-b4cc-4e92-a446-d6b780f24a64'
         for day in ('2020-01-01', '2020-01-02'):
             (self.root / 'Trip' / day).mkdir(parents=True)
             (self.root / 'Trip' / day / 'clip.mp4').write_bytes(b'')
-            make_image(self.root / 'Trip' / day / ad)
+        make_image(self.root / 'Trip' / '2020-01-01' / f'{ad}.jpg')
+        # The nearest dated folder above counts, however deep the file is
+        make_image(self.root / 'Trip' / '2020-01-02' / 'Phone' / f'{ad}.jpg')
+        # A dated ad, a name holding a date and an ad with no dated folder keep their names
+        dated = '54ac2fda0a6755305200011c-b30-600.jpg'
+        make_image(self.root / 'Trip' / '2020-01-01' / dated, taken=datetime.datetime(2019, 5, 5, 9, 0, 0))
+        named = '492887-1648448524975-3d62u_2023-02-26.webp'
+        make_image(self.root / 'Trip' / '2020-01-01' / named, fmt='WEBP')
+        loose = '55d58970f6cd4574f635d6e3_568-1443241239.jpg'
+        make_image(self.root / 'Trip' / loose)
+
+        code, out = run(self.root, '--move-incomplete', '--quarantine-ads')
+        self.assertEqual(code, 0, out)
+        self.assertIn('-> _incomplete' + os.sep + 'clip_2020-01-01.mp4', out)
 
         code, out = run(self.root, '--move-incomplete', '--quarantine-ads', '--apply')
         self.assertEqual(code, 0, out)
-        self.assertEqual(names(self.root / '_incomplete'), ['clip.mp4', 'clip_2020-01-02.mp4'])
-        self.assertEqual(names(self.root / '_ads'), sorted([ad, ad.replace('.jpg', '_2020-01-02.jpg')]))
+        self.assertEqual(names(self.root / '_incomplete'), ['clip_2020-01-01.mp4', 'clip_2020-01-02.mp4'])
+        self.assertEqual(names(self.root / '_ads'), sorted(
+            [f'{ad}_2020-01-01.jpg', f'{ad}_2020-01-02.jpg', dated, named, loose]))
+
+    def test_an_undated_name_taken_with_its_date_is_a_collision(self):
+        for trip in ('Beach', 'Lake'):
+            (self.root / trip / '2020-01-01').mkdir(parents=True)
+            (self.root / trip / '2020-01-01' / 'clip.mp4').write_bytes(b'')
+
+        code, out = run(self.root, '--move-incomplete', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertIn('COLLISION, skipping', out)
+        self.assertEqual(names(self.root / '_incomplete'), ['clip_2020-01-01.mp4'])
+        self.assertEqual(names(self.root / 'Lake' / '2020-01-01'), ['clip.mp4'])
 
     def test_a_read_only_thumbnail_cache_is_moved(self):
         self.build()
