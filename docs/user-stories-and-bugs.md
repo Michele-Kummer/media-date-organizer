@@ -13,6 +13,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-10-26:** Claude found, while checking those fixes, that the other steps still went into a year's own `_ads` when run on `E:\Pictures` (BUG-32).
 - **Updated 2026-10-26:** Michele Kummer asked for a desktop app: a button for each step, project settings, checkboxes choosing the steps of a full run with a default, PNG and BMP quality settings, **Run all selected** and **Preview all selected**, tooltips, Montserrat, light and dark themes in the SK SkyOrbit logo's colors, and WCAG Level A. Epic 8 (US-33 to US-43) records these requirements. Claude measured the contrast of the logo's colors to choose the theme colors.
 - **Updated 2026-10-27:** Michele Kummer asked for the quality options to be a story of their own. US-44 adds them to `organize.py`, and US-38 depends on it. Michele Kummer chose Vue 3 with pywebview for the desktop app, recorded at the top of Epic 8.
+- **Updated 2026-11-02:** Michele Kummer asked for moving files to date folders to be optional and left out of `--all`. US-09, US-19, US-26, US-31 and the desktop app's default selection now say so.
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -102,7 +103,8 @@ As a media owner, I want photos and videos whose extension does not match their 
 #### US-05 See which photos and videos have no date
 As a media owner, I want a report of every photo's and video's real date and what would happen to it, so that I can decide before anything changes.
 
-- `--report-only` reads photo dates from EXIF (JPEG, PNG and TIFF, and the EXIF embedded in HEIC) and video dates from the MOV/MP4 container. It needs no external tools.
+- The step is called **Audit dates**. `--audit` reads photo dates from EXIF (JPEG, PNG and TIFF, and the EXIF embedded in HEIC) and video dates from the MOV/MP4 container. It needs no external tools.
+- `--report-only`, the flag's old name, still works, so older command lines keep running.
 - Photos and videos are found in the root and every subfolder at any depth, skipping `_ads`, `_incomplete` and `_empty_folders`.
 - Each file is given an action: keep, move, fill-blank or skip. A file loose in a root named for a different date is listed as `in-root-date-differs`. The results are written to the audit workbook.
 - The fill-blank date is the one `--fill-blanks` would write: for a photo, its filename or its own folder's name; for a video, its filename or the nearest folder whose name holds a full date.
@@ -180,6 +182,7 @@ Put each photo and video where its date says it belongs, then tidy the folder st
 As a media owner, I want each photo and video in a folder named for its real date, so that folder names can be trusted.
 
 - `--apply-moves` moves a photo or video whose date differs from its folder's date into a sibling `YYYY-MM-DD` folder.
+- The step is optional. It is not part of `--all`; add `--apply-moves` to include it.
 - Works at any depth. Each file is checked against the folder it sits in, and moves to a sibling of that folder: `Trip\2019-08-30\x.jpg` taken on the 31st moves to `Trip\2019-08-31`, not up to the root.
 - A file loose in the root is never moved out of it. It is checked against the root's own name; if that is a different date, it is listed as `in-root-date-differs` and left where it is.
 - A file with no date inside it, in a dated folder, gets that folder's date appended to its name (`IMG_1_2019-08-30.jpg`), so the date survives a later move.
@@ -345,8 +348,9 @@ Run the steps together, preview them, never lose a photo or video by surprise, a
 #### US-19 Run every step in one command
 As a media owner, I want one command that runs the routine steps in the right order, so that I don't have to remember it.
 
-- `--all` runs, in order: fix extensions, move junk, move incomplete files, fill blanks, convert PNG, apply moves, sync timestamps. It deletes nothing.
-- `--quarantine-ads` and `--flatten` can be added to it.
+- `--all` runs, in order: fix extensions, move junk, move incomplete files, fill blanks, convert PNG, sync timestamps. It deletes nothing.
+- `--quarantine-ads`, `--apply-moves` and `--flatten` can be added to it.
+- It does not update the audit workbook's Summary, Plan and Only-moves sheets unless `--apply-moves` is added. After `--all --apply` it says to run `--audit` for sheets that show the folder as it is now.
 - It ends with one summary of every step's counts and up to 50 problems per step.
 - Without `--apply` it previews every step against the folder as it is now, and says that a later step may do more once the earlier ones have run.
 
@@ -395,8 +399,8 @@ As a media owner, I want `/fix-media-dates` and `/flatten-media` to show me what
 
 - `/fix-media-dates <folder>` and `/flatten-media <folder>` are dry runs. Every step runs as a preview, and nothing is renamed, written, converted, moved or deleted.
 - A dry run ends by telling the user what to type to go ahead: `/fix-media-dates <folder> --apply` or `/flatten-media <folder> --apply`.
-- `/fix-media-dates <folder> --apply` and `/flatten-media <folder> --apply` make the changes. Optional steps (ads, BMP conversion, PNG conversion, timestamp sync, flatten, cleaning up converted files) run only when the user asked for them.
-- `/fix-media-dates <folder> --all` previews `organize.py --all` (fix extensions, move junk, move incomplete, fill blanks, convert PNG, apply moves, sync timestamps) in one go, and ends by telling the user to type `/fix-media-dates <folder> --all --apply`, which makes those changes. Ad quarantine and flatten are left out unless `--quarantine-ads` or `--flatten` is added, and cleanup runs on its own.
+- `/fix-media-dates <folder> --apply` and `/flatten-media <folder> --apply` make the changes. Optional steps (ads, BMP conversion, PNG conversion, moving to date folders, timestamp sync, flatten, cleaning up converted files) run only when the user asked for them.
+- `/fix-media-dates <folder> --all` previews `organize.py --all` (fix extensions, move junk, move incomplete, fill blanks, convert PNG, sync timestamps) in one go, and ends by telling the user to type `/fix-media-dates <folder> --all --apply`, which makes those changes. Ad quarantine, moving to date folders and flatten are left out unless `--quarantine-ads`, `--apply-moves` or `--flatten` is added, and cleanup runs on its own.
 - Both commands show `[--apply]` in their argument hint (`/fix-media-dates` also shows `[--all]`), and `/media-help` lists every form.
 - `/report-opposite-type` only reports, so it has no `--apply`.
 - `tests/test_commands.py` checks each of these, and that no command, skill or guide still says `--dry-run` or `-WhatIf`.
@@ -409,7 +413,7 @@ As a media owner, I want every step that changes my photos and videos to preview
 - Every `organize.py` step that writes, converts, moves, renames or deletes files lists what it would do (`WOULD WRITE`, `WOULD CONVERT`, `WOULD MOVE`, `WOULD SYNC`, `WOULD DELETE`, ...) and changes nothing unless `--apply` is given. This covers `--fix-extensions`, `--move-junk`, `--move-incomplete`, `--quarantine-ads`, `--fill-blanks`, `--convert-png`, `--apply-moves`, `--sync-timestamps`, `--flatten`, `--final-check` and `--all`.
 - A dry run ends with `DRY RUN: nothing was changed. Run the same command again with --apply to make these changes.`
 - `Cleanup-Pictures.ps1` previews unless `-Apply` is given. `-WhatIf` still works.
-- Reports (`--report-only`, `--compare-collisions`, `--visual-compare`, `--opposite-type`, `--find-plists`, `find_duplicates.py`) change nothing, so they run the same either way. `--visual-compare` no longer needs a flag.
+- Reports (`--audit`, `--compare-collisions`, `--visual-compare`, `--opposite-type`, `--find-plists`, `find_duplicates.py`) change nothing, so they run the same either way. `--visual-compare` no longer needs a flag.
 - `--dry-run` is still accepted and means the default. It cannot be combined with `--apply`.
 - A dry run is recorded in the audit workbook, marked `yes` in the Dry run column, and never renames the workbook (BUG-05).
 - `tests/test_dry_run.py` runs each step without `--apply` and checks that no file's content, name or timestamp changed, then runs it with `--apply` and checks that something did. A new step that changes files fails the test until it is added there.
@@ -419,7 +423,7 @@ As a media owner, I want every step that changes my photos and videos to preview
 #### US-31 Choose between step by step and all in one go
 As a media owner, I want to know how the two ways of running `/fix-media-dates` differ and in what order to run the steps, so that I pick the right one and don't run the steps twice or in the wrong order.
 
-- `/fix-media-dates <folder>` walks through every step and asks which optional steps the user wants: ads, BMP conversion, PNG conversion, timestamp sync, flatten, and cleaning up converted files. It always asks about cleanup, the one step that deletes (BUG-28).
+- `/fix-media-dates <folder>` walks through every step and asks which optional steps the user wants: ads, BMP conversion, PNG conversion, moving to date folders, timestamp sync, flatten, and cleaning up converted files. It always asks about cleanup, the one step that deletes (BUG-28).
 - `/fix-media-dates <folder> --all` runs the routine steps in one go with no questions, fixing extensions first (BUG-26). It deletes nothing.
 - The README has a table showing which steps each way runs, says to choose one of them for a folder, and gives the recommended order of every step, from fixing extensions to the final check.
 - The README's **Guardrails** section lists the safety rules that hold for every step.
@@ -465,7 +469,7 @@ As a maintainer, I want the README, cheat sheet, skills and this file updated wi
 
 Run every step from a window with buttons, checkboxes and settings instead of typing commands. The app runs the existing scripts on this computer, with the same preview-first rules, so it adds no new way to lose a file. Requested by Michele Kummer on 2026-10-26; nothing is built yet.
 
-**Stack** (chosen by Michele Kummer on 2026-10-27): the interface is written in **Vue 3** with plain CSS and built with **Vite**. It is shown in a window by **pywebview**, which uses the Edge WebView2 already in Windows. A small Python layer builds each step's command line, runs `organize.py` or `Cleanup-Pictures.ps1`, and streams their output back to the window. The app starts with `py app.py` and needs nothing beyond the plugin's own Python packages and pywebview. Chosen because the plugin already needs Python, the author knows Vue and CSS, and no second runtime (Node, Rust or a bundled Chromium) has to ship. Electron would be the alternative if a standalone installer for people without Python is ever needed.
+**Stack** (chosen by Michele Kummer on 2026-10-27): the interface is written in **Vue 3** with plain CSS and built with **Vite**. It is shown in a window by **pywebview**, which uses the Edge WebView2 already in Windows. A small Python layer builds each step's command line, runs `organize.py` or `Cleanup-Pictures.ps1`, and streams their output back to the window. The app starts with `py app.py` and needs nothing beyond the plugin's own Python packages and pywebview. Chosen because the plugin already needs Python, the author is familiar with Vue and CSS, and no second runtime (Node, Rust or a bundled Chromium) has to ship. Electron would be the alternative if a standalone installer for people without Python is ever needed.
 
 #### US-33 Set the project's parameters once
 As a media owner, I want to set the folder and the options that every step uses in one place, so that I don't have to repeat them for each button.
@@ -490,7 +494,7 @@ As a media owner, I want a button for every step the plugin can do, so that I ca
 | # | Button | Runs | In a full run by default |
 |---|---|---|---|
 | 1 | Fix extensions | `--fix-extensions` | Yes |
-| 2 | Scan | `--report-only` | No |
+| 2 | Audit dates | `--audit` | No |
 | 3 | Set junk aside | `--move-junk` | Yes |
 | 4 | Set incomplete files aside | `--move-incomplete` | Yes |
 | 5 | Set ads aside | `--quarantine-ads` | No |
@@ -498,7 +502,7 @@ As a media owner, I want a button for every step the plugin can do, so that I ca
 | 7 | Convert BMP to JPEG | `--convert-bmp` | No |
 | 8 | Fill in missing dates | `--fill-blanks` | Yes |
 | 9 | Convert PNG to JPEG | `--convert-png` | Yes |
-| 10 | Move to date folders | `--apply-moves` | Yes |
+| 10 | Move to date folders | `--apply-moves` | No |
 | 11 | Sync timestamps | `--sync-timestamps` | Yes |
 | 12 | Flatten | `--flatten` | No |
 | 13 | Find duplicates | `find_duplicates.py` | No |
@@ -520,7 +524,7 @@ As a media owner, I want a button for every step the plugin can do, so that I ca
 As a media owner, I want to tick the steps I want in a full run, starting from a sensible default, so that I can run my usual set without ticking it every time.
 
 - Each step's checkbox is labelled "Include <step> in a full run".
-- The default is ticked for the seven steps `--all` runs (fix extensions, set junk aside, set incomplete files aside, fill in missing dates, convert PNG to JPEG, move to date folders, sync timestamps), and unticked for the rest, so a full run with the defaults does what `--all` does.
+- The default is ticked for the six steps `--all` runs (fix extensions, set junk aside, set incomplete files aside, fill in missing dates, convert PNG to JPEG, sync timestamps), and unticked for the rest, so a full run with the defaults does what `--all` does.
 - **Reset to default selection** puts the ticks back to the default. **Select all** and **Clear all** do what they say.
 - Ticking **Flatten** while **Move to date folders** is ticked (or the other way round) shows a note that they are alternatives, with a button to untick the other one. It does not block the choice.
 - Ticking **Clean up converted files**, the only step that deletes, shows a note saying so.
@@ -668,7 +672,7 @@ Each was reproduced on synthetic files, except where noted.
 #### BUG-02 One unreadable photo or video stops a step, and nothing is recorded
 **Severity:** Medium · **Found by:** Claude · **Affects:** photos and videos · **Where:** [organize.py](../skills/media-date-organizer/scripts/organize.py) `sync_timestamps`, `scan`
 
-`fill_blanks` catches read errors per file, but `sync_timestamps` and `scan` do not. `scan` is used by `--report-only`, `--apply-moves`, `--compare-collisions` and `--visual-compare`.
+`fill_blanks` catches read errors per file, but `sync_timestamps` and `scan` do not. `scan` is used by `--audit`, `--apply-moves`, `--compare-collisions` and `--visual-compare`.
 
 **Steps to reproduce**
 1. Make a photo or video that cannot be read during the step. The repro simulated this with a `PermissionError`; in real use it could be a file locked by another program, or a HEIC photo or a video large enough to cause a `MemoryError`, since both are read whole when no header is found.

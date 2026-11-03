@@ -13,8 +13,8 @@ Phases (several can be given on one command line; they run in a fixed order
 and a summary of every phase's counts and problems is printed at the end):
     --all               Shorthand for --fix-extensions --move-junk
                         --move-incomplete --fill-blanks --convert-png
-                        --apply-moves --sync-timestamps. Add
-                        --quarantine-ads or --flatten to include those too.
+                        --sync-timestamps. Add --quarantine-ads, --apply-moves
+                        or --flatten to include those too.
     --fix-extensions    Rename every photo and video whose extension does not
                         match its content, read from its first bytes (a HEIC
                         photo named IMG_1.PNG becomes IMG_1.HEIC). Knows PNG,
@@ -38,9 +38,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         is deleted: look over _junk and delete it yourself.
                         --delete-junk is the old name for this flag and still
                         works (it moves too).
-    --report-only       Scan and write audit XLSX; make no changes. Photos
-                        and videos are found in the root and every subfolder
-                        at any depth.
+    --audit             Audit dates: scan and write audit XLSX; make no
+                        changes. Photos and videos are found in the root and
+                        every subfolder at any depth. --report-only is the old
+                        name for this flag and still works.
     --fill-blanks       Write DateTimeOriginal into EXIF for JPEG/PNG files that
                         are missing Date Taken. Uses a date embedded in the
                         filename (e.g. 2023-12-20_<id>-main.jpg,
@@ -75,7 +76,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         really another format, or holds transparent pixels,
                         is left alone and reported. Leaves originals in
                         place for Cleanup-Pictures.ps1.
-    --apply-moves       Move files whose Date Taken does not match their current
+    --apply-moves       Not part of --all (add it to include it). Move files
+                        whose Date Taken does not match their current
                         folder name into a sibling folder named for the real
                         date. A file with no Date Taken or Media Created is
                         not moved, but in a YYYY-MM-DD folder it gets a
@@ -2603,10 +2605,10 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 PHASE_ORDER = ('fix_extensions', 'move_junk', 'move_incomplete', 'quarantine_ads', 'convert_bmp', 'fill_blanks', 'convert_png',
                'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
                'opposite_type', 'other_year', 'find_plists', 'final_check')
-ALL_PHASES = ('fix_extensions', 'move_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'apply_moves', 'sync_timestamps')
+ALL_PHASES = ('fix_extensions', 'move_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'sync_timestamps')
 # Phases that only report. Every other phase changes files, and only when
 # --apply is given; without it, it lists what it would do.
-REPORT_PHASES = ('report_only', 'compare_collisions', 'visual_compare', 'opposite_type', 'other_year',
+REPORT_PHASES = ('audit', 'compare_collisions', 'visual_compare', 'opposite_type', 'other_year',
                  'find_plists')
 
 
@@ -2700,7 +2702,7 @@ def _run_phase(phase: str, args) -> dict:
         return compare_collisions(args.root, scan(args.root))
     if phase == 'visual_compare':
         return visual_compare(args.root, scan(args.root))
-    # report-only and apply-moves both need the scanned plan
+    # audit and apply-moves both need the scanned plan
     plan = scan(args.root)
     out_xlsx = os.path.join(args.root, args.xlsx)
     write_xlsx(args.root, plan, out_xlsx)
@@ -2732,12 +2734,12 @@ def _print_summary(results: list) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--root', required=True, help='Photo folder root (e.g. D:\\Pictures\\2026)')
-    ap.add_argument('--report-only', action='store_true', help='Scan and write audit XLSX; no changes. Cannot be combined with other phases.')
-    ap.add_argument('--all', action='store_true', help='Run --fix-extensions, --move-junk, --move-incomplete, --fill-blanks, --convert-png, --apply-moves and --sync-timestamps in that order, then print one summary of all of them.')
+    ap.add_argument('--audit', '--report-only', action='store_true', help='Audit dates: scan and write audit XLSX; no changes. Cannot be combined with other phases. --report-only is the old name for this flag and still works.')
+    ap.add_argument('--all', action='store_true', help='Run --fix-extensions, --move-junk, --move-incomplete, --fill-blanks, --convert-png and --sync-timestamps in that order, then print one summary of all of them. Add --quarantine-ads, --apply-moves or --flatten to include those too.')
     ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos whose Media Created is blank, in the root and every subfolder at any depth, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--convert-bmp', action='store_true', help='Convert BMP files to JPEG at quality 95. BMP cannot hold a Date Taken, so each JPEG gets the date in the filename, else the folder date. Originals are left for Cleanup-Pictures.ps1. Not part of --all; add it to include it.')
-    ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name.')
+    ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name. Not part of --all; add it to include it.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
@@ -2772,12 +2774,12 @@ def main(argv=None):
 
     phases = [p for p in PHASE_ORDER
               if getattr(args, p) or (args.all and p in ALL_PHASES)]
-    if args.report_only:
+    if args.audit:
         if phases:
-            ap.error('--report-only cannot be combined with other phases')
-        phases = ['report_only']
+            ap.error('--audit cannot be combined with other phases')
+        phases = ['audit']
     if not phases:
-        ap.error('choose at least one phase (e.g. --report-only, --fill-blanks, --all)')
+        ap.error('choose at least one phase (e.g. --audit, --fill-blanks, --all)')
 
     if not os.path.isdir(args.root):
         print(f"Not a directory: {args.root}", file=sys.stderr)
@@ -2810,6 +2812,9 @@ def main(argv=None):
         if len([p for p in phases if dry[p]]) > 1:
             print("Each phase was previewed against the folder as it is now, so a later phase may "
                   "do more once the earlier ones have run.")
+    if args.all and args.apply and 'apply_moves' not in phases:
+        print("\nNOTE: --all does not update the audit workbook's Summary, Plan and Only-moves sheets. "
+              "Run --audit when you want them to show the folder as it is now.")
     return 0
 
 

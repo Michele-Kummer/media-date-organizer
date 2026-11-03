@@ -24,7 +24,7 @@ Missing dates are rarely just missing. They come from a handful of everyday prob
 - **A full audit trail.** Every run, previews included, is logged to an Excel workbook in the folder. You can see later what changed, when, and why.
 - **Reads metadata itself.** It parses HEIC, MOV/MP4, JPEG, PNG and TIFF metadata directly, with no external tools needed just to read dates. ExifTool is only needed to write dates into HEIC and video files.
 - **Plain English or command line.** In Claude Code you can type "Fill in the missing dates in D:\Pictures\2026". Every step is also a command-line flag you can script.
-- **Tested on generated files.** 62 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell cleanup script.
+- **Tested on generated files.** 73 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell cleanup script.
 
 ## Quick start
 
@@ -74,7 +74,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 |---|---|
 | Step by step: see what each step would change, and choose the optional ones (changes nothing) | `/fix-media-dates D:\Pictures\2026` |
 | Then make the changes you chose | `/fix-media-dates D:\Pictures\2026 --apply` |
-| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
+| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
 | Then make all of those changes | `/fix-media-dates D:\Pictures\2026 --all --apply` |
 | See what moving everything up out of its subfolders would do (changes nothing) | `/flatten-media D:\Pictures\2026` |
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
@@ -103,7 +103,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Step | Step by step | All in one go (`--all`) |
 |---|---|---|
 | Fix extensions | Yes | Yes |
-| Scan and write the audit workbook (report) | Yes | No (every run is still logged) |
+| Audit dates and write the audit workbook (report) | Yes | No (every run is still logged; run `--audit` afterwards for an up-to-date report) |
 | Set junk aside in `_junk` | Yes | Yes |
 | Set incomplete files aside in `_incomplete` | Yes | Yes |
 | Set ads aside in `_ads` | If you choose it | Only with `--quarantine-ads` |
@@ -111,7 +111,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Convert BMP to JPEG | If you choose it | No |
 | Fill in missing dates | Yes | Yes |
 | Convert PNG to JPEG | If you choose it | Yes |
-| Move to date folders | Yes | Yes |
+| Move to date folders | If you choose it | Only with `--apply-moves` |
 | Sync timestamps | If you choose it | Yes |
 | Flatten | If you choose it | Only with `--flatten` |
 | Clean up converted files | Always asks you | No; run it on its own afterwards |
@@ -133,7 +133,7 @@ These are the steps inside, in the order they run:
 | # | Step | What it does | Flag |
 |---|---|---|---|
 | 1 | Fix extensions | Reads each file's first bytes and renames any whose extension doesn't match its real format (PNG, JPEG, HEIC, MOV/MP4, 3GP, M2TS, MPG, WMV, AVI, GIF, WEBP, TIFF, BMP). Runs first, because every later step goes by the extension. | `--fix-extensions` |
-| 2 | Scan (report) | Reads every file's real date and writes the audit workbook. Changes nothing. | `--report-only` |
+| 2 | Audit dates (report) | Reads every file's real date and writes the audit workbook. Changes nothing. | `--audit` |
 | 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db` and macOS `._` sidecars into `_junk`. | `--move-junk` |
 | 4 | Set incomplete files aside | Moves empty, null-filled and headerless files, the remains of failed copies, into `_incomplete`. | `--move-incomplete` |
 | 5 | Set ads aside (optional) | Moves app and game ad images and videos into `_ads`. When run on the folder that holds the year folders, each year gets its own `_ads`. Runs before dates are filled, so ads are not dated and filed with real photos. | `--quarantine-ads` |
@@ -141,7 +141,7 @@ These are the steps inside, in the order they run:
 | 7 | Convert BMP to JPEG (optional) | BMP can't hold a date, so each BMP becomes a JPEG dated from its filename or folder. | `--convert-bmp` |
 | 8 | Fill in missing dates | Writes Date Taken (Media Created for video) from a date in the filename, else from the folder name. File modified time is never trusted, because copying resets it. | `--fill-blanks` |
 | 9 | Convert PNG to JPEG (optional) | A PNG can hold a Date Taken, but Explorer never shows it. This re-encodes PNG as JPEG at quality 95 so Explorer does. Runs after step 8, which writes the date into the PNG, so the JPEG carries it over and one date pass is enough. Pictures with transparency stay PNG. | `--convert-png` |
-| 10 | Move to date folders | Moves each file whose date doesn't match its folder into a folder named for its real date. Leave it out if you are going to flatten. | `--apply-moves` |
+| 10 | Move to date folders (optional) | Moves each file whose date doesn't match its folder into a folder named for its real date. Leave it out if you are going to flatten. | `--apply-moves` |
 | 11 | Sync timestamps (optional) | Sets Date Created, and Date Modified on unedited files, to the date taken. | `--sync-timestamps` |
 | 12 | Flatten (optional) | Moves everything up out of its dated subfolders into the folder itself. The alternative to step 10. Also `/flatten-media`. | `--flatten` |
 
@@ -180,7 +180,7 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 - **Python 3.9+** (`organize.py`, about 2,750 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
 - **PowerShell** cleans up converted files (`Cleanup-Pictures.ps1`), using .NET `System.Drawing` to compare pixels.
 - **Claude Code plugin:** three skills and four slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
-- **Tests:** `py -m unittest discover tests -v` runs 62 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
+- **Tests:** `py -m unittest discover tests -v` runs 73 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
 
 ```
 .

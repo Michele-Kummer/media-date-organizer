@@ -56,11 +56,11 @@ class SmokeTests(unittest.TestCase):
         self.root = pathlib.Path(tempfile.mkdtemp(prefix='media-date-organizer-'))
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
 
-    def test_report_only_plans_a_move_and_changes_nothing(self):
+    def test_audit_plans_a_move_and_changes_nothing(self):
         make_image(self.root / '2020-01-01' / 'right.jpg', taken=datetime.datetime(2020, 1, 1, 10, 0, 0))
         make_image(self.root / '2020-01-01' / 'wrong.jpg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))
 
-        code, _ = run(self.root, '--report-only')
+        code, _ = run(self.root, '--audit')
 
         self.assertEqual(code, 0)
         plan = {r['current_name']: r for r in organize.scan(str(self.root))}
@@ -71,6 +71,20 @@ class SmokeTests(unittest.TestCase):
         self.assertFalse((self.root / '2020-02-02').exists())
         self.assertIn(f'{self.root.name}_photos_media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'.lower(),
                       names(self.root))
+
+    def test_report_only_is_still_accepted_as_the_old_name_for_audit(self):
+        make_image(self.root / '2020-01-01' / 'right.jpg', taken=datetime.datetime(2020, 1, 1, 10, 0, 0))
+
+        code, _ = run(self.root, '--report-only')
+
+        self.assertEqual(code, 0)
+        self.assertIn(f'{self.root.name}_photos_media_audit_{datetime.date.today():%Y-%m-%d}.xlsx'.lower(),
+                      names(self.root))
+
+    def test_audit_cannot_be_combined_with_other_phases(self):
+        for flag in ('--audit', '--report-only'):
+            with self.assertRaises(SystemExit):
+                run(self.root, flag, '--fill-blanks')
 
     def test_folder_names_in_common_date_formats_are_read(self):
         noon = lambda y, m, d: datetime.datetime(y, m, d, 12, 0, 0)
@@ -148,7 +162,7 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual([n for n in names(day) if n.endswith('.jpg')], ['other_day.jpg', 'right.jpg'])
         self.assertEqual(names(self.root), ['2019-08-30'])
 
-    def test_all_cleans_dates_converts_and_moves(self):
+    def test_all_cleans_dates_and_converts_without_moving(self):
         day = self.root / '2020-01-01'
         make_image(day / 'wrong.jpg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))
         make_image(day / 'IMG_20210304_101112.jpg')           # no Date Taken, date in the name
@@ -165,15 +179,41 @@ class SmokeTests(unittest.TestCase):
         self.assertNotIn('thumbs.db', names(day))
         self.assertEqual(names(self.root / '_junk' / '2020-01-01'), ['img_0001.aae', 'thumbs.db'])
         self.assertEqual(names(self.root / '_incomplete' / '2020-01-01'), ['empty.jpg'])
-        # Blank date filled from the filename, then both strays moved to their real day
-        self.assertEqual(names(self.root / '2020-02-02'), ['wrong.jpg'])
-        filled = self.root / '2021-03-04' / 'IMG_20210304_101112.jpg'
+        # Blank date filled from the filename, and both strays stay where they are
+        self.assertIn('wrong.jpg', names(day))
+        self.assertFalse((self.root / '2020-02-02').exists())
+        filled = day / 'IMG_20210304_101112.jpg'
         self.assertTrue(filled.exists())
         self.assertEqual(date_taken(filled), datetime.datetime(2021, 3, 4, 10, 11, 12))
+        self.assertFalse((self.root / '2021-03-04').exists())
         # PNG converted, original left for the cleanup script, date carried over
         self.assertIn('shot.png', names(day))
         self.assertIn('shot.jpg', names(day))
         self.assertEqual(date_taken(day / 'shot.jpg'), datetime.datetime(2020, 1, 1, 8, 0, 0))
+
+    def test_all_moves_files_only_when_apply_moves_is_added(self):
+        day = self.root / '2020-01-01'
+        make_image(day / 'wrong.jpg', taken=datetime.datetime(2020, 2, 2, 9, 30, 0))
+        self.assertNotIn('apply_moves', organize.ALL_PHASES)
+
+        code, _ = run(self.root, '--all', '--apply-moves', '--apply')
+
+        self.assertEqual(code, 0)
+        self.assertNotIn('wrong.jpg', names(day))
+        self.assertEqual(names(self.root / '2020-02-02'), ['wrong.jpg'])
+
+    def test_all_apply_says_to_run_audit_for_fresh_sheets(self):
+        make_image(self.root / '2020-01-01' / 'right.jpg', taken=datetime.datetime(2020, 1, 1, 10, 0, 0))
+        note = 'Run --audit when you want them'
+
+        _, preview = run(self.root, '--all')
+        self.assertNotIn(note, preview)
+
+        _, applied = run(self.root, '--all', '--apply')
+        self.assertIn(note, applied)
+
+        _, moved = run(self.root, '--all', '--apply-moves', '--apply')
+        self.assertNotIn(note, moved)
 
     def test_fill_blanks_looks_in_root_and_every_subfolder(self):
         stamp = datetime.datetime(2021, 3, 4, 10, 11, 12)

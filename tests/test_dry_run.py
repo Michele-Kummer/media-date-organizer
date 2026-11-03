@@ -142,7 +142,7 @@ class DryRunTests(unittest.TestCase):
     def test_report_phases_run_the_same_without_apply(self):
         root = self.fresh('reports')
         before = snapshot(root)
-        for flag in ('--report-only', '--compare-collisions', '--opposite-type'):
+        for flag in ('--audit', '--compare-collisions', '--opposite-type'):
             code, out = run(root, flag)
             self.assertEqual(code, 0, out)
             self.assertNotIn('DRY RUN', out, f'{flag} only reports, so has nothing to apply')

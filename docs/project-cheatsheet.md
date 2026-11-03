@@ -6,7 +6,7 @@ Every step only previews what it would do. The commands below have --apply (-App
 cd C:\Code\media-date-organizer
 $root = "D:\Pictures\2026"
 
-py skills\media-date-organizer\scripts\organize.py --root $root --report-only
+py skills\media-date-organizer\scripts\organize.py --root $root --audit
 
 py skills\media-date-organizer\scripts\organize.py --root $root --all
 py skills\media-date-organizer\scripts\organize.py --root $root --all --apply
@@ -60,11 +60,11 @@ Create `.vscode\launch.json`:
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "organize.py --report-only",
+      "name": "organize.py --audit",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/skills/media-date-organizer/scripts/organize.py",
-      "args": ["--root", "D:/Pictures/2026", "--report-only"],
+      "args": ["--root", "D:/Pictures/2026", "--audit"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}"
     }
