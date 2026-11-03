@@ -125,7 +125,7 @@ class GameAdTests(unittest.TestCase):
         code, out = run(root, '--quarantine-ads', '--apply')
         self.assertEqual(code, 0, out)
         self.assertEqual(names(day), ['8824_1269.bmp', 'draw_camera.raw', 'img_0001.jpg'])
-        self.assertEqual(len(names(root / '_ads' / '2023-02-26')), 3)
+        self.assertEqual(len(names(root / '_ads')), 3)
         self.assertIn('KEPT (camera: camera RAW header)', out)
 
 

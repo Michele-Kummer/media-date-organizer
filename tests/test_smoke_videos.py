@@ -115,7 +115,7 @@ class VideoSmokeTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(names(day), ['good.mp4'])
-        self.assertEqual(names(self.root / '_incomplete' / '2020-02-02'), ['empty.mov', 'nulls.mp4', 'stub.mp4'])
+        self.assertEqual(names(self.root / '_incomplete'), ['empty.mov', 'nulls.mp4', 'stub.mp4'])
         for kind in ('no-video-header', 'null-filled', 'empty'):
             self.assertIn(f"MOVED ({kind})", out)
 
@@ -131,7 +131,7 @@ class VideoSmokeTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(names(day), ['20200202_100000.mp4'])
-        self.assertEqual(names(self.root / '_ads' / '2020-02-02'), sorted(ads))
+        self.assertEqual(names(self.root / '_ads'), sorted(ads))
 
     def test_flatten_moves_videos_camcorder_files_and_sidecars(self):
         self.put(self.dated, CREATED_DAY, 'clip.mp4')

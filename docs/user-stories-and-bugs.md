@@ -14,6 +14,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-10-26:** Michele Kummer asked for a desktop app: a button for each step, project settings, checkboxes choosing the steps of a full run with a default, PNG and BMP quality settings, **Run all selected** and **Preview all selected**, tooltips, Montserrat, light and dark themes in the SK SkyOrbit logo's colors, and WCAG Level A. Epic 8 (US-33 to US-43) records these requirements. Claude measured the contrast of the logo's colors to choose the theme colors.
 - **Updated 2026-10-27:** Michele Kummer asked for the quality options to be a story of their own. US-44 adds them to `organize.py`, and US-38 depends on it. Michele Kummer chose Vue 3 with pywebview for the desktop app, recorded at the top of Epic 8.
 - **Updated 2026-11-02:** Michele Kummer asked for moving files to date folders to be optional and left out of `--all`. US-09, US-19, US-26, US-31 and the desktop app's default selection now say so.
+- **Updated 2026-11-03:** Michele Kummer asked for ads, incomplete files and junk to go straight into `_ads`, `_incomplete` and `_junk`, with no subfolders. US-12, US-13 and US-14 now say so. Michele Kummer then asked for the folder's date to be added to the name of any that have no Date Taken (US-46), and for a desktop app setting, built with the app, that chooses whether they are flattened (US-45).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -32,7 +33,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 44 (30 Done, 2 Partly done, 12 Not started) |
+| User stories | 46 (30 Done, 2 Partly done, 14 Not started) |
 | Bugs | 32 (2 open, 30 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -223,7 +224,7 @@ As a photo owner, I want the PNG left behind by a conversion removed, and empty 
 </details>
 
 <details>
-<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30)</summary>
+<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46)</summary>
 
 Move ads and broken files out of the way, and delete files that hold no picture or recording.
 
@@ -232,7 +233,8 @@ As a media owner, I want ad and app-cache images and videos moved out of my medi
 
 - `--quarantine-ads` moves photos and videos with an ad-style name and no camera information into `_ads`. Examples of ad-style names: a UUID, `UnityAdsCache-<hash>`, `news_images%2F…`.
 - Camera information is EXIF Make/Model on a photo, or a device-make tag on a video. A file that has it is never treated as an ad.
-- Run on the folder that holds the year folders (`E:\Pictures`), an ad in a year folder goes into that year's own `_ads` (`2022\_ads`), keeping the rest of its path. Only ads in other folders, or loose in the root, go into the root's `_ads`. Ads already in an `_ads` folder at any depth are not moved again (BUG-31), and the other steps leave a year's own `_ads` alone (BUG-32).
+- Run on the folder that holds the year folders (`E:\Pictures`), an ad in a year folder goes into that year's own `_ads` (`2022\_ads`). Only ads in other folders, or loose in the root, go into the root's `_ads`. Ads already in an `_ads` folder at any depth are not moved again (BUG-31), and the other steps leave a year's own `_ads` alone (BUG-32).
+- Ads go straight into `_ads`, with no subfolders (`2022\Temp\2022-02-14\ad.png` → `2022\_ads\ad.png`). A name already in `_ads` gets a `_<subfolder-name>` suffix (`ad_2022-02-14.png`); if that is taken too, the file stays where it is and is listed as a `COLLISION`.
 - Nothing is deleted. Without `--apply` it only previews.
 
 **Status:** Done
@@ -256,8 +258,8 @@ As a media owner, I want the game ads that phones save among my pictures recogni
 #### US-13 Set incomplete files aside
 As a media owner, I want failed copies moved out of the way, so that they stop showing up as photos or videos with no date.
 
-- `--move-incomplete` moves files that are 0 bytes or all null bytes, and videos with no video header, into `_incomplete`, keeping their subfolder path.
-- Files in the older `_no-image-data` folder are folded into `_incomplete`.
+- `--move-incomplete` moves files that are 0 bytes or all null bytes, and videos with no video header, straight into `_incomplete`, with no subfolders. A name already there gets a `_<subfolder-name>` suffix (`clip_2020-01-02.mp4`); if that is taken too, the file stays where it is and is listed as a `COLLISION`.
+- Files in the older `_no-image-data` folder are folded into `_incomplete`, flat.
 - Nothing is deleted. Without `--apply` it only previews.
 
 **Status:** Done
@@ -265,15 +267,29 @@ As a media owner, I want failed copies moved out of the way, so that they stop s
 #### US-14 Set leftover sidecar files aside
 As a media owner, I want files that hold no picture or recording moved out of my media folders, but not deleted, so that they don't clutter the folders and I can still get one back.
 
-- `--move-junk` moves `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, and macOS `._` sidecars into `_junk`, keeping their subfolder path. Nothing is deleted (BUG-27).
+- `--move-junk` moves `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, and macOS `._` sidecars straight into `_junk`, with no subfolders. Nothing is deleted (BUG-27).
 - A `._` file is treated as junk only when its contents carry the AppleDouble signature.
 - Thumbnail caches are matched by whole file name only, so `west sucking thumb.jpg` is safe.
-- A path already taken in `_junk` is a `COLLISION`, and the file stays where it is.
+- A name already taken in `_junk` (every folder's `Thumbs.db`, say) gets a `_<subfolder-name>` suffix (`Thumbs_2020-01-02.db`), in the preview too. If that is taken as well, it is a `COLLISION`, and the file stays where it is.
 - `--flatten` moves Sony `.modd`/`.moff` sidecars whose file is gone into `_junk` too.
 - The final check reports what is still in `_junk` (`IN JUNK`). `--delete-junk` still works as the old name of the flag, and moves too.
 - Without `--apply` it only lists the files.
 
 **Status:** Done
+
+#### US-46 Keep the folder's date on undated files that are set aside
+As a media owner, I want an ad or incomplete file with no Date Taken to carry its folder's date in its name when it is moved into `_ads` or `_incomplete`, so that flattening does not lose the only date it had.
+
+- When `--quarantine-ads` or `--move-incomplete` moves a photo or video with no Date Taken (Media Created for a video), the date from the nearest folder above it whose name holds a full date (`2018-08-19`, `7-17-2014`) is appended to its name: `2018-08-19\clip.mp4` becomes `_incomplete\clip_2018-08-19.mp4`.
+- A file with a Date Taken keeps its name.
+- A name that already holds a date keeps its name.
+- A file with no Date Taken and no dated folder above it keeps its name.
+- A name still taken in the holding folder is a `COLLISION`, and the file stays where it is.
+- Junk (`.AAE`, `Thumbs.db`, `._` sidecars) is not a photo or video and has no Date Taken, so it keeps its name, with the `_<subfolder-name>` suffix only on a clash (US-14).
+- The preview lists every new name before anything moves.
+- Tests cover an undated file in a dated folder, a dated file, a name that already holds a date, an undated file with no dated folder, and a name clash.
+
+**Status:** Not started
 
 </details>
 
@@ -465,7 +481,7 @@ As a maintainer, I want the README, cheat sheet, skills and this file updated wi
 </details>
 
 <details>
-<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43)</summary>
+<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43, US-45)</summary>
 
 Run every step from a window with buttons, checkboxes and settings instead of typing commands. The app runs the existing scripts on this computer, with the same preview-first rules, so it adds no new way to lose a file. Requested by Michele Kummer on 2026-10-26; nothing is built yet.
 
@@ -653,6 +669,19 @@ As a maintainer, I want tests for the app, so that a change cannot quietly break
 - Each theme's colors are checked to reach the contrast ratios in US-41.
 - An automated accessibility check (axe-core) reports no Level A failures in either theme.
 - `docs/` has a keyboard and screen reader checklist, run by hand before each release.
+
+**Status:** Not started
+
+#### US-45 Choose whether set-aside files are flattened
+As a media owner, I want a setting that chooses whether ads, incomplete files and junk are flattened once they are set aside, so that I can keep their subfolders when I want to see where each one came from.
+
+- The **Project** panel (US-33) has a **Flatten set-aside files** checkbox, ticked by default. It applies to **Set ads aside**, **Set incomplete files aside** and **Set junk aside**, alone or in a full run, and to the sidecars **Flatten** moves into `_junk`.
+- Ticked: each file goes straight into `_ads`, `_incomplete` or `_junk`, with no subfolders, as the script does today (US-12 to US-14), with the folder's date added to undated names (US-46).
+- Unticked: each file keeps its subfolder path inside the holding folder (`_incomplete\2018-08-19\clip.mp4`), and no name is changed.
+- `organize.py` gets a flag that keeps subfolder paths, added when the app is built. The **Command** line under each button (US-37) shows it.
+- The tooltip (US-39) explains both choices with an example.
+- The setting is saved with the project's other settings, and **Reset to defaults** ticks it again.
+- Tests cover a ticked and an unticked run of each of the three steps.
 
 **Status:** Not started
 

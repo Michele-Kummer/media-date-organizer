@@ -163,7 +163,7 @@ Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 These hold for every step, whichever way you run it:
 
 - **Preview by default.** Every step that changes files only lists what it would do (`WOULD MOVE`, `WOULD WRITE`, ...) until you add `--apply` (`-Apply` for the PowerShell cleanup script). In Claude Code, Claude shows you the preview and asks before applying.
-- **Moved aside, not deleted.** Ads go to `_ads`, junk to `_junk`, broken copies to `_incomplete` and empty folders to `_empty_folders`, each keeping its subfolder path. Every step skips these folders. Deleting them is your call, once you have looked through them.
+- **Moved aside, not deleted.** Ads go to `_ads`, junk to `_junk` and broken copies to `_incomplete`, all flat (no subfolders; a name clash gets a `_<subfolder-name>` suffix). Empty folders go to `_empty_folders`, keeping their path. Every step skips these folders. Deleting them is your call, once you have looked through them.
 - **One step deletes, and it checks first.** Only "Clean up converted files" deletes. It removes a PNG or BMP only when a JPEG of the same name sits beside it with the same picture size and pixels no more than 1% apart. A Live Photo video, a sidecar, or a HEIC next to a JPG is always kept.
 - **Nothing is overwritten.** When a file's new name or new folder is already taken, it is reported as a `COLLISION` and stays where it is. `--flatten` gives it a `_<date taken>` suffix instead.
 - **Nothing leaves the folder.** Files are only renamed or moved inside the folder you give.

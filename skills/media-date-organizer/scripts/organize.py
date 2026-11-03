@@ -26,8 +26,11 @@ and a summary of every phase's counts and problems is printed at the end):
                         ehthumbs.db, ehthumbs_vista.db; matched by whole
                         name, so photos with "thumb" in the name are safe)
                         and every .AAE file in the root folder and every
-                        subfolder into a "_junk" folder inside the root,
-                        keeping their subfolder path. AAE files are the
+                        subfolder straight into a "_junk" folder inside the
+                        root, with no subfolders (a name already there gets
+                        a _<subfolder-name> suffix: Thumbs_2020-01-01.db;
+                        if that is taken too, the file stays and is listed
+                        as a COLLISION). AAE files are the
                         edit-instruction sidecars iPhones export next to a
                         photo; they hold no image and nothing on Windows
                         reads them. Also moves macOS "._" sidecars
@@ -203,12 +206,14 @@ and a summary of every phase's counts and problems is printed at the end):
                         (2014/media_audit_2026-10-07.xlsx becomes
                         2014_videos_media_audit_2026-10-07.xlsx). Nothing
                         else is moved, renamed or deleted.
-    --quarantine-ads    Move ad images and videos into an _ads folder inside
-                        the root, keeping their subfolder path, for the user to
-                        review and delete. Given the folder that holds the
-                        year folders (--root E:\\Pictures), an ad in a year
-                        folder goes into that year's own _ads instead
-                        (2022/Temp/ad.png -> 2022/_ads/Temp/ad.png). Each move
+    --quarantine-ads    Move ad images and videos straight into an _ads folder
+                        inside the root, with no subfolders, for the user to
+                        review and delete (a name clash gets a
+                        _<subfolder-name> suffix, as in _junk). Given the
+                        folder that holds the year folders (--root
+                        E:\\Pictures), an ad in a year folder goes into that
+                        year's own _ads instead
+                        (2022/Temp/ad.png -> 2022/_ads/ad.png). Each move
                         is listed as <from> -> <to>. Ads already in an _ads
                         folder at any depth are not moved again. A file is an
                         ad only if BOTH hold:
@@ -232,16 +237,17 @@ and a summary of every phase's counts and problems is printed at the end):
                         a device-make tag for a video). Name matches that do
                         have camera info are kept and listed. Looks in the root
                         folder and every subfolder. Nothing is deleted.
-    --move-incomplete   Move incomplete media files into an "_incomplete"
-                        folder inside the root, keeping their subfolder path
-                        (so each stays in its dated folder). A file is
+    --move-incomplete   Move incomplete media files straight into an
+                        "_incomplete" folder inside the root, with no
+                        subfolders (a name clash gets a _<subfolder-name>
+                        suffix, as in _junk). A file is
                         incomplete if it is 0 bytes, nothing but null bytes,
                         or a video with no video header (a stub or truncated
                         copy that no player can open): the remains of a
                         failed copy or transfer. Looks in the root folder and
                         every subfolder. Nothing is deleted. An existing
                         "_no-image-data" folder from earlier versions is
-                        folded into "_incomplete". --flatten leaves the
+                        folded into "_incomplete", flat. --flatten leaves the
                         folder alone. --move-no-data is the old name for this
                         flag and still works.
 
@@ -580,8 +586,8 @@ LEGACY_NO_DATA_DIR = '_no-image-data'
 EMPTY_FOLDERS_DIR = '_empty_folders'
 
 # Folder inside root that --move-junk (and --flatten, for Sony sidecars whose
-# file is gone) moves junk files into, keeping their path, instead of
-# deleting them. Every phase ignores it.
+# file is gone) moves junk files straight into, with no subfolders, instead
+# of deleting them. Every phase ignores it.
 JUNK_DIR = '_junk'
 
 HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR)
@@ -591,6 +597,27 @@ def _prune_holding(dirs: list) -> None:
     """Stop an os.walk from descending into the holding folders, at any
     depth: --quarantine-ads gives each year folder its own (2022/_ads)."""
     dirs[:] = [d for d in dirs if d not in HOLDING_DIRS]
+
+
+def _flat_dest(holding: str, rel: str, claimed: set) -> Optional[str]:
+    """Where a file at rel (relative to the folder it was found under) goes
+    in the holding folder (_ads, _incomplete, _junk): straight into it, not
+    into a copy of its subfolder path. A name already there, or claimed
+    earlier in this run, gets a _<subfolder-name> suffix, as --flatten gives
+    ads (2020-01-01/Thumbs.db -> Thumbs_2020-01-01.db). Returns None when
+    that is taken too, or the file had no subfolder to name it after."""
+    name = os.path.basename(rel)
+    folder = os.path.basename(os.path.dirname(rel))
+    candidates = [name]
+    if folder:
+        p = pathlib.Path(name)
+        candidates.append(f"{p.stem}_{folder}{p.suffix}")
+    for n in candidates:
+        dst = os.path.join(holding, n)
+        if dst.lower() not in claimed and not os.path.lexists(dst):
+            claimed.add(dst.lower())
+            return dst
+    return None
 
 
 # AVCHD camcorder video, and the older MPEG, Windows Media and AVI video that
@@ -1525,8 +1552,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
         if not in_ads:
             root_names = taken
         if in_ads:
-            # Ads sit at any depth: --quarantine-ads keeps their subfolder path
-            # (_ads/Temp/2020-01-06), and a game's .raw dumps are ads too
+            # Ads sit at any depth: older versions of --quarantine-ads kept
+            # their subfolder path (_ads/Temp/2020-01-06), and a game's .raw
+            # dumps are ads too
             files = _iter_ads(base, MEDIA_EXTS | {'.raw'})
         else:
             files = iter_media(base, MEDIA_EXTS | set(CAMCORDER_EXTS))
@@ -1620,6 +1648,7 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     # in root and its subfolders whose file is not there into _junk
     # (not in _ads, which a run on its parent leaves alone too)
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    claimed = set()
     subfolders = sorted(d for d in os.listdir(root)
                         if os.path.isdir(os.path.join(root, d)) and d not in HOLDING_DIRS)
     for folder in ([] if ads_root else [''] + subfolders):
@@ -1632,13 +1661,14 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             if os.path.exists(os.path.join(fp, p.stem)):
                 continue
             rel = f"{folder}/{name}" if folder else name
-            if not _move_to_junk(root, full, counts, dry_run):
+            dst = _move_to_junk(root, full, counts, dry_run, claimed)
+            if dst is None:
                 continue
             gone.add(full)
             counts['orphan-sidecars-moved'] += 1
-            print(f"{verb} (sidecar with no file): {rel} -> {JUNK_DIR}/{rel}")
+            print(f"{verb} (sidecar with no file): {rel} -> {dst.replace(os.sep, '/')}")
 
-    # Incomplete files stay in their dated folders: the name is their only date
+    # The other holding folders are for the user to look over, not flatten
     kept = tuple(os.path.join(root, d) + os.sep
                  for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR))
     empty = []
@@ -2072,15 +2102,16 @@ def _is_camera_raw(path: str) -> bool:
 
 
 def quarantine_ads(root: str, dry_run: bool = False) -> dict:
-    """Move ad images and videos from root and every subfolder into root/_ads,
-    keeping their relative path. A file is an ad only if its name matches AND
-    it has no camera info (EXIF Make/Model for a photo, a device-make tag for
-    a video); name matches with camera info are kept and listed. Given the
+    """Move ad images and videos from root and every subfolder straight into
+    root/_ads, flat (see _flat_dest). A file is an ad only if its name matches
+    AND it has no camera info (EXIF Make/Model for a photo, a device-make tag
+    for a video); name matches with camera info are kept and listed. Given the
     folder that holds the year folders (E:\\Pictures), an ad in a year folder
-    goes into that year's own _ads (2022/Temp/ad.png -> 2022/_ads/Temp/ad.png),
+    goes into that year's own _ads (2022/Temp/ad.png -> 2022/_ads/ad.png),
     not one _ads for every year.
     Emptied folders are left for --flatten or the cleanup script."""
     counts = Counter()
+    claimed = set()
     if not HAS_PIL:
         # Without Pillow the camera check cannot run, and name alone is not enough
         print('Pillow required to check for camera info; pip install "pillow>=10.0"', file=sys.stderr)
@@ -2113,10 +2144,10 @@ def quarantine_ads(root: str, dry_run: bool = False) -> dict:
                 continue
             year, _, rest = rel.partition(os.sep)
             if rest and year in years:
-                dst = os.path.join(root, year, QUARANTINE_DIR, rest)
+                dst = _flat_dest(os.path.join(root, year, QUARANTINE_DIR), rest, claimed)
             else:
-                dst = os.path.join(root, QUARANTINE_DIR, rel)
-            if os.path.exists(dst):
+                dst = _flat_dest(os.path.join(root, QUARANTINE_DIR), rel, claimed)
+            if dst is None:
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {rel}", file=sys.stderr)
                 continue
@@ -2163,9 +2194,9 @@ def _incomplete_kind(path: str) -> Optional[str]:
     return 'null-filled' if _has_no_data(path) else None
 
 
-def _fold_legacy_no_data(root: str, dry_run: bool, counts: Counter) -> None:
-    """Move what an earlier version put in root/_no-image-data into
-    root/_incomplete, keeping relative paths."""
+def _fold_legacy_no_data(root: str, dry_run: bool, counts: Counter, claimed: set) -> None:
+    """Move what an earlier version put in root/_no-image-data straight into
+    root/_incomplete, flat (see _flat_dest)."""
     legacy = os.path.join(root, LEGACY_NO_DATA_DIR)
     if not os.path.isdir(legacy):
         return
@@ -2174,8 +2205,8 @@ def _fold_legacy_no_data(root: str, dry_run: bool, counts: Counter) -> None:
         for name in sorted(files):
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, legacy)
-            dst = os.path.join(root, INCOMPLETE_DIR, rel)
-            if os.path.exists(dst):
+            dst = _flat_dest(os.path.join(root, INCOMPLETE_DIR), rel, claimed)
+            if dst is None:
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {LEGACY_NO_DATA_DIR}{os.sep}{rel}", file=sys.stderr)
                 continue
@@ -2197,12 +2228,12 @@ def _fold_legacy_no_data(root: str, dry_run: bool, counts: Counter) -> None:
 
 def move_incomplete(root: str, dry_run: bool = False) -> dict:
     """Move incomplete media files (see _incomplete_kind) from root and every
-    subfolder into root/_incomplete, keeping their relative path (the dated
-    folder name may be the only record of when they were taken). Emptied
+    subfolder straight into root/_incomplete, flat (see _flat_dest). Emptied
     folders are left for --flatten or the cleanup script."""
     counts = Counter()
+    claimed = set()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
-    _fold_legacy_no_data(root, dry_run, counts)
+    _fold_legacy_no_data(root, dry_run, counts, claimed)
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(dirs)
         dirs.sort()
@@ -2219,8 +2250,8 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
                 continue
             if kind is None:
                 continue
-            dst = os.path.join(root, INCOMPLETE_DIR, rel)
-            if os.path.exists(dst):
+            dst = _flat_dest(os.path.join(root, INCOMPLETE_DIR), rel, claimed)
+            if dst is None:
                 counts['collision'] += 1
                 print(f"COLLISION, skipping: {rel}", file=sys.stderr)
                 continue
@@ -2233,7 +2264,7 @@ def move_incomplete(root: str, dry_run: bool = False) -> dict:
                     print(f"FAILED {rel}: {e}", file=sys.stderr)
                     continue
             counts['moved-' + kind] += 1
-            print(f"{verb} ({kind}): {rel}")
+            print(f"{verb} ({kind}): {rel} -> {os.path.relpath(dst, root)}")
     return dict(counts)
 
 
@@ -2396,17 +2427,18 @@ def _is_appledouble(full: str) -> bool:
         return False
 
 
-def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool) -> bool:
-    """Move full into root/_junk at its path relative to root, so the user
-    can look it over and delete it. Never overwrites: a path already taken
-    in _junk is reported as a COLLISION and the file stays. Returns True if
-    the file was (or, in a dry run, would be) moved."""
+def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool, claimed: set) -> Optional[str]:
+    """Move full straight into root/_junk, flat (see _flat_dest), so the user
+    can look it over and delete it. Never overwrites: when both names are
+    taken in _junk it is reported as a COLLISION and the file stays. Returns
+    the path in _junk relative to root if the file was (or, in a dry run,
+    would be) moved, else None."""
     rel = os.path.relpath(full, root)
-    dst = os.path.join(root, JUNK_DIR, rel)
-    if os.path.lexists(dst):
+    dst = _flat_dest(os.path.join(root, JUNK_DIR), rel, claimed)
+    if dst is None:
         counts['collision'] += 1
-        print(f"COLLISION, skipping: {rel} ({JUNK_DIR}/{rel.replace(os.sep, '/')} exists)", file=sys.stderr)
-        return False
+        print(f"COLLISION, skipping: {rel} (its name is taken in {JUNK_DIR})", file=sys.stderr)
+        return None
     if not dry_run:
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -2418,17 +2450,18 @@ def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool) -> bool:
             except OSError as e:
                 counts['failed'] += 1
                 print(f"FAILED {rel}: {e}", file=sys.stderr)
-                return False
-    return True
+                return None
+    return os.path.relpath(dst, root)
 
 
 def move_junk(root: str, dry_run: bool = False) -> dict:
     """Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache
-    (Thumbs.db) and macOS "._" sidecar in root and every subfolder into
-    root/_junk, keeping its path. Nothing is deleted: the user looks over
-    _junk and deletes it. Emptied folders are left for --flatten or the
-    cleanup script."""
+    (Thumbs.db) and macOS "._" sidecar in root and every subfolder straight
+    into root/_junk, flat. Nothing is deleted: the user looks over _junk and
+    deletes it. Emptied folders are left for --flatten or the cleanup
+    script."""
     counts = Counter()
+    claimed = set()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(dirs)
@@ -2444,11 +2477,11 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
                 kind, label = 'moved-thumbs', 'thumbnail cache'
             else:
                 continue
-            if not _move_to_junk(root, full, counts, dry_run):
+            dst = _move_to_junk(root, full, counts, dry_run, claimed)
+            if dst is None:
                 continue
             counts[kind] += 1
-            rel = os.path.relpath(full, root)
-            print(f"{verb} ({label}): {rel} -> {os.path.join(JUNK_DIR, rel)}")
+            print(f"{verb} ({label}): {os.path.relpath(full, root)} -> {dst}")
     return dict(counts)
 
 
@@ -2748,10 +2781,10 @@ def main(argv=None):
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')
     ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, _incomplete and _junk, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
-    ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder into an _ads folder for review. Nothing is deleted.')
-    ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder into an _incomplete folder, keeping their subfolder path. Nothing is deleted.')
+    ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder straight into an _ads folder, with no subfolders, for review. Nothing is deleted.')
+    ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
     ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
-    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder into a _junk folder, keeping their subfolder path, for you to look over and delete. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
+    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
     ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
     ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')

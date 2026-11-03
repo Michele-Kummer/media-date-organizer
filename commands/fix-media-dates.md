@@ -32,7 +32,7 @@ pip install "pillow>=10.0" "openpyxl>=3.1"
 
 2. **Audit dates.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --audit`. Writes the audit workbook, `<folder name>_<photos|videos>_media_audit_<date>.xlsx`. Changes no photo or video. Share the summary.
 
-3. **Set junk aside.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --move-junk`. Moves `.AAE` iPhone edit files, `Thumbs.db` thumbnail caches and macOS `._` sidecars into `<folder>/_junk`, keeping their subfolder path. Nothing is deleted; the user looks over `_junk` and deletes it.
+3. **Set junk aside.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --move-junk`. Moves `.AAE` iPhone edit files, `Thumbs.db` thumbnail caches and macOS `._` sidecars straight into `<folder>/_junk`, with no subfolders (a name clash gets a `_<subfolder-name>` suffix). Nothing is deleted; the user looks over `_junk` and deletes it.
 
 4. **Set incomplete files aside.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --move-incomplete`. Moves 0-byte files, files of nothing but null bytes, and videos with no video header into `<folder>/_incomplete`, keeping their dated subfolder. Nothing is deleted.
 

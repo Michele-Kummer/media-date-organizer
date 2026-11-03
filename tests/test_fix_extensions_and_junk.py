@@ -113,12 +113,12 @@ class MoveJunkTests(unittest.TestCase):
         (self.day / 'Thumbs.db').write_bytes(b'\0cache')
         (self.day / '._IMG_1.JPG').write_bytes(organize.APPLEDOUBLE_MAGIC + b'\x00' * 60)
 
-    def test_moves_junk_into_junk_keeping_its_path_and_deletes_nothing(self):
+    def test_moves_junk_straight_into_junk_and_deletes_nothing(self):
         self.build()
         code, out = run(self.root, '--move-junk', '--apply')
         self.assertEqual(code, 0, out)
         self.assertEqual(names(self.day), ['img_1.jpg'])
-        junk = self.root / '_junk' / '2020-01-01' / 'Trip'
+        junk = self.root / '_junk'
         self.assertEqual(names(junk), ['._img_1.jpg', 'img_1.aae', 'thumbs.db'])
         self.assertEqual((junk / 'IMG_1.AAE').read_text(), '<plist/>')
         self.assertIn('MOVED (AAE): ', out)
@@ -127,27 +127,68 @@ class MoveJunkTests(unittest.TestCase):
         self.build()
         code, out = run(self.root, '--delete-junk', '--apply')
         self.assertEqual(code, 0, out)
-        self.assertIn('img_1.aae', names(self.root / '_junk' / '2020-01-01' / 'Trip'))
+        self.assertIn('img_1.aae', names(self.root / '_junk'))
         self.assertNotIn('DELETED', out)
 
-    def test_never_overwrites_a_file_already_in_junk(self):
+    def test_a_name_taken_in_junk_gets_its_subfolder_name(self):
         self.build()
-        old = self.root / '_junk' / '2020-01-01' / 'Trip' / 'IMG_1.AAE'
+        old = self.root / '_junk' / 'IMG_1.AAE'
         old.parent.mkdir(parents=True)
         old.write_text('kept from last time')
 
         code, out = run(self.root, '--move-junk', '--apply')
         self.assertEqual(code, 0, out)
-        self.assertIn('COLLISION, skipping', out)
         self.assertEqual(old.read_text(), 'kept from last time')
+        self.assertEqual((self.root / '_junk' / 'IMG_1_Trip.AAE').read_text(), '<plist/>')
+        self.assertNotIn('img_1.aae', names(self.day))
+
+    def test_never_overwrites_a_file_already_in_junk(self):
+        self.build()
+        junk = self.root / '_junk'
+        junk.mkdir()
+        for name in ('IMG_1.AAE', 'IMG_1_Trip.AAE'):
+            (junk / name).write_text('kept from last time')
+
+        code, out = run(self.root, '--move-junk', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertIn('COLLISION, skipping', out)
+        for name in ('IMG_1.AAE', 'IMG_1_Trip.AAE'):
+            self.assertEqual((junk / name).read_text(), 'kept from last time')
         self.assertIn('img_1.aae', names(self.day))
+
+    def test_every_folders_thumbnail_cache_gets_its_own_name(self):
+        for day in ('2020-01-01', '2020-01-02'):
+            (self.root / day).mkdir(parents=True)
+            (self.root / day / 'Thumbs.db').write_bytes(b'cache')
+
+        code, out = run(self.root, '--move-junk')
+        self.assertEqual(code, 0, out)
+        # The dry run already tells the two apart
+        self.assertIn('-> _junk' + os.sep + 'Thumbs.db', out)
+        self.assertIn('-> _junk' + os.sep + 'Thumbs_2020-01-02.db', out)
+
+        code, out = run(self.root, '--move-junk', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.root / '_junk'), ['thumbs.db', 'thumbs_2020-01-02.db'])
+
+    def test_incomplete_files_and_ads_go_straight_into_their_folder(self):
+        ad = '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg'
+        for day in ('2020-01-01', '2020-01-02'):
+            (self.root / 'Trip' / day).mkdir(parents=True)
+            (self.root / 'Trip' / day / 'clip.mp4').write_bytes(b'')
+            make_image(self.root / 'Trip' / day / ad)
+
+        code, out = run(self.root, '--move-incomplete', '--quarantine-ads', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.root / '_incomplete'), ['clip.mp4', 'clip_2020-01-02.mp4'])
+        self.assertEqual(names(self.root / '_ads'), sorted([ad, ad.replace('.jpg', '_2020-01-02.jpg')]))
 
     def test_a_read_only_thumbnail_cache_is_moved(self):
         self.build()
         os.chmod(self.day / 'Thumbs.db', 0o444)
         code, out = run(self.root, '--move-junk', '--apply')
         self.assertEqual(code, 0, out)
-        self.assertIn('thumbs.db', names(self.root / '_junk' / '2020-01-01' / 'Trip'))
+        self.assertIn('thumbs.db', names(self.root / '_junk'))
 
     def test_flatten_moves_orphan_sony_sidecars_into_junk(self):
         sub = self.root / '2014-07-17'
@@ -156,7 +197,7 @@ class MoveJunkTests(unittest.TestCase):
 
         code, out = run(self.root, '--flatten', '--apply')
         self.assertEqual(code, 0, out)
-        self.assertEqual(names(self.root / '_junk' / '2014-07-17'), ['gone.mts.modd'])
+        self.assertEqual(names(self.root / '_junk'), ['gone.mts.modd'])
         self.assertIn('"orphan-sidecars-moved": 1', out)
 
     def test_final_check_reports_what_is_in_junk(self):

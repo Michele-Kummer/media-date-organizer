@@ -11,8 +11,6 @@ py skills\media-date-organizer\scripts\organize.py --root $root --audit
 py skills\media-date-organizer\scripts\organize.py --root $root --all
 py skills\media-date-organizer\scripts\organize.py --root $root --all --apply
 
-.\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path $root
-.\skills\media-date-organizer\scripts\Fix-Extensions.ps1 -Path $root -Apply
 
 py skills\media-date-organizer\scripts\organize.py --root $root --fix-extensions
 py skills\media-date-organizer\scripts\organize.py --root $root --fix-extensions --apply
@@ -39,6 +37,7 @@ py skills\media-date-organizer\scripts\organize.py --root $root --sync-timestamp
 py skills\media-date-organizer\scripts\organize.py --root $root --sync-timestamps --apply
 py skills\media-date-organizer\scripts\organize.py --root $root --apply-moves
 py skills\media-date-organizer\scripts\organize.py --root $root --apply-moves --apply
+py skills\media-date-organizer\scripts\organize.py --root "D:\Pictures\Your Folder" --flatten
 py skills\media-date-organizer\scripts\organize.py --root $root --flatten
 py skills\media-date-organizer\scripts\organize.py --root $root --flatten --apply
 py skills\media-date-organizer\scripts\organize.py --root $root --visual-compare
