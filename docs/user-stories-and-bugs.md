@@ -776,7 +776,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-30 | `--flatten` left ads in a year folder inside `_ads` | Photos and videos (ads) | Medium | Michele Kummer | `8b96016` |
 | BUG-31 | `--quarantine-ads` put every year's ads in one `_ads` | Photos and videos (ads) | Medium | Michele Kummer | `8b96016` |
 | BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | `8b96016` |
-| BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | Not yet committed |
+| BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -964,7 +964,7 @@ After the fix for BUG-31, a run of `--quarantine-ads` on `E:\Pictures` puts ads 
 **Fix:** `organize.py` and `Cleanup-Pictures.ps1` now skip holding folders at any depth, and the `--quarantine-ads` help text describes the per-year `_ads`. A test in `tests/test_smoke.py` runs `--all --apply` on a root with an ad in `2022\_ads` and junk in `2022\_junk` and checks both are left alone and the ad stays undated. A test in `tests/test_bmp_and_ads.py` checks that `Cleanup-Pictures.ps1` leaves a converted BMP in `2022\_ads` alone.
 
 #### BUG-33 Phone thumbnails were dated and flattened in among the photos
-**Found by:** Michele Kummer · **Affects:** photos (phone thumbnails) · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos (phone thumbnails) · **Fixed in:** `a8db9d2`
 
 An import from a phone brought along its gallery's thumbnail cache: 2,520 small JPEGs named only by a number (`46.jpg`, `1020.jpg`), put loose in the import's `2026-11-02` folder. They have no camera info and no Date Taken, so `--fill-blanks` gave each one the folder's date at 12:00:00, and `--flatten` then moved them up into `Pictures\2026` beside the real photos. With an earlier import there were 4,048 in all. They are not byte-for-byte copies, so the duplicate finder could not catch them, and comparing them with both photo libraries showed that some are the only copy left of a photo, so they could not simply go to `_junk`.
 **Fix:** `--move-junk` recognises a phone thumbnail (`is_phone_thumbnail`: a JPEG named only by a number, at most 1024 pixels on its long side, with no camera Make or Model) and moves it into a new `_thumbnails` holding folder, which every step skips and the final check reports (`IN THUMBNAILS`). `Cleanup-Pictures.ps1` skips it too. On the real files it caught 4,005 of the 4,014 thumbnails and none of the photos. `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` covers the check, the move, name clashes, `--all` setting them aside before they get a date, and the final check.

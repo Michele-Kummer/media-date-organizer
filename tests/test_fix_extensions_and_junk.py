@@ -250,7 +250,7 @@ def make_thumbnail(path, size=(384, 512), camera=None):
 
 
 class PhoneThumbnailTests(unittest.TestCase):
-    """BUG-48: a phone's gallery thumbnails, imported loose in a dated folder,
+    """BUG-33: a phone's gallery thumbnails, imported loose in a dated folder,
     were given the folder's date and flattened in among the photos."""
 
     def setUp(self):
