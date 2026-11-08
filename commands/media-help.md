@@ -39,7 +39,7 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
-| Set aside AAE, Thumbs.db and Mac `._` files | `Move the junk files in D:\Pictures\2026` |
+| Set aside AAE, Thumbs.db, Mac `._` files and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
 | Set aside broken or empty files | `Move the incomplete files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |
@@ -50,6 +50,6 @@ Show the user the list below as it is, then ask which one they want to do and fo
 - `/fix-media-dates` and `/flatten-media` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
 - The plain-language steps are previewed first too, and Claude asks before going ahead.
 - `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, moving to date folders, flatten, BMP conversion and cleanup unless you ask for them.
-- Ads, junk, incomplete files and empty folders are moved into `_ads`, `_junk`, `_incomplete` and `_empty_folders`, not deleted. The only step that deletes is cleaning up converted files, and Claude asks first.
+- Ads, junk, phone thumbnails, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_incomplete` and `_empty_folders`, not deleted. The only step that deletes is cleaning up converted files, and Claude asks first.
 - Each folder gets an audit spreadsheet (`.xlsx`) recording everything that was done.
 - First time? Try it on a small folder, or a copy of one.

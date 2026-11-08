@@ -39,6 +39,13 @@ and a summary of every phase's counts and problems is printed at the end):
                         only treated as one when its contents carry the
                         AppleDouble signature as well as the name. Nothing
                         is deleted: look over _junk and delete it yourself.
+                        Phone gallery thumbnails (a JPEG named only by a
+                        number, such as 1234.jpg, at most 1024 pixels on its
+                        long side, with no camera Make or Model) go straight
+                        into a "_thumbnails" folder instead: an import can
+                        bring a phone's thumbnail cache along, and a
+                        thumbnail may be the only copy left of a photo, so
+                        compare them with your photos before deleting any.
                         --delete-junk is the old name for this flag and still
                         works (it moves too).
     --audit             Audit dates: scan and write audit XLSX; make no
@@ -190,7 +197,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         reports what the other phases left behind: files
                         still in an _ads folder (IN ADS), files still in an
                         _incomplete folder (INCOMPLETE), files still in a
-                        _junk folder (IN JUNK), photos among videos
+                        _junk folder (IN JUNK), phone thumbnails still in a
+                        _thumbnails folder (IN THUMBNAILS), photos among videos
                         or videos among photos (as --opposite-type lists
                         them), subfolders still there after --flatten (NOT
                         FLATTENED, with how many files each holds), name
@@ -597,7 +605,13 @@ EMPTY_FOLDERS_DIR = '_empty_folders'
 # of deleting them. Every phase ignores it.
 JUNK_DIR = '_junk'
 
-HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR)
+# Folder inside root that --move-junk moves phone gallery thumbnails into,
+# with no subfolders. Kept apart from _junk: a thumbnail can be the only copy
+# left of a photo deleted from the phone. Every phase ignores it.
+THUMBNAILS_DIR = '_thumbnails'
+
+HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR,
+                THUMBNAILS_DIR)
 
 
 def _prune_holding(dirs: list) -> None:
@@ -1688,7 +1702,7 @@ def flatten(root: str, dry_run: bool = False) -> dict:
 
     # The other holding folders are for the user to look over, not flatten
     kept = tuple(os.path.join(root, d) + os.sep
-                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR))
+                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR, THUMBNAILS_DIR))
     empty = []
     for dirpath, _dirs, _files in os.walk(root, topdown=False):
         if dirpath in (root, ads) or (dirpath + os.sep).startswith(kept):
@@ -1926,7 +1940,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
     tops = _year_folders(root)
     found, major, minor = _media_by_kind(root, tops)
     opposite = f'{minor}s-in-{major}-folders'
-    counts = Counter({'ads-files': 0, 'incomplete-files': 0, 'junk-files': 0, opposite: 0,
+    counts = Counter({'ads-files': 0, 'incomplete-files': 0, 'junk-files': 0, 'thumbnail-files': 0, opposite: 0,
                       'folders-not-flattened': 0, 'collisions': 0, 'collisions-identical': 0,
                       'collisions-different': 0, 'audit-files': 0,
                       'year-folders': len(tops), 'year-folders-with-oddities': 0})
@@ -1982,7 +1996,8 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
                 if not n:
                     continue
                 key, tag = {QUARANTINE_DIR: ('ads-files', 'IN ADS'),
-                            JUNK_DIR: ('junk-files', 'IN JUNK')}.get(d, ('incomplete-files', 'INCOMPLETE'))
+                            JUNK_DIR: ('junk-files', 'IN JUNK'),
+                            THUMBNAILS_DIR: ('thumbnail-files', 'IN THUMBNAILS')}.get(d, ('incomplete-files', 'INCOMPLETE'))
                 year[key] += n
                 rel = os.path.relpath(os.path.join(dirpath, d), root).replace(os.sep, '/')
                 print(f"{tag}: {rel} ({n:,} file(s))")
@@ -2019,7 +2034,9 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
         summary.append(
             f"{label}: {year['ads-files']:,} in _ads, {year['incomplete-files']:,} in _incomplete, "
             f"{year['junk-files']:,} in _junk, "
-            f"{year[opposite]:,} {minor}(s) among {major}s, "
+            # Only named when there are some, as few years have any
+            + (f"{year['thumbnail-files']:,} in _thumbnails, " if year['thumbnail-files'] else '')
+            + f"{year[opposite]:,} {minor}(s) among {major}s, "
             f"{year['folders-not-flattened']:,} folder(s) not flattened, "
             f"{year['collisions']:,} collision(s), "
             f"{year['audit-files']:,} audit file(s)" if any(year.values())
@@ -2028,7 +2045,8 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
         print(line)
     print(f"FINAL CHECK: {counts['ads-files']:,} in _ads, {counts['incomplete-files']:,} in _incomplete, "
           f"{counts['junk-files']:,} in _junk, "
-          f"{counts[opposite]:,} {minor}(s) among {major}s, "
+          + (f"{counts['thumbnail-files']:,} in _thumbnails, " if counts['thumbnail-files'] else '')
+          + f"{counts[opposite]:,} {minor}(s) among {major}s, "
           f"{counts['folders-not-flattened']:,} folder(s) not flattened, "
           f"{counts['collisions']:,} collision(s) "
           f"({counts['collisions-identical']:,} identical, {counts['collisions-different']:,} different), "
@@ -2059,6 +2077,12 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
 #   lbay6fy2_fftxeca_itehyhqsmpyyszx7      8, 7 and 16 lowercase letters and
 #                                          digits joined by _
 #   icon                                   an app's icon
+#   scribble2mammoth_over@2x               a kids' app button image: any
+#                                          name ending _over@2x
+#   glority_cache_1656951098314            a plant-ID app's cache: anything
+#                                          starting glority_cach
+#   2#xff0000ff#0#1, 32#xffa2defe          a number, #x + 8-digit ARGB colour,
+#                                          then optional #<number> parts
 # optionally followed by the _YYYY-MM-DD suffix --flatten or --apply-moves
 # adds, or a " (2)" copy marker.
 _AD_NAME_RE = re.compile(
@@ -2072,7 +2096,10 @@ _AD_NAME_RE = re.compile(
     r'|\d{4,7}-1\d{12}-[0-9a-z]{5}'
     r'|_*[0-9a-z-]+\.cloudfront\.net_.+'
     r'|(?=[0-9_]*[a-z])[0-9a-z]{8}_[0-9a-z]{7}_[0-9a-z]{16}'
-    r'|icon)'
+    r'|icon'
+    r'|.+_over@2x'
+    r'|glority_cach.*'
+    r'|\d+#x[0-9a-f]{8}(?:#\d+)*)'
     r'(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?',
     re.IGNORECASE)
 
@@ -2434,6 +2461,12 @@ def fix_extensions(root: str, dry_run: bool = False) -> dict:
 # names, not a pattern: "west sucking thumb.jpg" is a photo.
 THUMBS_NAMES = ('thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db')
 
+# Phone gallery thumbnails are named by number (1234.jpg) and are at most
+# 1024 pixels on the long side (most are 512 to 640); a real photo or
+# screenshot is larger
+PHONE_THUMB_MAX_EDGE = 1024
+_PHONE_THUMB_NAME_RE = re.compile(r'^\d{1,7}(?: \(\d+\))?$')
+
 # First four bytes of an AppleDouble file, the "._name" sidecar macOS writes
 # beside every file it copies to a non-Mac drive
 APPLEDOUBLE_MAGIC = b'\x00\x05\x16\x07'
@@ -2452,17 +2485,19 @@ def _is_appledouble(full: str) -> bool:
         return False
 
 
-def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool, claimed: set) -> Optional[str]:
-    """Move full straight into root/_junk, flat (see _flat_dest), so the user
-    can look it over and delete it. Never overwrites: when both names are
-    taken in _junk it is reported as a COLLISION and the file stays. Returns
-    the path in _junk relative to root if the file was (or, in a dry run,
-    would be) moved, else None."""
+def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool, claimed: set,
+                  holding: str = JUNK_DIR) -> Optional[str]:
+    """Move full straight into root/_junk (or the holding folder given),
+    flat (see _flat_dest), so the user can look it over and delete it. Never
+    overwrites: when both names are taken there it is reported as a
+    COLLISION and the file stays. Returns the path in the holding folder
+    relative to root if the file was (or, in a dry run, would be) moved,
+    else None."""
     rel = os.path.relpath(full, root)
-    dst = _flat_dest(os.path.join(root, JUNK_DIR), rel, claimed)
+    dst = _flat_dest(os.path.join(root, holding), rel, claimed)
     if dst is None:
         counts['collision'] += 1
-        print(f"COLLISION, skipping: {rel} (its name is taken in {JUNK_DIR})", file=sys.stderr)
+        print(f"COLLISION, skipping: {rel} (its name is taken in {holding})", file=sys.stderr)
         return None
     if not dry_run:
         try:
@@ -2479,20 +2514,42 @@ def _move_to_junk(root: str, full: str, counts: Counter, dry_run: bool, claimed:
     return os.path.relpath(dst, root)
 
 
+def is_phone_thumbnail(full: str) -> bool:
+    """True for a preview a phone's gallery made of a photo or video
+    (DCIM/.thumbnails/1234.jpg), which an import can bring along loose in a
+    dated folder: a JPEG named only by a number (a copy ending such as
+    " (2)" allowed), no larger than PHONE_THUMB_MAX_EDGE on its long side,
+    with no camera Make or Model. A Date Taken does not count against it,
+    since --fill-blanks may already have written the folder's date."""
+    p = pathlib.Path(full)
+    if p.suffix.lower() not in ('.jpg', '.jpeg') or not _PHONE_THUMB_NAME_RE.match(p.stem) or not HAS_PIL:
+        return False
+    try:
+        with Image.open(full) as img:
+            # Pillow calls a JPEG with a second picture inside it MPO
+            if img.format not in ('JPEG', 'MPO') or max(img.size) > PHONE_THUMB_MAX_EDGE:
+                return False
+    except Exception:
+        return False
+    return _camera(_pil_meta(full)) is None
+
+
 def move_junk(root: str, dry_run: bool = False) -> dict:
     """Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache
     (Thumbs.db) and macOS "._" sidecar in root and every subfolder straight
-    into root/_junk, flat. Nothing is deleted: the user looks over _junk and
-    deletes it. Emptied folders are left for --flatten or the cleanup
+    into root/_junk, flat, and every phone gallery thumbnail into
+    root/_thumbnails. Nothing is deleted: the user looks them over and
+    deletes them. Emptied folders are left for --flatten or the cleanup
     script."""
     counts = Counter()
-    claimed = set()
+    claimed = {JUNK_DIR: set(), THUMBNAILS_DIR: set()}
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(dirs)
         dirs.sort()
         for name in sorted(files):
             full = os.path.join(dirpath, name)
+            holding = JUNK_DIR
             # Checked first: "._IMG_0001.AAE" is a sidecar, not an AAE file
             if _is_appledouble(full):
                 kind, label = 'moved-mac-sidecars', 'Mac sidecar'
@@ -2500,9 +2557,11 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
                 kind, label = 'moved-aae', 'AAE'
             elif name.lower() in THUMBS_NAMES:
                 kind, label = 'moved-thumbs', 'thumbnail cache'
+            elif is_phone_thumbnail(full):
+                kind, label, holding = 'moved-phone-thumbnails', 'phone thumbnail', THUMBNAILS_DIR
             else:
                 continue
-            dst = _move_to_junk(root, full, counts, dry_run, claimed)
+            dst = _move_to_junk(root, full, counts, dry_run, claimed[holding], holding)
             if dst is None:
                 continue
             counts[kind] += 1
@@ -2809,7 +2868,7 @@ def main(argv=None):
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder straight into an _ads folder, with no subfolders, for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
     ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
-    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
+    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete, and every phone gallery thumbnail (1234.jpg, small, no camera info) into a _thumbnails folder. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
     ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
     ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')

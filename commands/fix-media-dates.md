@@ -32,7 +32,7 @@ pip install "pillow>=10.0" "openpyxl>=3.1"
 
 2. **Audit dates.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --audit`. Writes the audit workbook, `<folder name>_<photos|videos>_media_audit_<date>.xlsx`. Changes no photo or video. Share the summary.
 
-3. **Set junk aside.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --move-junk`. Moves `.AAE` iPhone edit files, `Thumbs.db` thumbnail caches and macOS `._` sidecars straight into `<folder>/_junk`, with no subfolders (a name clash gets a `_<subfolder-name>` suffix). Nothing is deleted; the user looks over `_junk` and deletes it.
+3. **Set junk aside.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --move-junk`. Moves `.AAE` iPhone edit files, `Thumbs.db` thumbnail caches and macOS `._` sidecars straight into `<folder>/_junk`, with no subfolders (a name clash gets a `_<subfolder-name>` suffix), and phone gallery thumbnails (`1234.jpg`, small, no camera info) into `<folder>/_thumbnails`. Nothing is deleted; the user looks over `_junk` and deletes it, and compares `_thumbnails` with their photos first, since a thumbnail can be the only copy left.
 
 4. **Set incomplete files aside.** `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --move-incomplete`. Moves 0-byte files, files of nothing but null bytes, and videos with no video header into `<folder>/_incomplete`, keeping their dated subfolder. Nothing is deleted.
 
@@ -56,7 +56,7 @@ pip install "pillow>=10.0" "openpyxl>=3.1"
 
 ## All in one go
 
-`/fix-media-dates <folder> --all` runs `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --all`. It fixes extensions (step 1), moves junk into `<folder>/_junk` (step 3) and incomplete files into `<folder>/_incomplete` (step 4), then fills blanks, converts PNG and syncs timestamps (steps 8, 9 and 11). It deletes nothing and asks no questions: every step it includes runs.
+`/fix-media-dates <folder> --all` runs `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --all`. It fixes extensions (step 1), moves junk into `<folder>/_junk` and phone thumbnails into `<folder>/_thumbnails` (step 3) and incomplete files into `<folder>/_incomplete` (step 4), then fills blanks, converts PNG and syncs timestamps (steps 8, 9 and 11). It deletes nothing and asks no questions: every step it includes runs.
 
 - **Left out unless opted in:** ad quarantine, moving to date folders and flatten. They run only if the user adds `--quarantine-ads`, `--apply-moves` or `--flatten` to the slash command (`/fix-media-dates <folder> --all --flatten --apply`); pass those flags on to `organize.py`.
 - **Not part of `--all`:** the date audit (step 2), the plist report (step 6), BMP conversion (step 7) and cleaning up converted files (step 13). Run them on their own; after `--all --apply`, ask the user whether they want step 13.

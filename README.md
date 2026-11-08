@@ -20,7 +20,7 @@ Missing dates are rarely just missing. They come from a handful of everyday prob
 ## What makes it different
 
 - **Nothing changes until you say so.** Every step is a dry run by default: it lists what it *would* do and touches nothing. Add `--apply` to make the changes.
-- **Nothing is lost by surprise.** Files are moved into review folders (`_ads`, `_junk`, `_incomplete`, `_empty_folders`) rather than deleted. Only one step deletes, cleaning up converted files, and it asks first. See [Guardrails](#guardrails).
+- **Nothing is lost by surprise.** Files are moved into review folders (`_ads`, `_junk`, `_thumbnails`, `_incomplete`, `_empty_folders`) rather than deleted. Only one step deletes, cleaning up converted files, and it asks first. See [Guardrails](#guardrails).
 - **A full audit trail.** Every run, previews included, is logged to an Excel workbook in the folder. You can see later what changed, when, and why.
 - **Reads metadata itself.** It parses HEIC, MOV/MP4, JPEG, PNG and TIFF metadata directly, with no external tools needed just to read dates. ExifTool is only needed to write dates into HEIC and video files.
 - **Plain English or command line.** In Claude Code you can type "Fill in the missing dates in D:\Pictures\2026". Every step is also a command-line flag you can script.
@@ -88,7 +88,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
-| Set aside `.AAE`, `Thumbs.db` and Mac `._` files | `Move the junk files in D:\Pictures\2026` |
+| Set aside `.AAE`, `Thumbs.db`, Mac `._` files and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Compare the pixels of possible copies | `Visually compare the duplicates in D:\Pictures\2026` |
 | Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |
@@ -104,7 +104,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 |---|---|---|
 | Fix extensions | Yes | Yes |
 | Audit dates and write the audit workbook (report) | Yes | No (every run is still logged; run `--audit` afterwards for an up-to-date report) |
-| Set junk aside in `_junk` | Yes | Yes |
+| Set junk aside in `_junk`, phone thumbnails in `_thumbnails` | Yes | Yes |
 | Set incomplete files aside in `_incomplete` | Yes | Yes |
 | Set ads aside in `_ads` | If you choose it | Only with `--quarantine-ads` |
 | Find plist and XMP files (report) | Yes | No |
@@ -134,7 +134,7 @@ These are the steps inside, in the order they run:
 |---|---|---|---|
 | 1 | Fix extensions | Reads each file's first bytes and renames any whose extension doesn't match its real format (PNG, JPEG, HEIC, MOV/MP4, 3GP, M2TS, MPG, WMV, AVI, GIF, WEBP, TIFF, BMP). Runs first, because every later step goes by the extension. | `--fix-extensions` |
 | 2 | Audit dates (report) | Reads every file's real date and writes the audit workbook. Changes nothing. | `--audit` |
-| 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db` and macOS `._` sidecars into `_junk`. | `--move-junk` |
+| 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db` and macOS `._` sidecars into `_junk`, and phone gallery thumbnails (`1234.jpg`) into `_thumbnails`. | `--move-junk` |
 | 4 | Set incomplete files aside | Moves empty, null-filled and headerless files, the remains of failed copies, into `_incomplete`. | `--move-incomplete` |
 | 5 | Set ads aside (optional) | Moves app and game ad images and videos into `_ads`. When run on the folder that holds the year folders, each year gets its own `_ads`. Runs before dates are filled, so ads are not dated and filed with real photos. | `--quarantine-ads` |
 | 6 | Find plist and XMP files (report) | Lists iPhone edit data and XMP text saved under a photo name. Changes nothing. | `--find-plists` |
@@ -154,7 +154,7 @@ These are the steps inside, in the order they run:
 | 15 | Find files from another year (report) | Photos and videos whose Date Taken (Media Created for a video) is in a different year from the year folder they are filed in, with a count for each year and how many have no date. Give one year folder or the folder that holds them. `Cleanup-Pictures.ps1` also runs it at the end. | `--other-year` |
 | 16 | Visual compare (report) | Compares the pixels of each possible copy, including each PNG and BMP with its new JPEG, and gives a verdict with a confidence level. Run it before step 17, which removes one file of each of those pairs. | `--visual-compare` |
 | 17 | Clean up converted files | Deletes each PNG and BMP already converted to JPEG, once it has checked they are the same picture, and moves empty folders into `_empty_folders`. The step-by-step route asks about it as its last step. | `Cleanup-Pictures.ps1` |
-| 18 | Final check (report) | What is left in `_ads`, `_junk` and `_incomplete`, folders not flattened, name collisions and audit workbooks. | `Run the final check on D:\Pictures` |
+| 18 | Final check (report) | What is left in `_ads`, `_junk`, `_thumbnails` and `_incomplete`, folders not flattened, name collisions and audit workbooks. | `Run the final check on D:\Pictures` |
 
 Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 
@@ -163,11 +163,11 @@ Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 These hold for every step, whichever way you run it:
 
 - **Preview by default.** Every step that changes files only lists what it would do (`WOULD MOVE`, `WOULD WRITE`, ...) until you add `--apply` (`-Apply` for the PowerShell cleanup script). In Claude Code, Claude shows you the preview and asks before applying.
-- **Moved aside, not deleted.** Ads go to `_ads`, junk to `_junk` and broken copies to `_incomplete`, all flat (no subfolders). An ad or broken copy with no Date Taken gets its folder's date added to its name, so the date is not lost. Empty folders go to `_empty_folders`, keeping their path. Every step skips these folders. Deleting them is your call, once you have looked through them.
+- **Moved aside, not deleted.** Ads go to `_ads`, junk to `_junk`, phone thumbnails to `_thumbnails` and broken copies to `_incomplete`, all flat (no subfolders). An ad or broken copy with no Date Taken gets its folder's date added to its name, so the date is not lost. Empty folders go to `_empty_folders`, keeping their path. Every step skips these folders. Deleting them is your call, once you have looked through them.
 - **One step deletes, and it checks first.** Only "Clean up converted files" deletes. It removes a PNG or BMP only when a JPEG of the same name sits beside it with the same picture size and pixels no more than 1% apart. A Live Photo video, a sidecar, or a HEIC next to a JPG is always kept.
 - **Nothing is overwritten.** When a file's new name or new folder is already taken, it is reported as a `COLLISION` and stays where it is. `--flatten` gives it a `_<date taken>` suffix instead.
 - **Nothing leaves the folder.** Files are only renamed or moved inside the folder you give.
-- **Content is checked, not just names.** An ad needs an ad-style name *and* no camera make or model. A `._` file must carry the Mac sidecar signature. `Thumbs.db` is matched by whole name, so `west sucking thumb.jpg` is safe. Plist or XMP text saved as a `.JPG` is reported and left alone. A file whose format it can't identify is never renamed.
+- **Content is checked, not just names.** An ad needs an ad-style name *and* no camera make or model. A `._` file must carry the Mac sidecar signature. `Thumbs.db` is matched by whole name, so `west sucking thumb.jpg` is safe. A phone thumbnail must be named only by a number, be small, and have no camera make or model. Plist or XMP text saved as a `.JPG` is reported and left alone. A file whose format it can't identify is never renamed.
 - **Real dates win.** A date already in the file is never replaced. Missing dates come from the filename, then the folder name, never from the file's modified time.
 - **Originals are kept on conversion.** PNG and BMP originals stay until you choose to clean them up. Writing a date into a JPEG doesn't re-encode the picture.
 - **Edits are respected.** Timestamp sync leaves Date Modified alone on photos that look edited.

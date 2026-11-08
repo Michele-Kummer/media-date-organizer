@@ -15,6 +15,8 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-10-27:** Michele Kummer asked for the quality options to be a story of their own. US-44 adds them to `organize.py`, and US-38 depends on it. Michele Kummer chose Vue 3 with pywebview for the desktop app, recorded at the top of Epic 8.
 - **Updated 2026-11-02:** Michele Kummer asked for moving files to date folders to be optional and left out of `--all`. US-09, US-19, US-26, US-31 and the desktop app's default selection now say so.
 - **Updated 2026-11-03:** Michele Kummer asked for ads, incomplete files and junk to go straight into `_ads`, `_incomplete` and `_junk`, with no subfolders. US-12, US-13 and US-14 now say so. Michele Kummer then asked for the folder's date to be added to the name of any that have no Date Taken (US-46, built the same day), and for a desktop app setting, built with the app, that chooses whether they are flattened (US-45).
+- **Updated 2026-11-03:** Michele Kummer found thousands of photos named only by a number (`46.jpg`, `47.jpg`) in `Pictures\2026` after an import and asked whether they were duplicates. Claude found they were a phone's gallery thumbnails, given their folder's date and then flattened in among the photos (BUG-33). US-14 now sets them aside in `_thumbnails`.
+- **Updated 2026-11-08:** Michele Kummer listed more names that are ads: kids' app button images ending `_over@2x`, a plant-ID app's files starting `glority_cach` and colour swatches such as `2#xff0000ff#0#1` (US-47).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -33,12 +35,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 46 (31 Done, 2 Partly done, 13 Not started) |
-| Bugs | 32 (2 open, 30 resolved) |
+| User stories | 47 (32 Done, 2 Partly done, 13 Not started) |
+| Bugs | 33 (2 open, 31 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 13 | 13 |
+| Michele Kummer | 0 | 14 | 14 |
 | Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -224,7 +226,7 @@ As a photo owner, I want the PNG left behind by a conversion removed, and empty 
 </details>
 
 <details>
-<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46)</summary>
+<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47)</summary>
 
 Move ads and broken files out of the way, and delete files that hold no picture or recording.
 
@@ -272,7 +274,8 @@ As a media owner, I want files that hold no picture or recording moved out of my
 - Thumbnail caches are matched by whole file name only, so `west sucking thumb.jpg` is safe.
 - A name already taken in `_junk` (every folder's `Thumbs.db`, say) gets a `_<subfolder-name>` suffix (`Thumbs_2020-01-02.db`), in the preview too. If that is taken as well, it is a `COLLISION`, and the file stays where it is.
 - `--flatten` moves Sony `.modd`/`.moff` sidecars whose file is gone into `_junk` too.
-- The final check reports what is still in `_junk` (`IN JUNK`). `--delete-junk` still works as the old name of the flag, and moves too.
+- Phone gallery thumbnails go straight into `_thumbnails`, not `_junk`, since one can be the only copy left of a photo. A thumbnail is a JPEG named only by a number (`1234.jpg`, or `1234 (2).jpg`), at most 1024 pixels on its long side, with no camera Make or Model. `--move-junk` runs before `--fill-blanks` in `--all`, so they never get their folder's date (BUG-33).
+- The final check reports what is still in `_junk` (`IN JUNK`) and in `_thumbnails` (`IN THUMBNAILS`). `--delete-junk` still works as the old name of the flag, and moves too.
 - Without `--apply` it only lists the files.
 
 **Status:** Done
@@ -288,6 +291,18 @@ As a media owner, I want an ad or incomplete file with no Date Taken to carry it
 - Junk (`.AAE`, `Thumbs.db`, `._` sidecars) is not a photo or video and has no Date Taken, so it keeps its name, with the `_<subfolder-name>` suffix only on a clash (US-14).
 - The preview lists every new name before anything moves.
 - Tests cover an undated file in a dated folder (and one deeper inside it), a dated file, a name that already holds a date, an undated file with no dated folder, and a name clash.
+
+**Status:** Done
+
+#### US-47 Recognise app button, cache and colour images as ads
+As a media owner, I want the button images, cache files and colour swatches that kids' and plant-ID apps save among my pictures recognised as ads, so that `--quarantine-ads` clears them out too.
+
+- Michele Kummer listed these names as ads. These name forms are now ads (each may carry a `_YYYY-MM-DD` ending or a ` (2)` copy marker):
+  - any name ending `_over@2x`: `TwfUQw2t_over@2x`, `scribble2mammoth_over@2x`, `playdatemlponypartyofone_over@2x`, `myfirst10monkeysmathapp_over@2x`, `jFnHbUHN_over@2x`;
+  - anything starting `glority_cach`: `glority_cache_1656951098314`;
+  - a number, `#x` and an 8-digit colour, then optional `#<number>` parts: `2#xff0000ff#0#1`, `32#xffa2defe`.
+- The camera check still applies: a name match with camera information is kept.
+- `tests/test_bmp_and_ads.py` checks every name above, and that near misses (`over@2x.png`, `button_over.png`, `IMG_1234@2x.png`, `glority_cac.jpg`, `my_glority_cache_1656951098314.jpg`, `32#xffa2de.png`, `photo#1.jpg`) are not matched.
 
 **Status:** Done
 
@@ -725,7 +740,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (30: 13 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (31: 14 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -761,6 +776,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-30 | `--flatten` left ads in a year folder inside `_ads` | Photos and videos (ads) | Medium | Michele Kummer | `8b96016` |
 | BUG-31 | `--quarantine-ads` put every year's ads in one `_ads` | Photos and videos (ads) | Medium | Michele Kummer | `8b96016` |
 | BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | `8b96016` |
+| BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | Not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -946,5 +962,11 @@ Run on `E:\Pictures`, the folder that holds the year folders, `--quarantine-ads`
 
 After the fix for BUG-31, a run of `--quarantine-ads` on `E:\Pictures` puts ads in each year's own `_ads` (`2022\_ads`). Every other step skipped holding folders such as `_ads`, `_junk` and `_incomplete` only at the top of the root, so a run on `E:\Pictures` went into `2022\_ads`. `--fill-blanks` would have given each ad a Date Taken from its day folder, and `--apply-moves` would then have filed it with the real photos, which is what setting ads aside is meant to prevent. `Cleanup-Pictures.ps1` had the same top-level check. Found by a dry run on synthetic files, before any real run.
 **Fix:** `organize.py` and `Cleanup-Pictures.ps1` now skip holding folders at any depth, and the `--quarantine-ads` help text describes the per-year `_ads`. A test in `tests/test_smoke.py` runs `--all --apply` on a root with an ad in `2022\_ads` and junk in `2022\_junk` and checks both are left alone and the ad stays undated. A test in `tests/test_bmp_and_ads.py` checks that `Cleanup-Pictures.ps1` leaves a converted BMP in `2022\_ads` alone.
+
+#### BUG-33 Phone thumbnails were dated and flattened in among the photos
+**Found by:** Michele Kummer · **Affects:** photos (phone thumbnails) · **Fixed in:** not yet committed
+
+An import from a phone brought along its gallery's thumbnail cache: 2,520 small JPEGs named only by a number (`46.jpg`, `1020.jpg`), put loose in the import's `2026-11-02` folder. They have no camera info and no Date Taken, so `--fill-blanks` gave each one the folder's date at 12:00:00, and `--flatten` then moved them up into `Pictures\2026` beside the real photos. With an earlier import there were 4,048 in all. They are not byte-for-byte copies, so the duplicate finder could not catch them, and comparing them with both photo libraries showed that some are the only copy left of a photo, so they could not simply go to `_junk`.
+**Fix:** `--move-junk` recognises a phone thumbnail (`is_phone_thumbnail`: a JPEG named only by a number, at most 1024 pixels on its long side, with no camera Make or Model) and moves it into a new `_thumbnails` holding folder, which every step skips and the final check reports (`IN THUMBNAILS`). `Cleanup-Pictures.ps1` skips it too. On the real files it caught 4,005 of the 4,014 thumbnails and none of the photos. `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` covers the check, the move, name clashes, `--all` setting them aside before they get a date, and the final check.
 
 </details>

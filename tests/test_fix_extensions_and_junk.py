@@ -234,7 +234,94 @@ class MoveJunkTests(unittest.TestCase):
         code, out = run(self.root, '--final-check')
         self.assertEqual(code, 0, out)
         self.assertIn('IN JUNK: 2020-01-01/_junk (3 file(s))', out)
-        self.assertIn('2020-01-01: 0 in _ads, 0 in _incomplete, 3 in _junk', out)
+        self.assertIn('2020-01-01: 0 in _ads, 0 in _incomplete, 3 in _junk, 0 video(s)', out)
+
+
+def make_thumbnail(path, size=(384, 512), camera=None):
+    """Write a JPEG the size of a phone gallery thumbnail, optionally with a
+    camera Make tag."""
+    from PIL import Image
+    img = Image.new('RGB', size, (40, 120, 200))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    exif = Image.Exif()
+    if camera:
+        exif[0x010F] = camera
+    img.save(path, 'JPEG', exif=exif)
+
+
+class PhoneThumbnailTests(unittest.TestCase):
+    """BUG-48: a phone's gallery thumbnails, imported loose in a dated folder,
+    were given the folder's date and flattened in among the photos."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp(prefix='media-date-organizer-'))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.day = self.root / '2026-11-02'
+
+    def test_recognises_a_thumbnail_by_name_size_and_missing_camera(self):
+        make_thumbnail(self.day / '46.jpg')
+        make_thumbnail(self.day / '47 (2).jpg', size=(270, 585))
+        self.assertTrue(organize.is_phone_thumbnail(str(self.day / '46.jpg')))
+        self.assertTrue(organize.is_phone_thumbnail(str(self.day / '47 (2).jpg')))
+
+    def test_keeps_photos_that_only_look_like_one(self):
+        make_thumbnail(self.day / '48.jpg', camera='samsung')        # camera info
+        make_thumbnail(self.day / '49.jpg', size=(3000, 4000))       # full size
+        make_thumbnail(self.day / 'IMG_50.jpg')                      # not a bare number
+        make_thumbnail(self.day / '51.png')                          # not named JPEG
+        (self.day / '52.jpg').write_text('not a picture')
+        for name in ('48.jpg', '49.jpg', 'IMG_50.jpg', '51.png', '52.jpg'):
+            self.assertFalse(organize.is_phone_thumbnail(str(self.day / name)), name)
+
+    def test_move_junk_sets_thumbnails_aside_and_deletes_nothing(self):
+        make_thumbnail(self.day / '46.jpg')
+        make_thumbnail(self.day / '48.jpg', camera='samsung')
+        (self.day / 'Thumbs.db').write_bytes(b'cache')
+        before = snapshot(self.root)
+
+        code, out = run(self.root, '--move-junk')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(snapshot(self.root), before, 'a dry run must not move anything')
+        self.assertIn('WOULD MOVE (phone thumbnail): ' + os.path.join('2026-11-02', '46.jpg'), out)
+
+        code, out = run(self.root, '--move-junk', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.root / '_thumbnails'), ['46.jpg'])
+        self.assertEqual(names(self.root / '_junk'), ['thumbs.db'])
+        self.assertEqual(names(self.day), ['48.jpg'])
+        self.assertIn('"moved-phone-thumbnails": 1', out)
+
+    def test_a_thumbnail_name_taken_gets_its_subfolder_name(self):
+        make_thumbnail(self.day / '46.jpg')
+        make_thumbnail(self.root / '2026-11-03' / '46.jpg')
+        code, out = run(self.root, '--move-junk', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.root / '_thumbnails'), ['46.jpg', '46_2026-11-03.jpg'])
+
+    def test_all_moves_thumbnails_before_they_get_the_folders_date(self):
+        make_thumbnail(self.day / '46.jpg')
+        code, out = run(self.root, '--all', '--flatten', '--apply')
+        self.assertEqual(code, 0, out)
+        moved = self.root / '_thumbnails' / '46.jpg'
+        self.assertTrue(moved.exists(), out)
+        self.assertIsNone(organize.read_metadata(str(moved), '.jpg')['date_taken'])
+        self.assertFalse((self.root / '46.jpg').exists(), 'the thumbnail must not be flattened into root')
+
+    def test_other_phases_and_flatten_leave_the_thumbnails_folder_alone(self):
+        make_thumbnail(self.root / '_thumbnails' / 'sub' / '46.jpg')
+        code, out = run(self.root, '--all', '--flatten', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.root / '_thumbnails' / 'sub'), ['46.jpg'])
+
+    def test_final_check_reports_what_is_in_thumbnails(self):
+        make_thumbnail(self.day / '46.jpg')
+        make_thumbnail(self.day / '47.jpg')
+        run(self.day, '--move-junk', '--apply')
+        code, out = run(self.root, '--final-check')
+        self.assertEqual(code, 0, out)
+        self.assertIn('IN THUMBNAILS: 2026-11-02/_thumbnails (2 file(s))', out)
+        self.assertIn('2026-11-02: 0 in _ads, 0 in _incomplete, 0 in _junk, 2 in _thumbnails, ', out)
+        self.assertIn('"thumbnail-files": 2', out)
 
 
 if __name__ == '__main__':

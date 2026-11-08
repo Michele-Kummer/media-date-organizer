@@ -1,6 +1,6 @@
 ---
 name: final-check-report
-description: Use this skill when the user wants a last look at what is left over after their photos and videos have been organized. Triggers include "run the final check," "final check report," "what's left behind," "what still needs cleaning up," "are my year folders clean," "anything left in _ads, _junk or _incomplete," "which folders didn't get flattened," or "what audit files are lying around." It reports, for each year folder, files still sitting in _ads, files still in _incomplete and _junk, photos filed among videos (or videos among photos), subfolders that were not flattened, name collisions (each pair, identical or different), and audit workbooks left behind. Its only change is renaming audit workbooks so each carries its folder name and media type; no photo or video is moved, renamed or deleted. Do NOT use to fix dates or move files — that is the media-date-organizer skill.
+description: Use this skill when the user wants a last look at what is left over after their photos and videos have been organized. Triggers include "run the final check," "final check report," "what's left behind," "what still needs cleaning up," "are my year folders clean," "anything left in _ads, _junk or _incomplete," "which folders didn't get flattened," or "what audit files are lying around." It reports, for each year folder, files still sitting in _ads, files still in _incomplete, _junk and _thumbnails, photos filed among videos (or videos among photos), subfolders that were not flattened, name collisions (each pair, identical or different), and audit workbooks left behind. Its only change is renaming audit workbooks so each carries its folder name and media type; no photo or video is moved, renamed or deleted. Do NOT use to fix dates or move files — that is the media-date-organizer skill.
 ---
 
 # final-check-report
@@ -26,6 +26,7 @@ Every folder in `<MediaRoot>` whose name starts with a year (`2014`, `2013 West`
 - **Files in `_ads`** — `IN ADS: 2014/_ads (120 file(s))`. Ads `--quarantine-ads` set aside that the user has not yet reviewed and deleted. Counted as `ads-files`.
 - **Files in `_incomplete`** — `INCOMPLETE: 2014/_incomplete (4 file(s))`. Empty or broken files `--move-incomplete` set aside (an older `_no-image-data` folder counts too). Counted as `incomplete-files`.
 - **Files in `_junk`** — `IN JUNK: 2014/_junk (35 file(s))`. `.AAE`, `Thumbs.db` and macOS `._` files `--move-junk` set aside, and Sony sidecars `--flatten` found without their video. Counted as `junk-files`.
+- **Files in `_thumbnails`** — `IN THUMBNAILS: 2026/_thumbnails (4,048 file(s))`. Phone gallery thumbnails `--move-junk` set aside. Counted as `thumbnail-files`, and named in the year's line only when there are some (`0 in _junk, 4,048 in _thumbnails, ...`).
 - **Opposite-type files** — `PHOTO IN VIDEO FOLDER: 2016/DSC00323.JPG` or `VIDEO IN PHOTO FOLDER: ...`, one line per file. Whichever kind `<MediaRoot>` holds more of decides what it is; `_ads` and `_incomplete` are not counted. A file's kind goes by its extension. Counted as `photos-in-video-folders` or `videos-in-photo-folders`.
 - **Folders not flattened** — `NOT FLATTENED: 2014/7-17-2014 (3 file(s))`. Each subfolder still inside a year folder, with how many files it holds at any depth. `--flatten` leaves a folder when it holds undated files, name collisions or non-media files. Counted as `folders-not-flattened`.
 - **Collisions** — one line per pair of files that share a name, saying whether the two are the same file and how `--flatten` handled the clash:
@@ -59,6 +60,7 @@ Suggest, do not do; each of these changes files and needs the user's go-ahead.
 
 - `_ads` files: the user reviews and deletes them by hand.
 - `_incomplete` files: the user re-copies them from the original source, or deletes them.
+- `_thumbnails` files: some may be the only copy left of a photo deleted from the phone. Compare them with the full-size photos (or look for the photo on the phone) before deleting any.
 - `_junk` files: the user looks them over and deletes them by hand. An `.AAE` holds the edits made on an iPhone, so keep it if those edits matter.
 - Opposite-type files: the user moves them to the matching year folder under the other root.
 - Folders not flattened: run `--flatten` (without `--apply`) on that year folder to see why each file was left (`LEFT`, `COLLISION`), then `--fill-blanks` or `--compare-collisions` as the reason calls for.

@@ -105,6 +105,24 @@ class GameAdTests(unittest.TestCase):
                # Numbered BMPs are the user's own pictures as often as ads
                '28439_2023-03-13.bmp', '8824_1269.bmp', 'imagebmp_10615.bmp', 'imagebmp (5).bmp']
 
+    APP_ADS = ['TwfUQw2t_over@2x.png', 'scribble2mammoth_over@2x.png',
+               'playdatemlponypartyofone_over@2x.png', 'myfirst10monkeysmathapp_over@2x.png',
+               'jFnHbUHN_over@2x_2023-05-01.png', 'scribble2mammoth_over@2x (2).png',
+               'glority_cache_1656951098314.jpg', 'glority_cache_1656951098314_17.jpg',
+               'glority_cache_1656951098314abc_2022-07-04.webp',
+               'glority_cache_1656951098.jpg', 'glority_cache_99.png', 'glority_cach.png',
+               'Glority_Cached_image.jpg',
+               '2#xff0000ff#0#1.png', '32#xffa2defe.png', '32#xffa2defe_2022-01-01.png']
+    APP_NOT_ADS = ['over@2x.png', 'button_over.png', 'IMG_1234@2x.png', 'glority_cac.jpg',
+                   'my_glority_cache_1656951098314.jpg', '2#ff0000ff.png', '32#xffa2de.png',
+                   'photo#1.jpg']
+
+    def test_app_cache_names(self):
+        for name in self.APP_ADS:
+            self.assertTrue(organize.is_ad_name(name), name)
+        for name in self.APP_NOT_ADS:
+            self.assertFalse(organize.is_ad_name(name), name)
+
     def test_names(self):
         for name in self.ADS:
             self.assertTrue(organize.is_ad_name(name), name)
