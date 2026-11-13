@@ -39,7 +39,7 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
-| Set aside AAE, Thumbs.db, Mac `._` files and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
+| Set aside AAE, Thumbs.db, Mac `._` files, plist and XMP files, and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
 | Set aside broken or empty files | `Move the incomplete files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |

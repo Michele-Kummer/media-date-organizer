@@ -33,7 +33,7 @@ Missing dates are rarely just missing. They come from a handful of everyday prob
 - **A full audit trail.** Every run, previews included, is logged to an Excel workbook in the folder. You can see later what changed, when, and why.
 - **Reads metadata itself.** It parses HEIC, MOV/MP4, JPEG, PNG and TIFF metadata directly, with no external tools needed just to read dates. ExifTool is only needed to write dates into HEIC and video files.
 - **Plain English or command line.** In Claude Code you can type "Fill in the missing dates in D:\Pictures\2026". Every step is also a command-line flag you can script.
-- **Tested on generated files.** 93 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell cleanup script.
+- **Tested on generated files.** 97 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell cleanup script.
 
 ## Quick start
 
@@ -97,7 +97,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
-| Set aside `.AAE`, `Thumbs.db`, Mac `._` files and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
+| Set aside `.AAE`, `Thumbs.db`, Mac `._` files, plist and XMP files, and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Compare the pixels of possible copies | `Visually compare the duplicates in D:\Pictures\2026` |
 | Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |
@@ -143,7 +143,7 @@ These are the steps inside, in the order they run:
 |---|---|---|---|
 | 1 | Fix extensions | Reads each file's first bytes and renames any whose extension doesn't match its real format (PNG, JPEG, HEIC, MOV/MP4, 3GP, M2TS, MPG, WMV, AVI, GIF, WEBP, TIFF, BMP). Runs first, because every later step goes by the extension. | `--fix-extensions` |
 | 2 | Audit dates (report) | Reads every file's real date and writes the audit workbook. Changes nothing. | `--audit` |
-| 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db` and macOS `._` sidecars into `_junk`, and phone gallery thumbnails (`1234.jpg`) into `_thumbnails`. | `--move-junk` |
+| 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db`, macOS `._` sidecars, and plist and XMP files (including ones saved under a photo name) into `_junk`, and phone gallery thumbnails (`1234.jpg`) into `_thumbnails`. | `--move-junk` |
 | 4 | Set incomplete files aside | Moves empty, null-filled and headerless files, the remains of failed copies, into `_incomplete`. | `--move-incomplete` |
 | 5 | Set ads aside (optional) | Moves app and game ad images and videos into `_ads`. When run on the folder that holds the year folders, each year gets its own `_ads`. Runs before dates are filled, so ads are not dated and filed with real photos. | `--quarantine-ads` |
 | 6 | Find plist and XMP files (report) | Lists iPhone edit data and XMP text saved under a photo name. Changes nothing. | `--find-plists` |
@@ -176,7 +176,7 @@ These hold for every step, whichever way you run it:
 - **One step deletes, and it checks first.** Only "Clean up converted files" deletes. It removes a PNG or BMP only when a JPEG of the same name sits beside it with the same picture size and pixels no more than 1% apart. A Live Photo video, a sidecar, or a HEIC next to a JPG is always kept.
 - **Nothing is overwritten.** When a file's new name or new folder is already taken, it is reported as a `COLLISION` and stays where it is. `--flatten` gives it a `_<date taken>` suffix instead.
 - **Nothing leaves the folder.** Files are only renamed or moved inside the folder you give.
-- **Content is checked, not just names.** An ad needs an ad-style name *and* no camera make or model. A `._` file must carry the Mac sidecar signature. `Thumbs.db` is matched by whole name, so `west sucking thumb.jpg` is safe. A phone thumbnail must be named only by a number, be small, and have no camera make or model. Plist or XMP text saved as a `.JPG` is reported and left alone. A file whose format it can't identify is never renamed.
+- **Content is checked, not just names.** An ad needs an ad-style name *and* no camera make or model. A `._` file must carry the Mac sidecar signature. `Thumbs.db` is matched by whole name, so `west sucking thumb.jpg` is safe. A phone thumbnail must be named only by a number, be small, and have no camera make or model. Plist or XMP text saved as a `.JPG` is found by its content and moved into `_junk`, never deleted. A file whose format it can't identify is never renamed.
 - **Real dates win.** A date already in the file is never replaced. Missing dates come from the filename, then the folder name, never from the file's modified time.
 - **Originals are kept on conversion.** PNG and BMP originals stay until you choose to clean them up. Writing a date into a JPEG doesn't re-encode the picture.
 - **Edits are respected.** Timestamp sync leaves Date Modified alone on photos that look edited.
@@ -189,7 +189,7 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 - **Python 3.9+** (`organize.py`, about 2,750 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
 - **PowerShell** cleans up converted files (`Cleanup-Pictures.ps1`), using .NET `System.Drawing` to compare pixels.
 - **Claude Code plugin:** three skills and four slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
-- **Tests:** `py -m unittest discover tests -v` runs 93 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
+- **Tests:** `py -m unittest discover tests -v` runs 97 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
 
 ```
 .

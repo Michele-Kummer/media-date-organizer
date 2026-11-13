@@ -20,6 +20,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-08:** Michele Kummer asked for sample data to show a before and after. US-48 records the generator, which replaces the old three-file sample set. Michele Kummer then asked for the good photos in `After` to be flattened into year folders.
 - **Updated 2026-11-09:** Michele Kummer asked for no spaces in file and folder names. US-49 records the names the sample generator writes with spaces, built the same day.
 - **Updated 2026-11-09:** Claude checked the new screenshots against the sample data. Michele Kummer fixed the captions and asked for the panels to show the same columns and for the README to explain what a reader may wonder about (US-50).
+- **Updated 2026-11-13:** Michele Kummer asked for plist and XMP files to be moved into `_junk` instead of only being reported. US-14 and US-28 now say so.
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -272,7 +273,8 @@ As a media owner, I want failed copies moved out of the way, so that they stop s
 #### US-14 Set leftover sidecar files aside
 As a media owner, I want files that hold no picture or recording moved out of my media folders, but not deleted, so that they don't clutter the folders and I can still get one back.
 
-- `--move-junk` moves `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, and macOS `._` sidecars straight into `_junk`, with no subfolders. Nothing is deleted (BUG-27).
+- `--move-junk` moves `.AAE` iPhone photo-edit files, `Thumbs.db`/`ehthumbs*.db` thumbnail caches, macOS `._` sidecars, and `.plist` and `.xmp` files straight into `_junk`, with no subfolders. Nothing is deleted (BUG-27).
+- It also moves files with a photo or video name that hold plist, XMP or other XML text (`IMG_E5239.JPG`, US-28) into `_junk`, listed as `MOVED (plist file named .JPG)`. They are found by their content, so a real photo is never moved this way.
 - A `._` file is treated as junk only when its contents carry the AppleDouble signature.
 - Thumbnail caches are matched by whole file name only, so `west sucking thumb.jpg` is safe.
 - A name already taken in `_junk` (every folder's `Thumbs.db`, say) gets a `_<subfolder-name>` suffix (`Thumbs_2020-01-02.db`), in the preview too. If that is taken as well, it is a `COLLISION`, and the file stays where it is.
@@ -362,12 +364,12 @@ As a media owner, I want one report of everything still needing attention, so th
 **Status:** Done
 
 #### US-28 Find plist files saved with a photo name
-As a media owner, I want to know which of my "photos" are really plist or XMP files, such as an iPhone `.AAE` edit file saved as `IMG_E5239.JPG`, so that I can decide whether to keep or delete them, instead of seeing date-writing fail on them.
+As a media owner, I want to know which of my "photos" are really plist or XMP files, such as an iPhone `.AAE` edit file saved as `IMG_E5239.JPG`, and to have them set aside, so that I can decide whether to keep or delete them, instead of seeing date-writing fail on them.
 
-- `--find-plists` searches the folder at every depth, holding folders included, and lists each file with a photo or video name that holds plist (XML or binary), XMP or other XML text, as `NOT MEDIA (plist file named .JPG): 2023-08-07/IMG_E5239.JPG`. It counts them by kind.
+- `--find-plists` searches the folder at every depth, holding folders included, and lists each file with a photo or video name that holds plist (XML or binary), XMP or other XML text, as `NOT MEDIA (plist file named .JPG): 2023-08-07/IMG_E5239.JPG`. It counts them by kind, and changes nothing.
 - Real photos and videos are never listed: they never start with `<` or `bplist`.
-- Every other step reports these files as `NOT MEDIA (... left alone)` and skips them. `--fill-blanks` no longer reports `FAILED to write`, `--convert-png` does not try to convert them, and `--apply-moves` gives them no date suffix (BUG-25). `--fix-extensions` reports `NOT MEDIA` instead of `UNKNOWN FORMAT`.
-- Nothing is moved, renamed or deleted. The user decides.
+- `--move-junk`, and so `--all`, moves them into `_junk` (US-14). Nothing is deleted, so the user still decides.
+- Every other step reports these files as `NOT MEDIA (... left for --move-junk)` and skips them. `--fill-blanks` no longer reports `FAILED to write`, `--convert-png` does not try to convert them, and `--apply-moves` gives them no date suffix (BUG-25). `--fix-extensions` reports `NOT MEDIA` instead of `UNKNOWN FORMAT`.
 - `tests/test_plists.py` covers each of these.
 
 **Status:** Done
@@ -475,7 +477,7 @@ Change and test the plugin safely.
 #### US-24 Test without real photos or videos
 As a maintainer, I want tests that run on generated files, so that I can check a change without risking my own photos and videos.
 
-- `py -m unittest discover tests -v` runs the suite. It currently has 97 tests.
+- `py -m unittest discover tests -v` runs the suite. It currently has 99 tests.
 - The tests generate their own photos, and the video tests their own small videos with ffmpeg.
 - Video tests are skipped when ffmpeg is missing. The video date-writing test is skipped when ExifTool is missing. The Date Created test runs only on Windows.
 - The PowerShell scripts are tested only for their dry run (`-Apply`), and only on Windows.

@@ -1,5 +1,6 @@
 """Plist and XMP files saved under a photo name (IMG_E5239.JPG) are reported,
-never failed on, renamed, moved or deleted (US-28, BUG-25).
+never failed on, renamed or deleted (US-28, BUG-25), and --move-junk moves
+them, and loose .plist and .xmp files, into _junk (US-14).
 Run with: py -m unittest discover tests -v"""
 
 import datetime
@@ -56,8 +57,8 @@ class PlistTests(unittest.TestCase):
         code, out = run(self.root, '--fill-blanks', '--convert-png', '--apply-moves', '--apply')
         self.assertEqual(code, 0, out)
         self.assertNotIn('FAILED', out)
-        self.assertIn('NOT MEDIA (plist file named .JPG, left alone): 2023-08-07/IMG_E5239.JPG', out)
-        self.assertIn('NOT MEDIA (binary plist file named .png, left alone)', out)
+        self.assertIn('NOT MEDIA (plist file named .JPG, left for --move-junk): 2023-08-07/IMG_E5239.JPG', out)
+        self.assertIn('NOT MEDIA (binary plist file named .png, left for --move-junk)', out)
         # Not written to, converted, moved or given a date suffix
         for n, content in plists.items():
             self.assertEqual((self.day / n).read_bytes(), content, n)
@@ -69,10 +70,45 @@ class PlistTests(unittest.TestCase):
     def test_fix_extensions_reports_them_as_not_media(self):
         code, out = run(self.root, '--fix-extensions', '--apply')
         self.assertEqual(code, 0, out)
-        self.assertIn('NOT MEDIA (plist file named .JPG, left alone)', out)
+        self.assertIn('NOT MEDIA (plist file named .JPG, left for --move-junk)', out)
         self.assertIn('NOT MEDIA (XMP file named', out)
         self.assertNotIn('UNKNOWN', out)
         self.assertIn('img_e5239.jpg', names(self.day))
+
+    def test_move_junk_previews_then_moves_them_into_junk(self):
+        (self.day / 'IMG_5239.xmp').write_bytes(XMP)
+        (self.day / 'Info.plist').write_bytes(AAE)
+        before = snapshot(self.root)
+
+        code, out = run(self.root, '--move-junk')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(snapshot(self.root), before, 'a dry run must not move anything')
+        self.assertIn('WOULD MOVE (plist file named .JPG): ', out)
+
+        contents = {n: (self.day / n).read_bytes()
+                    for n in ('IMG_E5239.JPG', 'IMG_E6230.jpg', 'shot.png', 'IMG_5239.xmp', 'Info.plist')}
+        code, out = run(self.root, '--move-junk', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertIn('MOVED (XMP file named .jpg): ', out)
+        self.assertIn('MOVED (binary plist file named .png): ', out)
+        self.assertIn('MOVED (XMP file): ', out)
+        self.assertIn('MOVED (PLIST file): ', out)
+        self.assertIn('"moved-not-media": 3', out)
+        self.assertIn('"moved-plist-xmp": 2', out)
+        # Moved unchanged, not deleted; the real photos stay
+        junk = self.root / '_junk'
+        for n, content in contents.items():
+            self.assertEqual((junk / n).read_bytes(), content, n)
+        self.assertEqual(names(self.day), ['img_5239.jpg', 'undated.jpg'])
+
+    def test_all_moves_them_before_the_date_steps_see_them(self):
+        code, out = run(self.root, '--all', '--apply')
+        self.assertEqual(code, 0, out)
+        # --fix-extensions runs first and lists them; no step after
+        # --move-junk sees them
+        after_junk = out.split('----- move_incomplete -----')[1].split('Summary of this run')[0]
+        self.assertNotIn('NOT MEDIA', after_junk)
+        self.assertEqual(names(self.root / '_junk'), ['img_e5239.jpg', 'img_e6230.jpg', 'shot.png'])
 
 
 if __name__ == '__main__':

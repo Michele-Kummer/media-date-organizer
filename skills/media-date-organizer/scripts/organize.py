@@ -37,7 +37,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         (._IMG_0001.png beside IMG_0001.png), which a Mac
                         writes when copying to a non-Mac drive; a file is
                         only treated as one when its contents carry the
-                        AppleDouble signature as well as the name. Nothing
+                        AppleDouble signature as well as the name. Also
+                        moves .plist and .xmp files, and every file named as
+                        a photo or video (IMG_E5239.JPG) whose content is
+                        really plist, XMP or other XML text. Nothing
                         is deleted: look over _junk and delete it yourself.
                         Phone gallery thumbnails (a JPEG named only by a
                         number, such as 1234.jpg, at most 1024 pixels on its
@@ -167,11 +170,12 @@ and a summary of every phase's counts and problems is printed at the end):
                         content is really plist, XMP or other XML text: an
                         iPhone .AAE edit file or an XMP sidecar saved under a
                         picture's name. Searches the root and every
-                        subfolder, holding folders included. Every other
-                        phase leaves such files where they are and reports
-                        them as NOT MEDIA, instead of failing on them or
-                        giving them a date suffix. Nothing is moved,
-                        renamed or deleted.
+                        subfolder, holding folders included. --move-junk
+                        moves such files into _junk; every other phase
+                        leaves them where they are and reports them as NOT
+                        MEDIA, instead of failing on them or giving them a
+                        date suffix. This report moves, renames and deletes
+                        nothing.
     --opposite-type     Report only; not part of --all. Give the folder that
                         holds the year folders as --root (D:\\Videos, not
                         D:\\Videos\\2014). Lists every photo filed among the
@@ -377,10 +381,10 @@ def not_media_kind(path: str) -> Optional[str]:
 
 def _report_not_media(label: str, kind: str, counts: Counter) -> None:
     """Report a text sidecar named as a photo or video and count it. It is
-    left where it is: the user decides whether to delete it."""
+    left where it is for --move-junk to set aside in _junk."""
     counts['not-media'] += 1
     ext = pathlib.Path(label).suffix
-    print(f"NOT MEDIA ({kind} file named {ext}, left alone): {label}", file=sys.stderr)
+    print(f"NOT MEDIA ({kind} file named {ext}, left for --move-junk): {label}", file=sys.stderr)
 
 
 # ---------------- Date Taken extraction ----------------
@@ -1885,7 +1889,7 @@ def find_plists(root: str) -> dict:
     total = sum(counts.values())
     counts['not-media'] = total
     print(f"FOUND {total:,} file(s) named as a photo or video that hold plist or XMP text. "
-          "Nothing was changed.")
+          "Nothing was changed; --move-junk sets them aside in _junk.")
     return dict(counts)
 
 
@@ -2467,6 +2471,10 @@ THUMBS_NAMES = ('thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db')
 PHONE_THUMB_MAX_EDGE = 1024
 _PHONE_THUMB_NAME_RE = re.compile(r'^\d{1,7}(?: \(\d+\))?$')
 
+# Text sidecars that hold no image: an Apple property list, or an XMP
+# metadata file an editor such as Lightroom writes beside a photo
+JUNK_TEXT_EXTS = ('.plist', '.xmp')
+
 # First four bytes of an AppleDouble file, the "._name" sidecar macOS writes
 # beside every file it copies to a non-Mac drive
 APPLEDOUBLE_MAGIC = b'\x00\x05\x16\x07'
@@ -2536,27 +2544,34 @@ def is_phone_thumbnail(full: str) -> bool:
 
 def move_junk(root: str, dry_run: bool = False) -> dict:
     """Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache
-    (Thumbs.db) and macOS "._" sidecar in root and every subfolder straight
-    into root/_junk, flat, and every phone gallery thumbnail into
-    root/_thumbnails. Nothing is deleted: the user looks them over and
-    deletes them. Emptied folders are left for --flatten or the cleanup
-    script."""
+    (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and every file
+    named as a photo or video that is really plist, XMP or XML text (see
+    not_media_kind) in root and every subfolder straight into root/_junk,
+    flat, and every phone gallery thumbnail into root/_thumbnails. Nothing is
+    deleted: the user looks them over and deletes them. Emptied folders are
+    left for --flatten or the cleanup script."""
     counts = Counter()
     claimed = {JUNK_DIR: set(), THUMBNAILS_DIR: set()}
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    media_exts = MEDIA_EXTS | set(CAMCORDER_EXTS)
     for dirpath, dirs, files in os.walk(root):
         _prune_holding(dirs)
         dirs.sort()
         for name in sorted(files):
             full = os.path.join(dirpath, name)
+            ext = pathlib.Path(name).suffix
             holding = JUNK_DIR
             # Checked first: "._IMG_0001.AAE" is a sidecar, not an AAE file
             if _is_appledouble(full):
                 kind, label = 'moved-mac-sidecars', 'Mac sidecar'
-            elif pathlib.Path(name).suffix.lower() == '.aae':
+            elif ext.lower() == '.aae':
                 kind, label = 'moved-aae', 'AAE'
             elif name.lower() in THUMBS_NAMES:
                 kind, label = 'moved-thumbs', 'thumbnail cache'
+            elif ext.lower() in JUNK_TEXT_EXTS:
+                kind, label = 'moved-plist-xmp', ext.lstrip('.').upper() + ' file'
+            elif ext.lower() in media_exts and (text_kind := not_media_kind(full)):
+                kind, label = 'moved-not-media', f"{text_kind} file named {ext}"
             elif is_phone_thumbnail(full):
                 kind, label, holding = 'moved-phone-thumbnails', 'phone thumbnail', THUMBNAILS_DIR
             else:
@@ -2861,14 +2876,14 @@ def main(argv=None):
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
     ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, or with an _ads folder as the root, files move up into _ads itself even with no Date Taken.')
-    ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. Every other phase leaves these alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
+    ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. --move-junk moves these into _junk; every other phase leaves them alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')
     ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, _incomplete and _junk, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder straight into an _ads folder, with no subfolders, for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
     ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
-    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db) and macOS "._" sidecar in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete, and every phone gallery thumbnail (1234.jpg, small, no camera info) into a _thumbnails folder. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
+    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and file named as a photo or video that really holds plist or XMP text (IMG_E5239.JPG) in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete, and every phone gallery thumbnail (1234.jpg, small, no camera info) into a _thumbnails folder. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
     ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
     ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
