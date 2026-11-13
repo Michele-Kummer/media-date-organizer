@@ -20,7 +20,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-08:** Michele Kummer asked for sample data to show a before and after. US-48 records the generator, which replaces the old three-file sample set. Michele Kummer then asked for the good photos in `After` to be flattened into year folders.
 - **Updated 2026-11-09:** Michele Kummer asked for no spaces in file and folder names. US-49 records the names the sample generator writes with spaces, built the same day.
 - **Updated 2026-11-09:** Claude checked the new screenshots against the sample data. Michele Kummer fixed the captions and asked for the panels to show the same columns and for the README to explain what a reader may wonder about (US-50).
-- **Updated 2026-11-13:** Michele Kummer asked for plist and XMP files to be moved into `_junk` instead of only being reported. US-14 and US-28 now say so.
+- **Updated 2026-11-13:** Michele Kummer asked for plist and XMP files to be moved into `_junk` instead of only being reported. US-14 and US-28 now say so. Michele Kummer then asked, as part of the desktop app's design, for a setting for each kind of junk (US-51), incomplete file (US-52) and ad (US-53).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -39,7 +39,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 50 (34 Done, 2 Partly done, 14 Not started) |
+| User stories | 53 (34 Done, 2 Partly done, 17 Not started) |
 | Bugs | 33 (2 open, 31 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -539,7 +539,7 @@ As a media owner reading the README, I want the before and after screenshots lai
 </details>
 
 <details>
-<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43, US-45)</summary>
+<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43, US-45, US-51 to US-53)</summary>
 
 Run every step from a window with buttons, checkboxes and settings instead of typing commands. The app runs the existing scripts on this computer, with the same preview-first rules, so it adds no new way to lose a file. Requested by Michele Kummer on 2026-10-26; nothing is built yet.
 
@@ -740,6 +740,76 @@ As a media owner, I want a setting that chooses whether ads, incomplete files an
 - The tooltip (US-39) explains both choices with an example.
 - The setting is saved with the project's other settings, and **Reset to defaults** ticks it again.
 - Tests cover a ticked and an unticked run of each of the three steps.
+
+**Status:** Not started
+
+#### US-51 Choose which kinds of junk are set aside
+As a media owner, I want to choose which kinds of junk are moved aside, so that I can keep a kind I still use, such as `.AAE` files that hold my iPhone edits, in place beside its photos.
+
+- The **Project** panel (US-33) has a **Junk to move** group with one checkbox for each kind. All are ticked by default:
+
+| Checkbox | What it moves | Into | Moved by |
+|---|---|---|---|
+| macOS "._" files | Sidecars a Mac writes beside each file it copies to a non-Mac drive (`._IMG_0001.JPG`) | `_junk` | Set junk aside |
+| AAE files | iPhone photo-edit files (`IMG_0001.AAE`) | `_junk` | Set junk aside |
+| Windows thumbnail caches | `Thumbs.db`, `ehthumbs.db` and `ehthumbs_vista.db` | `_junk` | Set junk aside |
+| Plist and XMP files | `.plist` and `.xmp` files, and plist or XMP text saved under a photo name (`IMG_E5239.JPG`) | `_junk` | Set junk aside |
+| Leftover camcorder files | Sony `.modd` and `.moff` sidecars whose video is gone | `_junk` | Flatten |
+| Photo thumbnails | Phone gallery thumbnails (`1234.jpg`, small, no camera make or model) | `_thumbnails` | Set junk aside |
+
+- An unticked kind stays where it is, and the step's output says how many were left in place by this setting, so a reader can tell them apart from files that were never found.
+- The settings apply to the step's button, its preview and a full run (US-35, US-36).
+- `organize.py` gets an option naming the kinds to move, added when the app is built. Given no option, `--move-junk` and `--flatten` move every kind, as they do today (US-14). The **Command** line under each button (US-37) shows the option.
+- When every box is unticked, **Set junk aside** says that there is nothing to move and does not run.
+- The tooltip (US-39) names each kind with an example file name, and says that a phone thumbnail can be the only copy left of a photo.
+- The settings are saved with the project's other settings, and **Reset to defaults** ticks every box again.
+- Tests cover each kind ticked and unticked, the default with no option, and every box unticked.
+
+**Status:** Not started
+
+#### US-52 Choose which kinds of incomplete files are set aside
+As a media owner, I want to choose which kinds of incomplete files are moved aside, so that I can leave a kind in place while I try to recover it, such as a video copy that stopped partway.
+
+- The **Project** panel (US-33) has an **Incomplete files to move** group with one checkbox for each kind. All are ticked by default:
+
+| Checkbox | What it moves | Example |
+|---|---|---|
+| Empty files | Photos and videos that are 0 bytes | `IMG_0412.JPG`, 0 bytes |
+| Files with only zeros | Photos and videos that hold nothing but null bytes, so there is no picture or recording in them | A 3 MB `clip.mp4` that is all zeros |
+| Videos with no header | Videos with no `moov` header, a stub or a copy that stopped partway, which no player can open | A truncated `VID_0001.MOV` |
+
+- Every kind goes into `_incomplete`, as **Set incomplete files aside** does today (US-13).
+- An unticked kind stays where it is, and the step's output says how many were left in place by this setting.
+- The settings apply to the step's button, its preview and a full run (US-35, US-36).
+- `organize.py` gets an option naming the kinds to move, added when the app is built. Given no option, `--move-incomplete` moves every kind, as it does today. The **Command** line under the button (US-37) shows the option.
+- When every box is unticked, **Set incomplete files aside** says that there is nothing to move and does not run.
+- The tooltip (US-39) explains each kind with an example.
+- The settings are saved with the project's other settings, and **Reset to defaults** ticks every box again.
+- Tests cover each kind ticked and unticked, the default with no option, and every box unticked.
+
+**Status:** Not started
+
+#### US-53 Choose which kinds of ads are set aside
+As a media owner, I want to choose which kinds of ad names are moved aside, so that I can keep a kind that, in my folders, turns out to be my own pictures.
+
+- The **Project** panel (US-33) has an **Ads to move** group with one checkbox for each kind of name **Set ads aside** looks for (US-12, US-30, US-47). All are ticked by default:
+
+| Checkbox | Names it matches | Example |
+|---|---|---|
+| Long random IDs | A random ID used as the whole name: a UUID, a 9-character hex ID and a number, a 24-character hex ID with more parts, or three random parts joined by `_` | `0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg`, `bed51b94a_1595.png` |
+| Ad network names | Names from ad networks and the web addresses they save from | `gmsnet2.png`, `UnityAdsCache-<hash>.jpg`, `news_images%2F1714658759372.jpg`, `__d2duuy9yo5pldo.cloudfront.net_codigames_<id>.png` |
+| Game ads | Game ad creatives and the raw pixel data games save | `Update_Now_Video_V2_720x1280_15s___fudxlv.mp4`, `492887-1648448524975-3d62u.png`, `draw_title.raw` |
+| App files | App icons, button images, cache files and colour swatches | `icon.png`, `scribble2mammoth_over@2x.png`, `glority_cache_1656951098314.jpg`, `2#xff0000ff#0#1.png` |
+| Ad videos | Video names only: 20 random lowercase letters and digits, a 32-character hash, or a transcode tag at the end | `vuyyzy0brvod5gcaocnv.mp4`, `d5a210d011c47b8300bb8034048719a9.mp4`, `<id>-720x1280-h264-Q2.mp4` |
+
+- A file is still moved only when its name matches a ticked kind **and** it has no camera make or model, as today. Every kind goes into `_ads`, or the year's own `_ads` (US-12).
+- A file whose name matches only unticked kinds stays where it is, and the step's output says how many were left in place by this setting.
+- The settings apply to the step's button, its preview and a full run that includes it (US-35, US-36).
+- `organize.py` gets an option naming the kinds to move, added when the app is built. Given no option, `--quarantine-ads` moves every kind, as it does today. The **Command** line under the button (US-37) shows the option.
+- When every box is unticked, **Set ads aside** says that there is nothing to move and does not run.
+- The tooltip (US-39) shows an example name for each kind.
+- The settings are saved with the project's other settings, and **Reset to defaults** ticks every box again.
+- Tests cover each kind ticked and unticked, a name with camera information under a ticked kind, the default with no option, and every box unticked.
 
 **Status:** Not started
 
