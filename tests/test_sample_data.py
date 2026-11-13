@@ -89,8 +89,51 @@ class SetAsideTests(unittest.TestCase):
         (out / 'Before' / 'keep.txt').write_text('mine')
         generate._set_aside(out / 'Before')
         self.assertFalse((out / 'Before').exists())
-        kept = list((out / '_previous').glob('Before */keep.txt'))
+        kept = list((out / '_previous').glob('Before_*/keep.txt'))
         self.assertEqual(len(kept), 1)
+        self.assertNotIn(' ', kept[0].parent.name)
+
+
+class NameUpgradeTests(unittest.TestCase):
+    """US-49: output written while the names had spaces is moved to the new
+    names, never deleted."""
+
+    def setUp(self):
+        self.base = pathlib.Path(tempfile.mkdtemp(prefix='media-date-organizer-'))
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.legacy = self.base / 'Sample Pictures'
+        self.out = self.base / 'Sample_Pictures'
+
+    def test_the_default_names_have_no_spaces(self):
+        self.assertNotIn(' ', generate.DEFAULT_OUT.name)
+
+    def test_legacy_output_is_moved_to_the_new_names(self):
+        (self.legacy / 'Before').mkdir(parents=True)
+        (self.legacy / 'Before' / 'keep.txt').write_text('mine')
+        (self.legacy / 'After log.txt').write_text('log')
+        (self.legacy / '_previous' / 'After 2026-11-08 101500').mkdir(parents=True)
+
+        generate._upgrade_names(self.out, self.legacy)
+
+        self.assertFalse(self.legacy.exists())
+        self.assertEqual((self.out / 'Before' / 'keep.txt').read_text(), 'mine')
+        self.assertFalse((self.out / 'After log.txt').exists())
+        previous = sorted(p.name for p in (self.out / '_previous').iterdir())
+        self.assertIn('After_2026-11-08_101500', previous)
+        self.assertEqual(len([n for n in previous if n.startswith('After_log_')]), 1)
+        self.assertFalse(any(' ' in n for n in previous), previous)
+
+    def test_legacy_output_is_left_alone_when_the_new_folder_exists(self):
+        (self.legacy / 'Before').mkdir(parents=True)
+        self.out.mkdir()
+        generate._upgrade_names(self.out, self.legacy)
+        self.assertTrue((self.legacy / 'Before').is_dir())
+
+    def test_a_name_already_taken_in_previous_is_left_as_it_is(self):
+        (self.out / '_previous' / 'Before 1').mkdir(parents=True)
+        (self.out / '_previous' / 'Before_1').mkdir()
+        generate._upgrade_names(self.out)
+        self.assertTrue((self.out / '_previous' / 'Before 1').is_dir())
 
 
 if __name__ == '__main__':

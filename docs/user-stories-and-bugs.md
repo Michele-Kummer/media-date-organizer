@@ -18,7 +18,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-03:** Michele Kummer found thousands of photos named only by a number (`46.jpg`, `47.jpg`) in `Pictures\2026` after an import and asked whether they were duplicates. Claude found they were a phone's gallery thumbnails, given their folder's date and then flattened in among the photos (BUG-33). US-14 now sets them aside in `_thumbnails`.
 - **Updated 2026-11-08:** Michele Kummer listed more names that are ads: kids' app button images ending `_over@2x`, a plant-ID app's files starting `glority_cach` and colour swatches such as `2#xff0000ff#0#1` (US-47).
 - **Updated 2026-11-08:** Michele Kummer asked for sample data to show a before and after. US-48 records the generator, which replaces the old three-file sample set. Michele Kummer then asked for the good photos in `After` to be flattened into year folders.
-- **Updated 2026-11-09:** Michele Kummer asked for no spaces in file and folder names. US-49 records the names the sample generator writes with spaces.
+- **Updated 2026-11-09:** Michele Kummer asked for no spaces in file and folder names. US-49 records the names the sample generator writes with spaces, built the same day.
 - **Updated 2026-11-09:** Claude checked the new screenshots against the sample data. Michele Kummer fixed the captions and asked for the panels to show the same columns and for the README to explain what a reader may wonder about (US-50).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
@@ -38,7 +38,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 50 (33 Done, 2 Partly done, 15 Not started) |
+| User stories | 50 (34 Done, 2 Partly done, 14 Not started) |
 | Bugs | 33 (2 open, 31 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -475,7 +475,7 @@ Change and test the plugin safely.
 #### US-24 Test without real photos or videos
 As a maintainer, I want tests that run on generated files, so that I can check a change without risking my own photos and videos.
 
-- `py -m unittest discover tests -v` runs the suite. It currently has 93 tests.
+- `py -m unittest discover tests -v` runs the suite. It currently has 97 tests.
 - The tests generate their own photos, and the video tests their own small videos with ffmpeg.
 - Video tests are skipped when ffmpeg is missing. The video date-writing test is skipped when ExifTool is missing. The Date Created test runs only on Windows.
 - The PowerShell scripts are tested only for their dry run (`-Apply`), and only on Windows.
@@ -499,12 +499,12 @@ As a maintainer, I want the README, cheat sheet, skills and this file updated wi
 #### US-48 See a before and after on sample files
 As a maintainer, I want a sample folder that shows each problem the tool fixes, and a copy with the tool run on it, so that I can show what it does and try it without using my own photos.
 
-- `py sample-data/generate.py` writes `sample-data/Sample Pictures/Before`: year folders (`2023`, `2024`) with day folders inside, holding 19 generated files, each with its problem written on the picture. They cover a date only in the name or the folder's name, a PNG, extensions that lie, photos and a video filed under the wrong date, phone thumbnails, three kinds of app ads, junk sidecars, a copy with no data, and two videos.
-- It copies `Before` to `After` and runs `organize.py --all --quarantine-ads --apply-moves --flatten --apply` on each year folder. The good photos and videos end up loose in their year folder, and the rest in that year's `_ads`, `_junk`, `_thumbnails` and `_incomplete`. `After log.txt` holds what the tool printed.
+- `py sample-data/generate.py` writes `sample-data/Sample_Pictures/Before`: year folders (`2023`, `2024`) with day folders inside, holding 19 generated files, each with its problem written on the picture. They cover a date only in the name or the folder's name, a PNG, extensions that lie, photos and a video filed under the wrong date, phone thumbnails, three kinds of app ads, junk sidecars, a copy with no data, and two videos.
+- It copies `Before` to `After` and runs `organize.py --all --quarantine-ads --apply-moves --flatten --apply` on each year folder. The good photos and videos end up loose in their year folder, and the rest in that year's `_ads`, `_junk`, `_thumbnails` and `_incomplete`. `After_log.txt` holds what the tool printed.
 - `Comparison.md` lists every file in `Before` and `After` with its real format and Date Taken.
 - `--before-only` writes only `Before`, and `--out <folder>` writes somewhere else.
-- Running it again moves the old `Before` and `After` into `_previous`; nothing is deleted.
-- Without ffmpeg the videos are left out and it says so. The `Sample Pictures` folder is ignored by git.
+- Running it again moves the old `Before` and `After` into `_previous` as `Before_<date>_<time>` and `After_<date>_<time>`; nothing is deleted.
+- Without ffmpeg the videos are left out and it says so. The `Sample_Pictures` folder is ignored by git.
 - `tests/test_sample_data.py` checks that `Before` starts with each problem, and that in `After` each one is fixed, no day folders are left and the clutter is in each year's holding folders.
 
 **Status:** Done
@@ -515,11 +515,12 @@ As a maintainer, I want the files and folders the sample generator writes to use
 - The output folder is `sample-data/Sample_Pictures`, not `Sample Pictures`.
 - The tool's output is saved as `After_log.txt`, not `After log.txt`.
 - An earlier run is moved into `_previous` as `Before_<date>_<time>` and `After_<date>_<time>`, with no spaces.
-- `.gitignore`, `sample-data/README.md` and US-48 use the new names, and the test for `_previous` looks for the new form.
-- An existing `Sample Pictures` folder is moved into `Sample_Pictures`, not deleted.
+- `.gitignore`, `sample-data/README.md` and US-48 use the new names, and the test for `_previous` looks for the new form. `.gitignore` still lists `Sample Pictures`, so an older folder not yet moved is never committed.
+- Output from an older version is brought up to date by moving, never deleting: a `Sample Pictures` folder is moved to `Sample_Pictures` (or left as it is, with a message, if `Sample_Pictures` already exists), an `After log.txt` goes into `_previous` as `After_log_<date>_<time>.txt`, and spaces in the names in `_previous` become underscores unless the new name is taken.
 - Sample content keeps the spaces it needs to show a problem: `Aug 19 2023` is a folder named the way people name them, which the tool reads a date from.
+- `tests/test_sample_data.py` checks the default name, the move from `Sample Pictures`, the renames in `_previous`, and that nothing is moved over an existing name.
 
-**Status:** Not started
+**Status:** Done
 
 #### US-50 Screenshots a reader can follow
 As a media owner reading the README, I want the before and after screenshots laid out the same way and explained where they could puzzle me, so that I can see what the tool changed without guessing.

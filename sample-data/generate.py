@@ -6,10 +6,12 @@ two can be compared side by side.
     py sample-data/generate.py --before-only   # just Before
     py sample-data/generate.py --out D:\\Demo  # somewhere else
 
-By default it writes "sample-data/Sample Pictures/Before" and ".../After"
-(both ignored by git), plus "Comparison.md", which lists every file in each
-with its real format and Date Taken. Existing Before and After folders are
-moved into "Sample Pictures/_previous", never deleted.
+By default it writes sample-data/Sample_Pictures/Before and .../After (both
+ignored by git), plus Comparison.md, which lists every file in each with its
+real format and Date Taken, and After_log.txt, what the tool printed.
+Existing Before and After folders are moved into Sample_Pictures/_previous
+as Before_<date>_<time>, never deleted. Output from before the names had no
+spaces ("Sample Pictures") is moved into the new names the same way.
 
 Videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"); without it they are
 left out. Writing a video's date in After needs ExifTool.
@@ -28,7 +30,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / 'skills' / 'media-date-organizer' / 'scripts'))
 import organize  # noqa: E402
 
-DEFAULT_OUT = HERE / 'Sample Pictures'
+DEFAULT_OUT = HERE / 'Sample_Pictures'
+# Where output went while the names had spaces; moved to DEFAULT_OUT
+LEGACY_OUT = HERE / 'Sample Pictures'
 
 # The steps run on each year folder in After: the routine ones (--all), plus
 # setting ads aside, moving each file into a folder named for its date, and
@@ -145,14 +149,41 @@ def make_before(folder) -> list:
     return skipped
 
 
+def _stamp() -> str:
+    return datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S')
+
+
 def _set_aside(folder: pathlib.Path) -> None:
-    """Move an existing folder into _previous beside it, never deleting it."""
+    """Move an existing folder into _previous beside it as <name>_<date>_<time>,
+    never deleting it."""
     if not folder.exists():
         return
     previous = folder.parent / '_previous'
     previous.mkdir(exist_ok=True)
-    stamp = datetime.datetime.now().strftime('%Y-%m-%d %H%M%S')
-    shutil.move(str(folder), str(previous / f'{folder.name} {stamp}'))
+    shutil.move(str(folder), str(previous / f'{folder.name}_{_stamp()}'))
+
+
+def _upgrade_names(out: pathlib.Path, legacy: pathlib.Path = None) -> None:
+    """Bring output written while the names had spaces up to date, by moving,
+    never deleting (US-49): the legacy "Sample Pictures" folder becomes out,
+    an "After log.txt" goes into _previous, and names in _previous get
+    underscores in place of spaces. A name already taken is left as it is."""
+    if legacy is not None and legacy.exists():
+        if out.exists():
+            print(f'Left {legacy} as it is: {out} already exists')
+        else:
+            shutil.move(str(legacy), str(out))
+            print(f'Moved {legacy} to {out}')
+    old_log = out / 'After log.txt'
+    if old_log.exists():
+        (out / '_previous').mkdir(exist_ok=True)
+        shutil.move(str(old_log), str(out / '_previous' / f'After_log_{_stamp()}.txt'))
+    previous = out / '_previous'
+    if previous.is_dir():
+        for item in sorted(previous.iterdir()):
+            new = item.with_name(item.name.replace(' ', '_'))
+            if new != item and not new.exists():
+                item.rename(new)
 
 
 def make_after(before, after) -> tuple:
@@ -212,6 +243,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     out = pathlib.Path(args.out)
+    _upgrade_names(out, LEGACY_OUT if out == DEFAULT_OUT else None)
     before, after = out / 'Before', out / 'After'
     _set_aside(before)
     _set_aside(after)
@@ -221,8 +253,8 @@ def main(argv=None) -> int:
         print(f'Left out {rel}: ffmpeg is needed for videos (pip install "imageio-ffmpeg>=0.5")')
     if not args.before_only:
         code, log = make_after(before, after)
-        (out / 'After log.txt').write_text(log, encoding='utf-8')
-        print(f'Ran organize.py on each year folder of a copy in {after} (exit code {code}); its output is in "After log.txt"')
+        (out / 'After_log.txt').write_text(log, encoding='utf-8')
+        print(f'Ran organize.py on each year folder of a copy in {after} (exit code {code}); its output is in After_log.txt')
         if code:
             return code
     (out / 'Comparison.md').write_text(comparison(before, after), encoding='utf-8')

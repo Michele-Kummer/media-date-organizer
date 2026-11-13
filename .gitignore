@@ -31,6 +31,7 @@ sample-data/private/
 docs/git-cheatsheet.md
 
 # Generated sample photos and videos (make them with sample-data/generate.py)
+sample-data/Sample_Pictures/
 sample-data/Sample Pictures/
 
 # Photoshop sources for the screenshots (keep on disk, too large for the repo)

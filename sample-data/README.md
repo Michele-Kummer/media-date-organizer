@@ -10,16 +10,16 @@ From the repository root:
 py sample-data/generate.py
 ```
 
-This writes into `sample-data/Sample Pictures` (ignored by git):
+This writes into `sample-data/Sample_Pictures` (ignored by git):
 
 | What | What it is |
 |---|---|
 | `Before` | The samples as they start out. |
 | `After` | A copy of `Before` with `organize.py --all --quarantine-ads --apply-moves --flatten --apply` run on each year folder, as you would on `E:\Pictures\2024`. |
 | `Comparison.md` | Every file in each folder, with its real format and Date Taken. |
-| `After log.txt` | What the tool printed while making `After`. |
+| `After_log.txt` | What the tool printed while making `After`. |
 
-`--before-only` writes only `Before`, so you can run the plugin on it yourself. `--out <folder>` writes somewhere else. Running it again moves the old `Before` and `After` into `_previous` rather than deleting them.
+`--before-only` writes only `Before`, so you can run the plugin on it yourself. `--out <folder>` writes somewhere else. Running it again moves the old `Before` and `After` into `_previous`, as `Before_<date>_<time>` and `After_<date>_<time>`, rather than deleting them. Output from an older version, in `Sample Pictures`, is moved into `Sample_Pictures` the same way.
 
 Videos need ffmpeg (`pip install "imageio-ffmpeg>=0.5"`) and are left out without it. Writing a video's date in `After` needs ExifTool.
 
