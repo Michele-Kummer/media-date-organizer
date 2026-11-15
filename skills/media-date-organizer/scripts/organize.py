@@ -42,15 +42,21 @@ and a summary of every phase's counts and problems is printed at the end):
                         a photo or video (IMG_E5239.JPG) whose content is
                         really plist, XMP or other XML text. Nothing
                         is deleted: look over _junk and delete it yourself.
-                        Phone gallery thumbnails (a JPEG named only by a
-                        number, such as 1234.jpg, at most 1024 pixels on its
-                        long side, with no camera Make or Model) go straight
-                        into a "_thumbnails" folder instead: an import can
-                        bring a phone's thumbnail cache along, and a
-                        thumbnail may be the only copy left of a photo, so
-                        compare them with your photos before deleting any.
-                        --delete-junk is the old name for this flag and still
-                        works (it moves too).
+                        Phone gallery thumbnails are left for
+                        --move-thumbnails. --delete-junk is the old name for
+                        this flag and still works (it moves too).
+    --move-thumbnails   Optional; not part of --all. Move every phone gallery
+                        thumbnail (a JPEG named only by a number, such as
+                        1234.jpg, at most 1024 pixels on its long side, with
+                        no camera Make or Model) that already has a Date
+                        Taken straight into a "_thumbnails" folder inside the
+                        root, with no subfolders. An import can bring a
+                        phone's thumbnail cache along, and a thumbnail may be
+                        the only copy left of a photo, so compare them with
+                        your photos before deleting any. Run it after
+                        --fill-blanks: a thumbnail with no Date Taken yet is
+                        left where it is and listed, so it keeps its folder's
+                        date. Nothing is deleted.
     --audit             Audit dates: scan and write audit XLSX; make no
                         changes. Photos and videos are found in the root and
                         every subfolder at any depth. --report-only is the old
@@ -2547,11 +2553,12 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
     (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and every file
     named as a photo or video that is really plist, XMP or XML text (see
     not_media_kind) in root and every subfolder straight into root/_junk,
-    flat, and every phone gallery thumbnail into root/_thumbnails. Nothing is
-    deleted: the user looks them over and deletes them. Emptied folders are
-    left for --flatten or the cleanup script."""
+    flat. Nothing is deleted: the user looks them over and deletes them.
+    Emptied folders are left for --flatten or the cleanup script. Phone
+    gallery thumbnails are left alone: --move-thumbnails sets them aside once
+    they have a date (BUG-34)."""
     counts = Counter()
-    claimed = {JUNK_DIR: set(), THUMBNAILS_DIR: set()}
+    claimed = set()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     media_exts = MEDIA_EXTS | set(CAMCORDER_EXTS)
     for dirpath, dirs, files in os.walk(root):
@@ -2560,7 +2567,6 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
         for name in sorted(files):
             full = os.path.join(dirpath, name)
             ext = pathlib.Path(name).suffix
-            holding = JUNK_DIR
             # Checked first: "._IMG_0001.AAE" is a sidecar, not an AAE file
             if _is_appledouble(full):
                 kind, label = 'moved-mac-sidecars', 'Mac sidecar'
@@ -2572,15 +2578,43 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
                 kind, label = 'moved-plist-xmp', ext.lstrip('.').upper() + ' file'
             elif ext.lower() in media_exts and (text_kind := not_media_kind(full)):
                 kind, label = 'moved-not-media', f"{text_kind} file named {ext}"
-            elif is_phone_thumbnail(full):
-                kind, label, holding = 'moved-phone-thumbnails', 'phone thumbnail', THUMBNAILS_DIR
             else:
                 continue
-            dst = _move_to_junk(root, full, counts, dry_run, claimed[holding], holding)
+            dst = _move_to_junk(root, full, counts, dry_run, claimed)
             if dst is None:
                 continue
             counts[kind] += 1
             print(f"{verb} ({label}): {os.path.relpath(full, root)} -> {dst}")
+    return dict(counts)
+
+
+def move_thumbnails(root: str, dry_run: bool = False) -> dict:
+    """Move every phone gallery thumbnail (see is_phone_thumbnail) in root and
+    every subfolder straight into root/_thumbnails, flat, for the user to
+    compare with their photos. Optional and not part of --all. A thumbnail
+    with no Date Taken yet is left where it is: once it leaves its dated
+    folder every step skips it, so its date would be lost (BUG-34). Run
+    --fill-blanks first. Nothing is deleted."""
+    counts = Counter()
+    claimed = set()
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(dirs)
+        dirs.sort()
+        for name in sorted(files):
+            full = os.path.join(dirpath, name)
+            if not is_phone_thumbnail(full):
+                continue
+            rel = os.path.relpath(full, root)
+            if not _pil_meta(full).get('DateTimeOriginal'):
+                counts['left-undated'] += 1
+                print(f"LEFT (no Date Taken yet; run --fill-blanks first): {rel}", file=sys.stderr)
+                continue
+            dst = _move_to_junk(root, full, counts, dry_run, claimed, THUMBNAILS_DIR)
+            if dst is None:
+                continue
+            counts['moved-phone-thumbnails'] += 1
+            print(f"{verb} (phone thumbnail): {rel} -> {dst}")
     return dict(counts)
 
 
@@ -2735,7 +2769,7 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
 PHASE_ORDER = ('fix_extensions', 'move_junk', 'move_incomplete', 'quarantine_ads', 'convert_bmp', 'fill_blanks', 'convert_png',
-               'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
+               'move_thumbnails', 'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
                'opposite_type', 'other_year', 'find_plists', 'final_check')
 ALL_PHASES = ('fix_extensions', 'move_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'sync_timestamps')
 # Phases that only report. Every other phase changes files, and only when
@@ -2808,6 +2842,8 @@ def _run_phase(phase: str, args) -> dict:
         return fix_extensions(args.root, dry_run)
     if phase == 'move_junk':
         return move_junk(args.root, dry_run)
+    if phase == 'move_thumbnails':
+        return move_thumbnails(args.root, dry_run)
     if phase == 'move_incomplete':
         return move_incomplete(args.root, dry_run)
     if phase == 'quarantine_ads':
@@ -2883,7 +2919,8 @@ def main(argv=None):
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder straight into an _ads folder, with no subfolders, for review. Nothing is deleted.')
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
     ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
-    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and file named as a photo or video that really holds plist or XMP text (IMG_E5239.JPG) in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete, and every phone gallery thumbnail (1234.jpg, small, no camera info) into a _thumbnails folder. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
+    ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and file named as a photo or video that really holds plist or XMP text (IMG_E5239.JPG) in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete. Phone gallery thumbnails are left for --move-thumbnails. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
+    ap.add_argument('--move-thumbnails', action='store_true', help='Move every phone gallery thumbnail (1234.jpg, at most 1024 pixels, no camera info) that already has a Date Taken from the root and every subfolder straight into a _thumbnails folder, with no subfolders, to compare with your photos. A thumbnail with no Date Taken yet is left where it is and listed: run --fill-blanks first so it keeps its folder\'s date. Nothing is deleted. Not part of --all; add it to include it, and it runs after --fill-blanks.')
     ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
     ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')

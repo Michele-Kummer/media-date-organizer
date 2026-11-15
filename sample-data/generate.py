@@ -35,9 +35,10 @@ DEFAULT_OUT = HERE / 'Sample_Pictures'
 LEGACY_OUT = HERE / 'Sample Pictures'
 
 # The steps run on each year folder in After: the routine ones (--all), plus
-# setting ads aside, moving each file into a folder named for its date, and
-# then flattening the dated files up into the year folder itself
-AFTER_FLAGS = ('--all', '--quarantine-ads', '--apply-moves', '--flatten', '--apply')
+# setting ads aside, setting phone thumbnails aside once they are dated,
+# moving each file into a folder named for its date, and then flattening the
+# dated files up into the year folder itself
+AFTER_FLAGS = ('--all', '--quarantine-ads', '--move-thumbnails', '--apply-moves', '--flatten', '--apply')
 
 # Every sample: (path in Before, kind, Date Taken or None, label, colour).
 # kind is the real content: jpeg, png, thumbnail, null (an all-zero copy),

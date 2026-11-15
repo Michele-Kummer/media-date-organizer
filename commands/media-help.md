@@ -19,6 +19,8 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Then make all of those changes | `/fix-media-dates D:\Pictures\2026 --all --apply` |
 | See what moving everything up out of its subfolders would do (changes nothing) | `/flatten-media D:\Pictures\2026` |
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
+| See which phone thumbnails (`1234.jpg`, small, no camera info) would be set aside, once their dates are written (changes nothing) | `/move-thumbnails D:\Pictures\2026` |
+| Then move them into `_thumbnails` | `/move-thumbnails D:\Pictures\2026 --apply` |
 
 **Check, without changing anything**
 
@@ -39,7 +41,7 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
-| Set aside AAE, Thumbs.db, Mac `._` files, plist and XMP files, and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
+| Set aside AAE, Thumbs.db, Mac `._` files, and plist and XMP files | `Move the junk files in D:\Pictures\2026` |
 | Set aside broken or empty files | `Move the incomplete files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |
@@ -47,9 +49,10 @@ Show the user the list below as it is, then ask which one they want to do and fo
 ## Good to know
 
 - Lines starting with `/` are typed in the Claude chat, not in PowerShell.
-- `/fix-media-dates` and `/flatten-media` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
+- `/fix-media-dates`, `/flatten-media` and `/move-thumbnails` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
 - The plain-language steps are previewed first too, and Claude asks before going ahead.
-- `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, moving to date folders, flatten, BMP conversion and cleanup unless you ask for them.
+- `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, phone thumbnails, moving to date folders, flatten, BMP conversion and cleanup unless you ask for them.
+- Phone thumbnails are set aside only by `/move-thumbnails`, after their dates are written, so each keeps its folder's date. One with no date yet is left where it is.
 - Ads, junk, phone thumbnails, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_incomplete` and `_empty_folders`, not deleted. The only step that deletes is cleaning up converted files, and Claude asks first.
 - Each folder gets an audit spreadsheet (`.xlsx`) recording everything that was done.
 - First time? Try it on a small folder, or a copy of one.

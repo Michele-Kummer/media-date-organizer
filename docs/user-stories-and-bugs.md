@@ -21,6 +21,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-09:** Michele Kummer asked for no spaces in file and folder names. US-49 records the names the sample generator writes with spaces, built the same day.
 - **Updated 2026-11-09:** Claude checked the new screenshots against the sample data. Michele Kummer fixed the captions and asked for the panels to show the same columns and for the README to explain what a reader may wonder about (US-50).
 - **Updated 2026-11-13:** Michele Kummer asked for plist and XMP files to be moved into `_junk` instead of only being reported. US-14 and US-28 now say so. Michele Kummer then asked, as part of the desktop app's design, for a setting for each kind of junk (US-51), incomplete file (US-52) and ad (US-53).
+- **Updated 2026-11-14:** Michele Kummer found that `--move-junk` sets phone thumbnails aside before any date is written, so they leave their dated folder with no date, and that it does so on every run with no way to opt out (BUG-34). Michele Kummer asked for the move to be undone and for setting thumbnails aside to become an optional slash command of its own, run after dates are applied (US-54, built the same day).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -39,12 +40,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 53 (34 Done, 2 Partly done, 17 Not started) |
-| Bugs | 33 (2 open, 31 resolved) |
+| User stories | 54 (35 Done, 2 Partly done, 17 Not started) |
+| Bugs | 34 (2 open, 32 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 14 | 14 |
+| Michele Kummer | 0 | 15 | 15 |
 | Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -230,7 +231,7 @@ As a photo owner, I want the PNG left behind by a conversion removed, and empty 
 </details>
 
 <details>
-<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47)</summary>
+<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47, US-54)</summary>
 
 Move ads and broken files out of the way, and delete files that hold no picture or recording.
 
@@ -279,8 +280,8 @@ As a media owner, I want files that hold no picture or recording moved out of my
 - Thumbnail caches are matched by whole file name only, so `west sucking thumb.jpg` is safe.
 - A name already taken in `_junk` (every folder's `Thumbs.db`, say) gets a `_<subfolder-name>` suffix (`Thumbs_2020-01-02.db`), in the preview too. If that is taken as well, it is a `COLLISION`, and the file stays where it is.
 - `--flatten` moves Sony `.modd`/`.moff` sidecars whose file is gone into `_junk` too.
-- Phone gallery thumbnails go straight into `_thumbnails`, not `_junk`, since one can be the only copy left of a photo. A thumbnail is a JPEG named only by a number (`1234.jpg`, or `1234 (2).jpg`), at most 1024 pixels on its long side, with no camera Make or Model. `--move-junk` runs before `--fill-blanks` in `--all`, so they never get their folder's date (BUG-33).
-- The final check reports what is still in `_junk` (`IN JUNK`) and in `_thumbnails` (`IN THUMBNAILS`). `--delete-junk` still works as the old name of the flag, and moves too.
+- Phone gallery thumbnails are left where they are, so `--fill-blanks` can give them their folder's date. `--move-thumbnails` sets them aside afterwards (US-54, BUG-34).
+- The final check reports what is still in `_junk` (`IN JUNK`). `--delete-junk` still works as the old name of the flag, and moves too.
 - Without `--apply` it only lists the files.
 
 **Status:** Done
@@ -308,6 +309,18 @@ As a media owner, I want the button images, cache files and colour swatches that
   - a number, `#x` and an 8-digit colour, then optional `#<number>` parts: `2#xff0000ff#0#1`, `32#xffa2defe`.
 - The camera check still applies: a name match with camera information is kept.
 - `tests/test_bmp_and_ads.py` checks every name above, and that near misses (`over@2x.png`, `button_over.png`, `IMG_1234@2x.png`, `glority_cac.jpg`, `my_glority_cache_1656951098314.jpg`, `32#xffa2de.png`, `photo#1.jpg`) are not matched.
+
+**Status:** Done
+
+#### US-54 Set phone thumbnails aside once they are dated
+As a photo owner, I want phone gallery thumbnails set aside only when I ask, and only after they have a date, so that each one keeps its folder's date and I can still compare it with my photos.
+
+- `/move-thumbnails <folder>` (flag `--move-thumbnails`) moves phone gallery thumbnails straight into `_thumbnails`, with no subfolders. A thumbnail is a JPEG named only by a number (`1234.jpg`, or `1234 (2).jpg`), at most 1024 pixels on its long side, with no camera Make or Model.
+- Only a thumbnail that already has a Date Taken is moved. One with none stays where it is and is listed as `LEFT (no Date Taken yet; run --fill-blanks first)`, counted as `left-undated`, because every step skips `_thumbnails` and its folder's date would be lost (BUG-34).
+- It is optional and not part of `--all`. `--all --move-thumbnails` runs it after `--fill-blanks` and `--convert-png`, and before `--apply-moves` and `--flatten`, whatever order the flags are typed in.
+- A name already taken in `_thumbnails` gets a `_<subfolder-name>` suffix (`46_2026-11-03.jpg`). If that is taken as well, it is a `COLLISION`, and the file stays where it is.
+- Nothing is deleted, since a thumbnail can be the only copy left of a photo. Without `--apply` it only lists the files. The final check reports what is still in `_thumbnails` (`IN THUMBNAILS`).
+- `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` covers the dry run, the move, an undated thumbnail left in place, a name clash, `--all` leaving thumbnails alone and dating them, `--all --move-thumbnails` moving them with their date, and the final check.
 
 **Status:** Done
 
@@ -755,7 +768,7 @@ As a media owner, I want to choose which kinds of junk are moved aside, so that 
 | Windows thumbnail caches | `Thumbs.db`, `ehthumbs.db` and `ehthumbs_vista.db` | `_junk` | Set junk aside |
 | Plist and XMP files | `.plist` and `.xmp` files, and plist or XMP text saved under a photo name (`IMG_E5239.JPG`) | `_junk` | Set junk aside |
 | Leftover camcorder files | Sony `.modd` and `.moff` sidecars whose video is gone | `_junk` | Flatten |
-| Photo thumbnails | Phone gallery thumbnails (`1234.jpg`, small, no camera make or model) | `_thumbnails` | Set junk aside |
+| Photo thumbnails | Phone gallery thumbnails (`1234.jpg`, small, no camera make or model) | `_thumbnails` | Set thumbnails aside (US-54) |
 
 - An unticked kind stays where it is, and the step's output says how many were left in place by this setting, so a reader can tell them apart from files that were never found.
 - The settings apply to the step's button, its preview and a full run (US-35, US-36).
@@ -853,7 +866,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (31: 14 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (32: 15 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -890,6 +903,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-31 | `--quarantine-ads` put every year's ads in one `_ads` | Photos and videos (ads) | Medium | Michele Kummer | `8b96016` |
 | BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | `8b96016` |
 | BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
+| BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `FIXHASH` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1081,5 +1095,11 @@ After the fix for BUG-31, a run of `--quarantine-ads` on `E:\Pictures` puts ads 
 
 An import from a phone brought along its gallery's thumbnail cache: 2,520 small JPEGs named only by a number (`46.jpg`, `1020.jpg`), put loose in the import's `2026-11-02` folder. They have no camera info and no Date Taken, so `--fill-blanks` gave each one the folder's date at 12:00:00, and `--flatten` then moved them up into `Pictures\2026` beside the real photos. With an earlier import there were 4,048 in all. They are not byte-for-byte copies, so the duplicate finder could not catch them, and comparing them with both photo libraries showed that some are the only copy left of a photo, so they could not simply go to `_junk`.
 **Fix:** `--move-junk` recognises a phone thumbnail (`is_phone_thumbnail`: a JPEG named only by a number, at most 1024 pixels on its long side, with no camera Make or Model) and moves it into a new `_thumbnails` holding folder, which every step skips and the final check reports (`IN THUMBNAILS`). `Cleanup-Pictures.ps1` skips it too. On the real files it caught 4,005 of the 4,014 thumbnails and none of the photos. `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` covers the check, the move, name clashes, `--all` setting them aside before they get a date, and the final check.
+
+#### BUG-34 Phone thumbnails were set aside before they got a date, with no way to opt out
+**Found by:** Michele Kummer · **Affects:** photos (phone thumbnails) · **Fixed in:** `FIXHASH`
+
+The fix for BUG-33 made `--move-junk` move phone thumbnails into `_thumbnails`. `--move-junk` is step 3 and part of `--all`, so it runs before `--fill-blanks` (step 8). On `E:\Pictures\2022` it moved 4,017 thumbnails, from the year folder itself and from 196 day folders under `Temp`, into `_thumbnails` with no Date Taken. Every step skips `_thumbnails`, so the folders' dates were lost, and the move could not be left out of a run. The 4,017 moves were undone from the audit workbook's Run log, putting each file back where it came from.
+**Fix:** `--move-junk` no longer touches phone thumbnails. A new optional phase, `--move-thumbnails` (slash command `/move-thumbnails`), moves them into `_thumbnails` only once they have a Date Taken, and lists any without one as `LEFT`. It is not part of `--all`; added to it, it runs after the dates are written. Tests in `tests/test_fix_extensions_and_junk.py` and `tests/test_dry_run.py` cover it, and the sample generator adds `--move-thumbnails` to its run (US-54).
 
 </details>

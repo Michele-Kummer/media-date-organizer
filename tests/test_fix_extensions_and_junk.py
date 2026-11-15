@@ -251,7 +251,8 @@ def make_thumbnail(path, size=(384, 512), camera=None):
 
 class PhoneThumbnailTests(unittest.TestCase):
     """BUG-33: a phone's gallery thumbnails, imported loose in a dated folder,
-    were given the folder's date and flattened in among the photos."""
+    were given the folder's date and flattened in among the photos. BUG-34:
+    they are set aside only by the optional --move-thumbnails, once dated."""
 
     def setUp(self):
         self.root = pathlib.Path(tempfile.mkdtemp(prefix='media-date-organizer-'))
@@ -273,38 +274,70 @@ class PhoneThumbnailTests(unittest.TestCase):
         for name in ('48.jpg', '49.jpg', 'IMG_50.jpg', '51.png', '52.jpg'):
             self.assertFalse(organize.is_phone_thumbnail(str(self.day / name)), name)
 
-    def test_move_junk_sets_thumbnails_aside_and_deletes_nothing(self):
+    def date(self, path, when='2026:11:02 12:00:00'):
+        """Give a thumbnail a Date Taken, as --fill-blanks would."""
+        organize._write_exif_date_image(str(path), datetime.datetime.strptime(when, '%Y:%m:%d %H:%M:%S'))
+
+    def test_move_junk_leaves_thumbnails_where_they_are(self):
+        """BUG-34: --move-junk runs before dates are written, so it must not
+        take a thumbnail out of its dated folder."""
         make_thumbnail(self.day / '46.jpg')
-        make_thumbnail(self.day / '48.jpg', camera='samsung')
         (self.day / 'Thumbs.db').write_bytes(b'cache')
+        code, out = run(self.root, '--move-junk', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.day), ['46.jpg'])
+        self.assertEqual(names(self.root / '_junk'), ['thumbs.db'])
+        self.assertFalse((self.root / '_thumbnails').exists())
+
+    def test_move_thumbnails_sets_dated_thumbnails_aside_and_deletes_nothing(self):
+        make_thumbnail(self.day / '46.jpg')
+        self.date(self.day / '46.jpg')
+        make_thumbnail(self.day / '48.jpg', camera='samsung')
+        self.date(self.day / '48.jpg')
         before = snapshot(self.root)
 
-        code, out = run(self.root, '--move-junk')
+        code, out = run(self.root, '--move-thumbnails')
         self.assertEqual(code, 0, out)
         self.assertEqual(snapshot(self.root), before, 'a dry run must not move anything')
         self.assertIn('WOULD MOVE (phone thumbnail): ' + os.path.join('2026-11-02', '46.jpg'), out)
 
-        code, out = run(self.root, '--move-junk', '--apply')
+        code, out = run(self.root, '--move-thumbnails', '--apply')
         self.assertEqual(code, 0, out)
         self.assertEqual(names(self.root / '_thumbnails'), ['46.jpg'])
-        self.assertEqual(names(self.root / '_junk'), ['thumbs.db'])
         self.assertEqual(names(self.day), ['48.jpg'])
         self.assertIn('"moved-phone-thumbnails": 1', out)
 
-    def test_a_thumbnail_name_taken_gets_its_subfolder_name(self):
+    def test_move_thumbnails_leaves_an_undated_thumbnail_and_says_why(self):
         make_thumbnail(self.day / '46.jpg')
-        make_thumbnail(self.root / '2026-11-03' / '46.jpg')
-        code, out = run(self.root, '--move-junk', '--apply')
+        code, out = run(self.root, '--move-thumbnails', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(names(self.day), ['46.jpg'])
+        self.assertIn('LEFT (no Date Taken yet; run --fill-blanks first): ' + os.path.join('2026-11-02', '46.jpg'), out)
+        self.assertIn('"left-undated": 1', out)
+
+    def test_a_thumbnail_name_taken_gets_its_subfolder_name(self):
+        for day in ('2026-11-02', '2026-11-03'):
+            make_thumbnail(self.root / day / '46.jpg')
+            self.date(self.root / day / '46.jpg')
+        code, out = run(self.root, '--move-thumbnails', '--apply')
         self.assertEqual(code, 0, out)
         self.assertEqual(names(self.root / '_thumbnails'), ['46.jpg', '46_2026-11-03.jpg'])
 
-    def test_all_moves_thumbnails_before_they_get_the_folders_date(self):
+    def test_all_leaves_thumbnails_alone_and_dates_them(self):
         make_thumbnail(self.day / '46.jpg')
-        code, out = run(self.root, '--all', '--flatten', '--apply')
+        code, out = run(self.root, '--all', '--apply')
+        self.assertEqual(code, 0, out)
+        self.assertFalse((self.root / '_thumbnails').exists(), '--all must not move thumbnails')
+        dt = organize.read_metadata(str(self.day / '46.jpg'), '.jpg')['date_taken']
+        self.assertEqual(dt, datetime.datetime(2026, 11, 2, 12, 0))
+
+    def test_all_with_move_thumbnails_moves_them_after_they_get_the_folders_date(self):
+        make_thumbnail(self.day / '46.jpg')
+        code, out = run(self.root, '--all', '--move-thumbnails', '--flatten', '--apply')
         self.assertEqual(code, 0, out)
         moved = self.root / '_thumbnails' / '46.jpg'
         self.assertTrue(moved.exists(), out)
-        self.assertIsNone(organize.read_metadata(str(moved), '.jpg')['date_taken'])
+        self.assertEqual(organize.read_metadata(str(moved), '.jpg')['date_taken'], datetime.datetime(2026, 11, 2, 12, 0))
         self.assertFalse((self.root / '46.jpg').exists(), 'the thumbnail must not be flattened into root')
 
     def test_other_phases_and_flatten_leave_the_thumbnails_folder_alone(self):
@@ -316,7 +349,9 @@ class PhoneThumbnailTests(unittest.TestCase):
     def test_final_check_reports_what_is_in_thumbnails(self):
         make_thumbnail(self.day / '46.jpg')
         make_thumbnail(self.day / '47.jpg')
-        run(self.day, '--move-junk', '--apply')
+        self.date(self.day / '46.jpg')
+        self.date(self.day / '47.jpg')
+        run(self.day, '--move-thumbnails', '--apply')
         code, out = run(self.root, '--final-check')
         self.assertEqual(code, 0, out)
         self.assertIn('IN THUMBNAILS: 2026-11-02/_thumbnails (2 file(s))', out)

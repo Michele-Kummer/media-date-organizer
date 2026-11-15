@@ -83,10 +83,12 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 |---|---|
 | Step by step: see what each step would change, and choose the optional ones (changes nothing) | `/fix-media-dates D:\Pictures\2026` |
 | Then make the changes you chose | `/fix-media-dates D:\Pictures\2026 --apply` |
-| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
+| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--move-thumbnails`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
 | Then make all of those changes | `/fix-media-dates D:\Pictures\2026 --all --apply` |
 | See what moving everything up out of its subfolders would do (changes nothing) | `/flatten-media D:\Pictures\2026` |
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
+| See which phone thumbnails would be set aside, once their dates are written (changes nothing) | `/move-thumbnails D:\Pictures\2026` |
+| Then move them into `_thumbnails` | `/move-thumbnails D:\Pictures\2026 --apply` |
 | Find photos or videos that are copies of each other | `Find duplicates in D:\Pictures\2012` |
 | See photos filed among videos, or videos among photos | `/report-opposite-type D:\Videos` |
 | Find photos and videos taken in a different year from their year folder (changes nothing) | `Find the files from another year in D:\Pictures\2020` |
@@ -97,7 +99,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
-| Set aside `.AAE`, `Thumbs.db`, Mac `._` files, plist and XMP files, and phone thumbnails | `Move the junk files in D:\Pictures\2026` |
+| Set aside `.AAE`, `Thumbs.db`, Mac `._` files, and plist and XMP files | `Move the junk files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Compare the pixels of possible copies | `Visually compare the duplicates in D:\Pictures\2026` |
 | Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |
@@ -113,7 +115,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 |---|---|---|
 | Fix extensions | Yes | Yes |
 | Audit dates and write the audit workbook (report) | Yes | No (every run is still logged; run `--audit` afterwards for an up-to-date report) |
-| Set junk aside in `_junk`, phone thumbnails in `_thumbnails` | Yes | Yes |
+| Set junk aside in `_junk` | Yes | Yes |
 | Set incomplete files aside in `_incomplete` | Yes | Yes |
 | Set ads aside in `_ads` | If you choose it | Only with `--quarantine-ads` |
 | Find plist and XMP files (report) | Yes | No |
@@ -123,6 +125,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Move to date folders | If you choose it | Only with `--apply-moves` |
 | Sync timestamps | If you choose it | Yes |
 | Flatten | If you choose it | Only with `--flatten` |
+| Set phone thumbnails aside in `_thumbnails` | No; run `/move-thumbnails` afterwards | Only with `--move-thumbnails` |
 | Clean up converted files | Always asks you | No; run it on its own afterwards |
 | Deletes anything | Only cleanup, if you say yes | Never |
 
@@ -143,7 +146,7 @@ These are the steps inside, in the order they run:
 |---|---|---|---|
 | 1 | Fix extensions | Reads each file's first bytes and renames any whose extension doesn't match its real format (PNG, JPEG, HEIC, MOV/MP4, 3GP, M2TS, MPG, WMV, AVI, GIF, WEBP, TIFF, BMP). Runs first, because every later step goes by the extension. | `--fix-extensions` |
 | 2 | Audit dates (report) | Reads every file's real date and writes the audit workbook. Changes nothing. | `--audit` |
-| 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db`, macOS `._` sidecars, and plist and XMP files (including ones saved under a photo name) into `_junk`, and phone gallery thumbnails (`1234.jpg`) into `_thumbnails`. | `--move-junk` |
+| 3 | Set junk aside | Moves iPhone `.AAE` edit files, `Thumbs.db`, macOS `._` sidecars, and plist and XMP files (including ones saved under a photo name) into `_junk`. Phone gallery thumbnails stay put so step 8 can date them. | `--move-junk` |
 | 4 | Set incomplete files aside | Moves empty, null-filled and headerless files, the remains of failed copies, into `_incomplete`. | `--move-incomplete` |
 | 5 | Set ads aside (optional) | Moves app and game ad images and videos into `_ads`. When run on the folder that holds the year folders, each year gets its own `_ads`. Runs before dates are filled, so ads are not dated and filed with real photos. | `--quarantine-ads` |
 | 6 | Find plist and XMP files (report) | Lists iPhone edit data and XMP text saved under a photo name. Changes nothing. | `--find-plists` |
@@ -153,6 +156,8 @@ These are the steps inside, in the order they run:
 | 10 | Move to date folders (optional) | Moves each file whose date doesn't match its folder into a folder named for its real date. Leave it out if you are going to flatten. | `--apply-moves` |
 | 11 | Sync timestamps (optional) | Sets Date Created, and Date Modified on unedited files, to the date taken. | `--sync-timestamps` |
 | 12 | Flatten (optional) | Moves everything up out of its dated subfolders into the folder itself. The alternative to step 10. Also `/flatten-media`. | `--flatten` |
+
+**Then, optionally, set phone thumbnails aside.** `/move-thumbnails D:\Pictures\2026` (flag `--move-thumbnails`) moves phone gallery thumbnails (a JPEG named only by a number, such as `1234.jpg`, small, with no camera make or model) into `_thumbnails`. Run it after the dates are written: a thumbnail with no Date Taken yet is left where it is and listed, because once it is in `_thumbnails` no step dates it. Some thumbnails are the only copy left of a photo, so compare them with your photos before deleting any. Added to `--all`, it runs after the dates are written and before moving and flattening.
 
 **2. Check and tidy.** Once the dates are fixed:
 
