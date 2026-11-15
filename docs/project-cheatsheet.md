@@ -26,6 +26,8 @@ py skills\media-date-organizer\scripts\organize.py --root $root --find-plists --
 
 py skills\media-date-organizer\scripts\organize.py --root $root --convert-bmp
 py skills\media-date-organizer\scripts\organize.py --root $root --convert-bmp --apply
+py skills\media-date-organizer\scripts\organize.py --root $root --convert-webp
+py skills\media-date-organizer\scripts\organize.py --root $root --convert-webp --apply
 
 py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks
 py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks --apply

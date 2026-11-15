@@ -14,7 +14,7 @@
     photo (IMG_1.HEIC / IMG_1.MOV), a sidecar (IMG_1.JPG / IMG_1.xmp), a
     HEIC next to a JPG, or a PNG or BMP whose JPG is a different size or a different
     picture are all kept. _ads, _incomplete, _no-image-data, _junk,
-    _thumbnails and _empty_folders are left alone.
+    _thumbnails, _converted and _empty_folders are left alone.
 
 .PARAMETER Path
     Root folder to clean. Defaults to the current directory.
@@ -100,7 +100,7 @@ function Get-PixelDifference([string]$a, [string]$b) {
 
 $root = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\')
 # Same holding folders organize.py leaves alone (HOLDING_DIRS)
-$holding = '_ads', '_incomplete', '_no-image-data', '_empty_folders', '_junk', '_thumbnails'
+$holding = '_ads', '_incomplete', '_no-image-data', '_empty_folders', '_junk', '_thumbnails', '_converted'
 function Test-InHolding([string]$dir) {
     if ($dir.Length -le $root.Length) { return $false }
     # At any depth: --quarantine-ads gives each year folder its own _ads

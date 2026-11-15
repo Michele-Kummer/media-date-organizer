@@ -24,6 +24,7 @@ CHANGING = {
     'fill_blanks': '--fill-blanks',
     'convert_png': '--convert-png',
     'convert_bmp': '--convert-bmp',
+    'convert_webp': '--convert-webp',
     'apply_moves': '--apply-moves',
     'sync_timestamps': '--sync-timestamps',
     'flatten': '--flatten',
@@ -39,6 +40,7 @@ def build(root):
     make_image(day / 'undated.jpg')                                              # fill blanks
     make_image(day / 'shot.png', fmt='PNG')                                      # convert
     make_image(day / 'scan.bmp', fmt='BMP')                                      # convert BMP
+    make_image(day / 'saved.webp', fmt='WEBP')                                   # convert WebP
     make_image(day / 'misnamed.gif', fmt='PNG')                                  # fix extensions
     make_image(day / '0c4cda27-b4cc-4e92-a446-d6b780f24a64.jpg')                 # ad
     (day / 'empty.jpg').write_bytes(b'')                                         # incomplete

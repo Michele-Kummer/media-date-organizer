@@ -95,6 +95,17 @@ and a summary of every phase's counts and problems is printed at the end):
                         really another format, or holds transparent pixels,
                         is left alone and reported. Leaves originals in
                         place for Cleanup-Pictures.ps1.
+    --convert-webp      Not part of --all (add it to include it). Re-encode
+                        WebP files (saved from web pages and messaging apps)
+                        as JPEG at quality 95. A WebP's own Date Taken is
+                        kept; one with none is given the date --fill-blanks
+                        would write (the date in the filename, else the
+                        folder's date at 12:00:00). Animated WebPs and ones
+                        with transparent pixels stay WebP and are reported.
+                        Once the JPEG is confirmed to be the same picture
+                        (same size, pixels within 1%), the WebP moves
+                        straight into a "_converted" folder inside the root
+                        instead of being deleted. Runs before --fill-blanks.
     --apply-moves       Not part of --all (add it to include it). Move files
                         whose Date Taken does not match their current
                         folder name into a sibling folder named for the real
@@ -218,7 +229,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         still in an _ads folder (IN ADS), files still in an
                         _incomplete folder (INCOMPLETE), files still in a
                         _junk folder (IN JUNK), phone thumbnails still in a
-                        _thumbnails folder (IN THUMBNAILS), photos among videos
+                        _thumbnails folder (IN THUMBNAILS), converted WebPs
+                        still in a _converted folder (IN CONVERTED), photos among videos
                         or videos among photos (as --opposite-type lists
                         them), subfolders still there after --flatten (NOT
                         FLATTENED, with how many files each holds; a named
@@ -632,8 +644,13 @@ JUNK_DIR = '_junk'
 # left of a photo deleted from the phone. Every phase ignores it.
 THUMBNAILS_DIR = '_thumbnails'
 
+# Folder inside root that --convert-webp moves each WebP into, with no
+# subfolders, once its JPEG is confirmed to be the same picture. Kept, not
+# deleted, so the user can compare them. Every phase ignores it.
+CONVERTED_DIR = '_converted'
+
 HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR,
-                THUMBNAILS_DIR)
+                THUMBNAILS_DIR, CONVERTED_DIR)
 
 
 def _prune_holding(dirs: list) -> None:
@@ -1392,11 +1409,16 @@ def fill_blanks(root: str, dry_run: bool = False) -> dict:
             counts['unsupported-format'] += 1
             if ftype == '.bmp':
                 counts['bmp-needs-convert'] += 1
+            elif ftype == '.webp':
+                counts['webp-needs-convert'] += 1
     if counts['empty-file']:
         print(f"NOTE: {counts['empty-file']} file(s) are empty (0 bytes) and were skipped.", file=sys.stderr)
     if counts['bmp-needs-convert']:
         print(f"NOTE: {counts['bmp-needs-convert']} BMP file(s) cannot hold a Date Taken; "
               "--convert-bmp turns them into dated JPEGs.", file=sys.stderr)
+    if counts['webp-needs-convert']:
+        print(f"NOTE: {counts['webp-needs-convert']} WebP file(s) were not given a Date Taken; "
+              "--convert-webp turns them into dated JPEGs.", file=sys.stderr)
     return dict(counts)
 
 
@@ -1425,11 +1447,44 @@ def convert_bmps(root: str, dry_run: bool = False) -> dict:
     return _convert_to_jpeg(root, '.bmp', dry_run)
 
 
+def convert_webps(root: str, dry_run: bool = False) -> dict:
+    """Convert each WebP to a JPEG beside it. A WebP's Date Taken is kept;
+    one with none is given the date --fill-blanks would use, as for BMP.
+    Animated WebPs and ones with transparent pixels stay WebP. Once the JPEG
+    is confirmed to be the same picture, the WebP moves into root/_converted
+    (not deleted). With dry_run, write and move nothing."""
+    return _convert_to_jpeg(root, '.webp', dry_run)
+
+
+# Largest pixel difference, in percent, at which a converted JPEG counts as
+# the same picture as its original: the DUPLICATE, high confidence limit of
+# --visual-compare, and Cleanup-Pictures.ps1's default.
+CONVERT_MAX_PIXEL_DIFFERENCE = 1.0
+
+
+def _same_picture(original: str, jpeg: str) -> Optional[str]:
+    """None when jpeg shows the same picture as original (same size, pixels
+    within CONVERT_MAX_PIXEL_DIFFERENCE), else the reason it does not."""
+    try:
+        with Image.open(original) as a, Image.open(jpeg) as b:
+            if a.size != b.size:
+                return f"sizes differ, {a.width}x{a.height} vs {b.width}x{b.height}"
+            diff = _pixel_difference(a, b)
+    except (OSError, SyntaxError, ValueError) as e:
+        return f"cannot read the JPEG: {e or type(e).__name__}"
+    if diff > CONVERT_MAX_PIXEL_DIFFERENCE:
+        return f"pixel difference {diff:.1f}%"
+    return None
+
+
 def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
     """Convert every <ext> file in root and every subfolder, holding folders
     excepted, to a JPEG of the same name at quality 95, keeping its EXIF.
-    The original is left for Cleanup-Pictures.ps1 to remove."""
+    A PNG or BMP original is left for Cleanup-Pictures.ps1 to remove, which
+    cannot read WebP, so a WebP original moves into root/_converted once
+    the JPEG is confirmed to be the same picture."""
     counts = Counter()
+    claimed = set()
     kind_name = ext.lstrip('.').upper()
     if not HAS_PIL:
         print(f'Pillow required for {kind_name} conversion; pip install "pillow>=10.0"', file=sys.stderr)
@@ -1445,37 +1500,61 @@ def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
                 counts['skipped-overlay'] += 1
                 continue
             p = os.path.join(dirpath, name)
+            rel = os.path.relpath(p, root)
             new = str(pathlib.Path(p).with_suffix('.jpg'))
             if os.path.exists(new):
-                counts['already-converted'] += 1
+                if ext == '.webp':
+                    # A converted WebP has moved into _converted, so this
+                    # JPEG is most likely a different picture of that name
+                    counts['jpg-name-taken'] += 1
+                    print(f"SKIPPED ({os.path.basename(new)} already exists): {rel}", file=sys.stderr)
+                else:
+                    counts['already-converted'] += 1
                 continue
             kind = not_media_kind(p)
             if kind:
-                _report_not_media(os.path.relpath(p, root), kind, counts)
+                _report_not_media(rel, kind, counts)
                 continue
             real = detect_type(p)
-            if ext == '.bmp' and real != '.bmp':
+            if ext in ('.bmp', '.webp') and real != ext:
                 # --fix-extensions gives it its real extension first
-                counts['not-bmp'] += 1
-                print(f"NOT A BMP (really {real or 'unknown'}, left alone): {os.path.relpath(p, root)}",
-                      file=sys.stderr)
+                counts[f'not-{ext[1:]}'] += 1
+                print(f"NOT A {kind_name} (really {real or 'unknown'}, left alone): {rel}", file=sys.stderr)
                 continue
-            # BMP holds no date, so the JPEG gets the one --fill-blanks would write
             dated = ''
             fill_dt = None
-            if ext == '.bmp':
-                fill_dt, source = _fallback_date(name, os.path.basename(os.path.abspath(dirpath)))
-                if fill_dt is not None:
-                    dated = f" (Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} from {source})"
             try:
                 with Image.open(p) as img:
                     img.load()
+                    if getattr(img, 'is_animated', False):
+                        # A JPEG would keep only the first frame
+                        counts['skipped-animated'] += 1
+                        print(f"SKIPPED (animated, stays {kind_name}): {rel}", file=sys.stderr)
+                        continue
                     if _has_transparency(img):
                         # JPEG has no transparency; flattening would change the picture
                         counts['skipped-transparent'] += 1
+                        if ext == '.webp':
+                            print(f"SKIPPED (has transparent pixels, stays WEBP): {rel}", file=sys.stderr)
                         continue
-                    if not dry_run:
+                    exif = img.getexif()
+                    if ext == '.webp':
+                        # Pillow keeps a WebP's EXIF without the JPEG "Exif"
+                        # header, so it is rebuilt rather than copied
+                        exif_bytes = exif.tobytes() if len(exif) else b''
+                    else:
                         exif_bytes = img.info.get('exif', b'')
+                    # BMP holds no date, and a WebP often has none: the JPEG
+                    # gets the one --fill-blanks would write
+                    if ext in ('.bmp', '.webp'):
+                        kept = _parse_exif_dt(exif.get_ifd(0x8769).get(0x9003))
+                        if kept is not None:
+                            dated = f" (Date Taken {kept:%Y-%m-%d %H:%M:%S} kept)"
+                        else:
+                            fill_dt, source = _fallback_date(name, os.path.basename(os.path.abspath(dirpath)))
+                            if fill_dt is not None:
+                                dated = f" (Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} from {source})"
+                    if not dry_run:
                         img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
                 if not dry_run and fill_dt is not None:
                     _write_exif_date_image(new, fill_dt)
@@ -1489,10 +1568,24 @@ def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
                     os.remove(new)
                 continue
             counts['converted'] += 1
-            if ext == '.bmp':
-                counts['converted-dated' if fill_dt else 'converted-undated'] += 1
-            print(f"{'WOULD CONVERT' if dry_run else 'CONVERTED'}: {os.path.relpath(p, root)} -> "
+            if ext in ('.bmp', '.webp'):
+                counts['converted-dated' if dated else 'converted-undated'] += 1
+            print(f"{'WOULD CONVERT' if dry_run else 'CONVERTED'}: {rel} -> "
                   f"{os.path.basename(new)}{dated}")
+            if ext != '.webp':
+                continue
+            # Cleanup-Pictures.ps1 cannot read WebP, so the original is set
+            # aside here, and only once the JPEG is known to match it
+            differs = None if dry_run else _same_picture(p, new)
+            if differs:
+                counts['kept-differs'] += 1
+                print(f"KEPT (the JPEG is not the same picture, {differs}): {rel}", file=sys.stderr)
+                continue
+            dst = _move_to_junk(root, p, counts, dry_run, claimed, CONVERTED_DIR)
+            if dst is not None:
+                counts['moved-to-converted'] += 1
+                print(f"{'WOULD MOVE' if dry_run else 'MOVED'} (converted to {os.path.basename(new)}): "
+                      f"{rel} -> {dst}")
     return dict(counts)
 
 
@@ -2082,7 +2175,8 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
                     continue
                 key, tag = {QUARANTINE_DIR: ('ads-files', 'IN ADS'),
                             JUNK_DIR: ('junk-files', 'IN JUNK'),
-                            THUMBNAILS_DIR: ('thumbnail-files', 'IN THUMBNAILS')}.get(d, ('incomplete-files', 'INCOMPLETE'))
+                            THUMBNAILS_DIR: ('thumbnail-files', 'IN THUMBNAILS'),
+                            CONVERTED_DIR: ('converted-files', 'IN CONVERTED')}.get(d, ('incomplete-files', 'INCOMPLETE'))
                 year[key] += n
                 rel = os.path.relpath(os.path.join(dirpath, d), root).replace(os.sep, '/')
                 print(f"{tag}: {rel} ({n:,} file(s))")
@@ -2127,6 +2221,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
             f"{year['junk-files']:,} in _junk, "
             # Only named when there are some, as few years have any
             + (f"{year['thumbnail-files']:,} in _thumbnails, " if year['thumbnail-files'] else '')
+            + (f"{year['converted-files']:,} in _converted, " if year['converted-files'] else '')
             + f"{year[opposite]:,} {minor}(s) among {major}s, "
             f"{year['folders-not-flattened']:,} folder(s) not flattened, "
             f"{year['collisions']:,} collision(s), "
@@ -2137,6 +2232,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
     print(f"FINAL CHECK: {counts['ads-files']:,} in _ads, {counts['incomplete-files']:,} in _incomplete, "
           f"{counts['junk-files']:,} in _junk, "
           + (f"{counts['thumbnail-files']:,} in _thumbnails, " if counts['thumbnail-files'] else '')
+          + (f"{counts['converted-files']:,} in _converted, " if counts['converted-files'] else '')
           + f"{counts[opposite]:,} {minor}(s) among {major}s, "
           f"{counts['folders-not-flattened']:,} folder(s) not flattened, "
           f"{counts['collisions']:,} collision(s) "
@@ -2849,7 +2945,8 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # Order phases run in when several are given on one command line: clear out
 # junk first, then date, convert, move, sync, and flatten last (once files are
 # in the root the other phases no longer see them).
-PHASE_ORDER = ('fix_extensions', 'move_junk', 'move_incomplete', 'quarantine_ads', 'convert_bmp', 'fill_blanks', 'convert_png',
+PHASE_ORDER = ('fix_extensions', 'move_junk', 'move_incomplete', 'quarantine_ads', 'convert_bmp', 'convert_webp',
+               'fill_blanks', 'convert_png',
                'move_thumbnails', 'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
                'opposite_type', 'other_year', 'find_plists', 'final_check')
 ALL_PHASES = ('fix_extensions', 'move_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'sync_timestamps')
@@ -2935,6 +3032,8 @@ def _run_phase(phase: str, args) -> dict:
         return convert_pngs(args.root, dry_run)
     if phase == 'convert_bmp':
         return convert_bmps(args.root, dry_run)
+    if phase == 'convert_webp':
+        return convert_webps(args.root, dry_run)
     if phase == 'sync_timestamps':
         return sync_timestamps(args.root, dry_run)
     if phase == 'flatten':
@@ -2988,6 +3087,7 @@ def main(argv=None):
     ap.add_argument('--fill-blanks', action='store_true', help='Write Date Taken into EXIF for files whose Date Taken is blank, and Media Created into videos whose Media Created is blank, in the root and every subfolder at any depth, using the date in the filename, else the folder date.')
     ap.add_argument('--convert-png', action='store_true', help='Convert PNG files to JPEG (preserving EXIF).')
     ap.add_argument('--convert-bmp', action='store_true', help='Convert BMP files to JPEG at quality 95. BMP cannot hold a Date Taken, so each JPEG gets the date in the filename, else the folder date. Originals are left for Cleanup-Pictures.ps1. Not part of --all; add it to include it.')
+    ap.add_argument('--convert-webp', action='store_true', help='Convert WebP files to JPEG at quality 95. A WebP\'s Date Taken is kept; one with none gets the date in the filename, else the folder date. Animated WebPs and ones with transparent pixels stay WebP. Once the JPEG is confirmed to be the same picture, the WebP moves into _converted (not deleted). Not part of --all; add it to include it.')
     ap.add_argument('--apply-moves', action='store_true', help='Move files whose Date Taken differs from the folder name. Not part of --all; add it to include it.')
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')

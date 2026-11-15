@@ -24,6 +24,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-14:** Michele Kummer found that `--move-junk` sets phone thumbnails aside before any date is written, so they leave their dated folder with no date, and that it does so on every run with no way to opt out (BUG-34). Michele Kummer asked for the move to be undone and for setting thumbnails aside to become an optional slash command of its own, run after dates are applied (US-54, built the same day).
 - **Updated 2026-11-14:** Michele Kummer found that `--flatten` on `E:\Pictures\2022` left the photos in `Temp\<number>` folders where they were, because it only looked one subfolder deep (BUG-35). Michele Kummer asked for flatten to go all the way down, but only through dated folders and folders named Temp, Junk, Delete, Weird or Review, leaving folders named for a child, a trip or a wedding as they are (US-55, built the same day). Michele Kummer then asked for the desktop app to let the user list the folder names to flatten, with an option for all folders (US-56).
 - **Updated 2026-11-14:** Claude suggested more names that usually hold photos waiting to be sorted, and Michele Kummer asked for all of them to be flattened too: New folder, DCIM and the camera folders inside it (`100APPLE`), Camera, Unsorted, To Sort, Misc, Downloads and Import. US-55 and US-56 now list them.
+- **Updated 2026-11-14:** Michele Kummer asked why three WebP pictures in `E:\Pictures\2022\Temp\2022-05-08` were not given the date in their names. Claude found that `--fill-blanks` writes no date into WebP, and Michele Kummer asked for WebP to be converted to dated JPEGs (US-57, built the same day).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -42,7 +43,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 56 (36 Done, 2 Partly done, 18 Not started) |
+| User stories | 57 (37 Done, 2 Partly done, 18 Not started) |
 | Bugs | 35 (2 open, 33 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -91,7 +92,7 @@ As a media owner, I want to see everything the plugin can do, with what to type 
 </details>
 
 <details>
-<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29, US-44)</summary>
+<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29, US-44, US-57)</summary>
 
 Make every photo and video report its real format and its real date, and make Windows Explorer show it.
 
@@ -180,6 +181,20 @@ As a photo owner, I want to set the JPEG quality that PNG and BMP conversions us
 - The desktop app's quality settings (US-38) depend on this story.
 
 **Status:** Not started
+
+#### US-57 Give WebP pictures a date
+As a photo owner, I want my WebP pictures turned into JPEGs with the right Date Taken, so that they sort with my other photos. WebP pictures come from saving an image from a web page or a messaging app, usually carry no date, and `--fill-blanks` cannot write one into them. Three WebPs in `E:\Pictures\2022\Temp\2022-05-08` named `IMG_20220508_185526_425.webp` were left with no Date Taken, although the date was in their names.
+
+- `--convert-webp` converts each WebP in the folder and every subfolder to a JPEG of the same name at quality 95. The picture keeps its size.
+- A Date Taken already in the WebP is kept. Otherwise the JPEG gets the date `--fill-blanks` would use: the date in the filename (`IMG_20220508_185526_425.webp` gives 2022-05-08 18:55:26), else the folder's date at 12:00:00. A WebP with neither is still converted, with no date.
+- Animated WebPs and WebPs with transparent pixels stay WebP and are listed as `SKIPPED`, since a JPEG would keep one frame and lose the transparency. A `.webp` that is really another format is reported as `NOT A WEBP` and left alone.
+- A JPEG already holding the name is never overwritten. The WebP is listed as `SKIPPED (<name>.jpg already exists)` and stays.
+- `Cleanup-Pictures.ps1` cannot read WebP, so the original is moved, not deleted: once the JPEG is confirmed to be the same picture (same size, pixels within 1%), the WebP moves straight into `_converted` inside the folder, with no subfolders. A name already there gets its folder's name added. If the JPEG does not match, the WebP stays where it is and is listed as `KEPT`.
+- Every step skips `_converted`, and the final check reports what is in it (`IN CONVERTED`).
+- Not part of `--all`; add `--convert-webp` to include it. It runs before `--fill-blanks`, and previews (`WOULD CONVERT`, `WOULD MOVE`) unless `--apply` is given. `--fill-blanks` ends with a `NOTE` pointing to it when it skipped WebPs.
+- `tests/test_webp.py` covers the preview, the conversion, each source of the date, animated and transparent WebPs, a misnamed WebP, a JPEG already holding the name, a name already in `_converted`, a second run, the same-picture check, and the final check.
+
+**Status:** Done
 
 </details>
 
@@ -386,7 +401,7 @@ As a media owner, I want to see photos sitting in my video folders, and videos s
 As a media owner, I want one report of everything still needing attention, so that I know when a year is finished.
 
 - `--final-check` on the folder holding the year folders reports, per year folder:
-  - files in `_ads` and in `_incomplete`;
+  - files in `_ads`, `_incomplete`, `_junk`, `_thumbnails` and `_converted`;
   - photos among videos, or videos among photos;
   - subfolders not flattened;
   - name collisions;
@@ -438,7 +453,7 @@ As a media owner, I want Date Created and Date Modified to match when the photo 
 #### US-21 Never delete without saying so
 As a media owner, I want photos and videos moved aside rather than deleted, except in steps that say they delete, so that mistakes can be undone.
 
-- `_ads`, `_junk`, `_incomplete` and `_empty_folders` hold what was set aside. Every step skips them.
+- `_ads`, `_junk`, `_thumbnails`, `_incomplete`, `_converted` and `_empty_folders` hold what was set aside. Every step skips them.
 - Only `Cleanup-Pictures.ps1` deletes files: PNGs and BMPs already converted to JPEG. `organize.py` deletes nothing (BUG-27).
 - The README's **Guardrails** section lists every safety rule in one place.
 

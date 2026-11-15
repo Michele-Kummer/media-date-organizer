@@ -39,6 +39,7 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Fill in only the missing dates | `Fill in the missing dates in D:\Pictures\2026` |
 | Convert PNG screenshots to JPEG so Explorer shows their date | `Convert the PNGs in D:\Pictures\2026 to JPEG` |
 | Convert BMP pictures to dated JPEGs | `Convert the BMPs in D:\Pictures\2026 to JPEG` |
+| Convert WebP pictures (saved from web pages and apps) to dated JPEGs | `Convert the WebPs in D:\Pictures\2026 to JPEG` |
 | Fix extensions that don't match the file | `Fix the extensions in D:\Pictures\2026` |
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
 | Set aside AAE, Thumbs.db, Mac `._` files, and plist and XMP files | `Move the junk files in D:\Pictures\2026` |
@@ -51,8 +52,8 @@ Show the user the list below as it is, then ask which one they want to do and fo
 - Lines starting with `/` are typed in the Claude chat, not in PowerShell.
 - `/fix-media-dates`, `/flatten-media` and `/move-thumbnails` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
 - The plain-language steps are previewed first too, and Claude asks before going ahead.
-- `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, phone thumbnails, moving to date folders, flatten, BMP conversion and cleanup unless you ask for them.
+- `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, phone thumbnails, moving to date folders, flatten, BMP and WebP conversion and cleanup unless you ask for them.
 - Phone thumbnails are set aside only by `/move-thumbnails`, after their dates are written, so each keeps its folder's date. One with no date yet is left where it is.
-- Ads, junk, phone thumbnails, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_incomplete` and `_empty_folders`, not deleted. The only step that deletes is cleaning up converted files, and Claude asks first.
+- Ads, junk, phone thumbnails, converted WebPs, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_converted`, `_incomplete` and `_empty_folders`, not deleted. The only step that deletes is cleaning up converted files, and Claude asks first.
 - Each folder gets an audit spreadsheet (`.xlsx`) recording everything that was done.
 - First time? Try it on a small folder, or a copy of one.
