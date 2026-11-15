@@ -16,8 +16,8 @@ py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads
 py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads --apply
 py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete
 py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete --apply
-.\scripts\Move-IncompleteByYear.ps1 -Root "E:\Pictures"
-.\scripts\Move-IncompleteByYear.ps1 -Root "E:\Pictures" -Apply
+# One step on every year folder, each into its own _incomplete (change the step to reuse)
+Get-ChildItem E:\Pictures -Directory | Where-Object Name -match '^\d{4}$' | ForEach-Object { py skills\media-date-organizer\scripts\organize.py --root $_.FullName --move-incomplete --apply }
 py skills\media-date-organizer\scripts\organize.py --root $root --move-junk
 py skills\media-date-organizer\scripts\organize.py --root $root --move-junk --apply
 py skills\media-date-organizer\scripts\organize.py --root $root --find-plists
