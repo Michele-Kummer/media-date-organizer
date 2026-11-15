@@ -989,7 +989,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
 | BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
 | BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
-| BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | pending |
+| BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1209,7 +1209,7 @@ An edge case. `--sync-timestamps --apply` on `E:\Pictures\2020` stopped partway 
 **Fix:** A Date Taken of exactly 1904-01-01 00:00:00 (`PLACEHOLDER_DATES`) is read as blank, so `--fill-blanks` replaces it with the date in the filename or folder name. 1904 dates at any other time are kept. A HEIC photo whose `DateTimeOriginal` is the placeholder now falls back to `DateTimeDigitized`. A new `_local_timestamp` turns a date before 1970 into a file time by finding the time zone offset 28 years on (or a multiple of 28, which keeps weekdays and leap years lined up) and shifting back, so scanned photos are synced to their real dates. The conversion is inside the `try`, so a date that still cannot be converted is listed as `FAILED` and the rest are synced. Ten tests in `tests/test_old_and_placeholder_dates.py` cover it.
 
 #### BUG-38 Timestamp sync rewrote and listed files that were already synced
-**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** pending
+**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** `407497b`
 
 A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` again, as if the first run had not worked. It had: `sync_timestamps` simply never looked at a file's current Date Created and Date Modified before writing them, so it wrote the same times again and counted every dated file as synced. Only files with no Date Taken were left out, which is why it was almost every file rather than all of them. The preview did the same, listing every file as `WOULD SYNC`. Nothing was harmed, but the output could not show what a run had actually changed.
 
