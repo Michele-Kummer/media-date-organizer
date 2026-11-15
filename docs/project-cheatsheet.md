@@ -7,18 +7,17 @@ cd C:\Code\media-date-organizer
 $root = "E:\Pictures\2026"
 
 py skills\media-date-organizer\scripts\organize.py --root $root --audit
-
 py skills\media-date-organizer\scripts\organize.py --root $root --all
 py skills\media-date-organizer\scripts\organize.py --root $root --all --apply
 
-
 py skills\media-date-organizer\scripts\organize.py --root $root --fix-extensions
 py skills\media-date-organizer\scripts\organize.py --root $root --fix-extensions --apply
-
 py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads
 py skills\media-date-organizer\scripts\organize.py --root $root --quarantine-ads --apply
 py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete
 py skills\media-date-organizer\scripts\organize.py --root $root --move-incomplete --apply
+.\scripts\Move-IncompleteByYear.ps1 -Root "E:\Pictures"
+.\scripts\Move-IncompleteByYear.ps1 -Root "E:\Pictures" -Apply
 py skills\media-date-organizer\scripts\organize.py --root $root --move-junk
 py skills\media-date-organizer\scripts\organize.py --root $root --move-junk --apply
 py skills\media-date-organizer\scripts\organize.py --root $root --find-plists
@@ -48,12 +47,12 @@ py skills\media-date-organizer\scripts\organize.py --root $root --flatten --appl
 py skills\media-date-organizer\scripts\organize.py --root $root --visual-compare
 .\skills\media-date-organizer\scripts\Cleanup-Pictures.ps1 -Path $root
 .\skills\media-date-organizer\scripts\Cleanup-Pictures.ps1 -Path $root -Apply
-py -m unittest discover tests -v
-
 py skills\media-date-organizer\scripts\organize.py --root $root --opposite-type
 py skills\media-date-organizer\scripts\organize.py --root $root --other-year
-```
 
+py -m unittest discover tests -v
+
+```
 
 **With the debugger** (step through code, inspect variables, set breakpoints):
 

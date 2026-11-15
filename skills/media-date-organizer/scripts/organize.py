@@ -293,6 +293,8 @@ and a summary of every phase's counts and problems is printed at the end):
                         ad does (2018-08-19/clip.mp4 ->
                         _incomplete/clip_2018-08-19.mp4). A file is
                         incomplete if it is 0 bytes, nothing but null bytes,
+                        a phone transfer stub (a small MTP property list
+                        left under the photo's name, with no picture in it),
                         or a video with no video header (a stub or truncated
                         copy that no player can open): the remains of a
                         failed copy or transfer. Looks in the root folder and
@@ -2475,13 +2477,57 @@ def _has_no_data(path: str) -> bool:
                 return False
 
 
+# Byte width of each fixed-size MTP data type (int8 to uint128). 0xFFFF is a
+# string: a 1-byte character count, then that many UTF-16 characters.
+_MTP_TYPE_WIDTHS = {1: 1, 2: 1, 3: 2, 4: 2, 5: 4, 6: 4, 7: 8, 8: 8, 9: 16, 10: 16}
+_MTP_MAX_SIZE = 64 * 1024
+
+
+def _is_mtp_prop_list(path: str) -> bool:
+    """True when a file is an MTP object property list rather than media.
+    When a copy from a phone over MTP fails, Windows can leave the object's
+    property list (date created, file name, size, ...) under the photo's own
+    name, with none of the picture's bytes. The list is a 4-byte count, then
+    that many entries of handle (4 bytes), property code (2), data type (2)
+    and value. It must parse to the exact end of the file, with every
+    property code in the MTP range 0xD000 to 0xDFFF."""
+    size = os.path.getsize(path)
+    if size < 16 or size > _MTP_MAX_SIZE:
+        return False
+    with open(path, 'rb') as f:
+        data = f.read()
+    count = struct.unpack_from('<I', data, 0)[0]
+    if count == 0 or count * 12 > len(data):
+        return False
+    pos = 4
+    for _ in range(count):
+        if pos + 8 > len(data):
+            return False
+        code, dtype = struct.unpack_from('<HH', data, pos + 4)
+        pos += 8
+        if not 0xD000 <= code <= 0xDFFF:
+            return False
+        if dtype == 0xFFFF:
+            if pos >= len(data):
+                return False
+            pos += 1 + 2 * data[pos]
+        elif dtype in _MTP_TYPE_WIDTHS:
+            pos += _MTP_TYPE_WIDTHS[dtype]
+        else:
+            return False
+    return pos == len(data)
+
+
 def _incomplete_kind(path: str) -> Optional[str]:
     """Return why a media file is incomplete, or None if it is not: 'empty'
-    (0 bytes), 'null-filled' (nothing but null bytes), or 'no-video-header'
-    (a video with no moov atom: a stub or a truncated copy, which no player
-    can open)."""
+    (0 bytes), 'null-filled' (nothing but null bytes), 'transfer-stub' (an
+    MTP property list left by a failed phone copy, see _is_mtp_prop_list),
+    or 'no-video-header' (a video with no moov atom: a stub or a truncated
+    copy, which no player can open)."""
     if os.path.getsize(path) == 0:
         return 'empty'
+    if _is_mtp_prop_list(path):
+        return 'transfer-stub'
     if pathlib.Path(path).suffix.lower() in VIDEO_EXTS:
         if _mp4_header_atoms(path) is not None:
             return None
@@ -2679,6 +2725,9 @@ def fix_extensions(root: str, dry_run: bool = False) -> dict:
                 kind = not_media_kind(full)
                 if kind:
                     _report_not_media(rel, kind, counts)
+                elif ext in MEDIA_EXTS and _is_mtp_prop_list(full):
+                    counts['transfer-stub'] += 1
+                    print(f"TRANSFER STUB (no picture, left for --move-incomplete): {rel}", file=sys.stderr)
                 elif ext in MEDIA_EXTS or ext in CAMCORDER_EXTS:
                     counts['unknown-format'] += 1
                     print(f"UNKNOWN FORMAT (left alone): {rel}", file=sys.stderr)
@@ -3162,7 +3211,7 @@ def main(argv=None):
     ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')
     ap.add_argument('--final-check', action='store_true', help='Give the folder that holds the year folders (D:\\Videos) as --root. For each year folder, reports files still in _ads, _incomplete and _junk, photos among videos (or videos among photos), subfolders not flattened and audit workbooks. Renames an audit workbook not yet named for its folder and media type; changes nothing else. Not part of --all.')
     ap.add_argument('--quarantine-ads', action='store_true', help='Move ad images and videos (ad-style filename AND no camera info) from the root and every subfolder straight into an _ads folder, with no subfolders, for review. Nothing is deleted.')
-    ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
+    ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, a phone transfer stub, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
     ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
     ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and file named as a photo or video that really holds plist or XMP text (IMG_E5239.JPG) in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete. Phone gallery thumbnails are left for --move-thumbnails. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
     ap.add_argument('--move-thumbnails', action='store_true', help='Move every phone gallery thumbnail (1234.jpg, at most 1024 pixels, no camera info) that already has a Date Taken from the root and every subfolder straight into a _thumbnails folder, with no subfolders, to compare with your photos. A thumbnail with no Date Taken yet is left where it is and listed: run --fill-blanks first so it keeps its folder\'s date. Nothing is deleted. Not part of --all; add it to include it, and it runs after --fill-blanks.')

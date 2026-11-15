@@ -29,6 +29,8 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-15:** Michele Kummer found that `--move-incomplete` ran much more slowly than the other steps. Claude traced it to the null-byte check reading 1 MB of every photo (BUG-36).
 - **Updated 2026-11-15:** Michele Kummer found that `--sync-timestamps` on `E:\Pictures\2020` stopped with `OSError: [Errno 22]`, and that the photo it stopped on, `VideoCapture_20200614-211024.jpg`, had not been given the date in its name. Claude found its Date Taken was the placeholder 1904-01-01 00:00:00, and that Python on Windows cannot convert any date before 1970 (BUG-37). Michele Kummer asked for the placeholder to count as blank, for a date that cannot be synced to be logged as failed, and for scanned photos older than 1970 to be supported.
 - **Updated 2026-11-15:** Michele Kummer asked why a second `--sync-timestamps` run synced almost every file again. Claude found that the step never compared a file's times with its Date Taken before writing them (BUG-38).
+- **Updated 2026-11-15:** Michele Kummer asked why `--fix-extensions` took so long. Claude timed a preview on `E:\Pictures\2026`, a USB hard drive: 258 seconds the first time and 0.6 seconds the second, and found that it can open each file up to four times. Michele Kummer asked for it to open each file only once (US-59).
+- **Updated 2026-11-15:** Michele Kummer found that many 1 KB files in `E:\Pictures\2018\Temp` were not moved to `_incomplete`. Claude found that all 451 of them are MTP property lists left by a failed phone transfer, with no picture in them, and that `--move-incomplete` did not recognise them (BUG-39, fixed the same day).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -47,12 +49,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 58 (38 Done, 2 Partly done, 18 Not started) |
-| Bugs | 38 (3 open, 35 resolved) |
+| User stories | 59 (38 Done, 2 Partly done, 19 Not started) |
+| Bugs | 39 (3 open, 36 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 1 | 18 | 19 |
+| Michele Kummer | 1 | 19 | 20 |
 | Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -96,7 +98,7 @@ As a media owner, I want to see everything the plugin can do, with what to type 
 </details>
 
 <details>
-<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29, US-44, US-57)</summary>
+<summary><strong>Epic 2 — Correct file types and dates</strong> (US-04 to US-08, US-29, US-44, US-57, US-59)</summary>
 
 Make every photo and video report its real format and its real date, and make Windows Explorer show it.
 
@@ -200,6 +202,18 @@ As a photo owner, I want my WebP pictures turned into JPEGs with the right Date 
 - `tests/test_webp.py` covers the preview, the conversion, each source of the date, animated and transparent WebPs, a misnamed WebP, a JPEG already holding the name, a name already in `_converted`, a second run, the same-picture check, and the final check.
 
 **Status:** Done
+
+#### US-59 Fix extensions opens each file only once
+As a media owner, I want `--fix-extensions` to open each photo and video only once, so that it finishes sooner on a slow drive. A preview on `E:\Pictures\2026` (3,622 files on a USB hard drive) took 258 seconds the first time and 0.6 seconds when run again, so almost all the time goes on reaching each file on the disk. Today `fix_extensions` can open the same file up to four times: `detect_type` reads 16 bytes, `_detect_format` opens it again for 200 bytes when the format is not a common one, `_unknown_ftyp_brand` opens it again for 12 bytes when the result is MP4, and `not_media_kind` calls `detect_type` again and then reads 1 KB.
+
+- `fix_extensions` opens each file once, reads its first 1 KB, and makes every check on those bytes: the AppleDouble signature, the format (`detect_type` and the camcorder and older video formats in `_detect_format`), the container brand, and plist or XMP text.
+- `detect_type`, `_detect_format`, `_unknown_ftyp_brand` and `not_media_kind` can each be given bytes already read, so other steps can share them. Called with a path, as today, they behave as before.
+- The size check uses the bytes read where it can, and a file that cannot be opened is still reported as `FAILED` and does not stop the run.
+- The results are the same as today: the same renames, `COLLISION`, `EMPTY`, `UNKNOWN FORMAT` and `NOT MEDIA` lines, and the same counts.
+- Tests check that each file is opened only once, and that the existing tests in `tests/test_fix_extensions_and_junk.py` and `tests/test_dry_run.py` still pass.
+- The step is timed again on `E:\Pictures\2026` from a cold start (the drive just connected, or the PC just restarted), with digiKam closed, and the time is recorded here. The gain may be small, because the slow part is reaching each file the first time, and later opens of the same file are served from memory.
+
+**Status:** Not started
 
 </details>
 
@@ -316,7 +330,7 @@ As a media owner, I want the game ads that phones save among my pictures recogni
 #### US-13 Set incomplete files aside
 As a media owner, I want failed copies moved out of the way, so that they stop showing up as photos or videos with no date.
 
-- `--move-incomplete` moves files that are 0 bytes or all null bytes, and videos with no video header, straight into `_incomplete`, with no subfolders. Each one under a dated folder gets that date in its name, unless its name holds a date already (`2020-01-02\clip.mp4` → `_incomplete\clip_2020-01-02.mp4`, US-46). If that name is taken, the file stays where it is and is listed as a `COLLISION`.
+- `--move-incomplete` moves files that are 0 bytes or all null bytes, phone transfer stubs (a small MTP property list saved under the photo's name, with no picture in it, BUG-39), and videos with no video header, straight into `_incomplete`, with no subfolders. Each one under a dated folder gets that date in its name, unless its name holds a date already (`2020-01-02\clip.mp4` → `_incomplete\clip_2020-01-02.mp4`, US-46). If that name is taken, the file stays where it is and is listed as a `COLLISION`.
 - Files in the older `_no-image-data` folder are folded into `_incomplete`, flat.
 - Nothing is deleted. Without `--apply` it only previews.
 
@@ -949,7 +963,7 @@ To find files that hold nothing but null bytes, `_has_no_data` reads in 1 MB chu
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (35: 18 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (36: 19 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -990,6 +1004,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
 | BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
 | BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
+| BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1219,5 +1234,17 @@ A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` ag
 **Actual:** The second run lists every dated file as `SYNCED`.
 
 **Fix:** A new `_already_synced` compares the file's Date Created (on Windows) and, for unedited files, its Date Modified with the Date Taken before anything is written. A file within 2 seconds (`SYNC_TOLERANCE_SECONDS`) on every time that would be set is counted as `already-synced`, not listed, and not written. The 2 seconds allow for FAT32 and exFAT drives, which store Date Modified in 2-second steps. An edited file's Date Modified is not compared, since sync leaves it alone. Twelve tests in `tests/test_sync_timestamps.py` cover it.
+
+#### BUG-39 Phone transfer stubs were not set aside as incomplete
+**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** not yet committed
+
+`E:\Pictures\2018\Temp` held 451 photos of 16 to 345 bytes (shown as 1 KB in Explorer) that `--move-incomplete` left where they were. None of them holds any picture. Each is an MTP object property list, which Windows can leave under a photo's name when a copy from a phone over MTP fails: a 4-byte count, then that many entries of object handle, property code (`0xDC08` date created, `0xDC44` file name, `0xDC89` size and so on), data type and value. `_incomplete_kind` only looked for files that were 0 bytes or all null bytes, and these are neither, so they stayed in their dated folders, and `--fix-extensions` listed each one as `UNKNOWN FORMAT (left alone)`.
+
+**Steps to reproduce:** run `--move-incomplete` on `E:\Pictures\2018\Temp`, or on a folder holding a `.jpg` whose bytes are `01 00 00 00 17 1A 00 00 89 DC 06 00 DE 2E 00 00`.
+
+**Expected:** The file is moved to `_incomplete` as the remains of a failed transfer.
+**Actual:** The file is left where it is, and `--fix-extensions` lists it as `UNKNOWN FORMAT`.
+
+**Fix:** A new `_is_mtp_prop_list` recognises the property list. A file counts only if it is between 16 bytes and 64 KB, every entry's property code is in the MTP range `0xD000` to `0xDFFF`, every data type is a known one, and the entries end exactly at the end of the file, so no real photo can match. `_incomplete_kind` returns `transfer-stub` for it, and `--move-incomplete` moves it to `_incomplete` with the folder's date added, as it does other incomplete files. `--fix-extensions` now lists it as `TRANSFER STUB (no picture, left for --move-incomplete)` instead of `UNKNOWN FORMAT`. A preview on `E:\Pictures\2018\Temp` would move all 451. Four tests in `tests/test_transfer_stubs.py` cover it.
 
 </details>
