@@ -152,7 +152,9 @@ and a summary of every phase's counts and problems is printed at the end):
                         only settable on Windows; elsewhere just Date
                         Modified is synced, and edited files are skipped.
                         Files are found in the root and every subfolder at
-                        any depth.
+                        any depth. A file whose times already match (within
+                        2 seconds) is left alone and counted as
+                        already-synced.
     --flatten           Move every file that has a Date Taken or Media Created
                         out of its subfolder, at any depth, and up into the
                         root folder itself, then move the subfolders left
@@ -1681,17 +1683,47 @@ def _set_creation_time(path: str, ts: float) -> bool:
     return True
 
 
+# How far apart two file times can be and still count as the same. FAT32 and
+# exFAT store Date Modified in 2-second steps, so a time written there can
+# come back up to 2 seconds off.
+SYNC_TOLERANCE_SECONDS = 2
+
+
+def _already_synced(full: str, ts: float, unedited: bool) -> bool:
+    """True when the file's times already match the POSIX timestamp ts, within
+    SYNC_TOLERANCE_SECONDS: Date Created on Windows (the only place it can be
+    set), and Date Modified too when the file is unedited. An edited file away
+    from Windows has nothing that can be set, so it never counts as synced."""
+    st = os.stat(full)
+    checks = []
+    if os.name == 'nt':
+        created = getattr(st, 'st_birthtime', None)
+        checks.append(st.st_ctime if created is None else created)
+    if unedited:
+        checks.append(st.st_mtime)
+    return bool(checks) and all(abs(t - ts) <= SYNC_TOLERANCE_SECONDS for t in checks)
+
+
 def sync_timestamps(root: str, dry_run: bool = False) -> dict:
     """Set Date Created to Date Taken on every dated file in root and every
     subfolder at any depth, and Date Modified too on unedited ones. An edited
-    file keeps its Date Modified, which is when it was edited. With dry_run,
-    list what would be set and change nothing."""
+    file keeps its Date Modified, which is when it was edited. A file whose
+    times already match is left alone and counted as already-synced, so a
+    second run lists only what changed. With dry_run, list what would be set
+    and change nothing."""
     counts = Counter()
     for label, name, full, ftype, _folders in _iter_media_deep(root):
         meta = read_metadata(full, ftype)
         if meta['date_taken'] is None:
             counts['no-date-taken'] += 1
             continue
+        try:
+            if _already_synced(full, _local_timestamp(meta['date_taken']), _is_unedited(meta)):
+                counts['already-synced'] += 1
+                continue
+        except Exception:
+            # Leave it to the steps below, which report the problem
+            pass
         if dry_run:
             when = f"{meta['date_taken']:%Y-%m-%d %H:%M:%S}"
             if _is_unedited(meta):

@@ -28,6 +28,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-14:** Michele Kummer asked for the cleanup step to include WebP, and for it to move every converted PNG, BMP and WebP into `_converted` instead of deleting it (US-58, built the same day). No step deletes files any more; US-11, US-21, US-29, US-31, US-34, US-36 and US-57 now say so.
 - **Updated 2026-11-15:** Michele Kummer found that `--move-incomplete` ran much more slowly than the other steps. Claude traced it to the null-byte check reading 1 MB of every photo (BUG-36).
 - **Updated 2026-11-15:** Michele Kummer found that `--sync-timestamps` on `E:\Pictures\2020` stopped with `OSError: [Errno 22]`, and that the photo it stopped on, `VideoCapture_20200614-211024.jpg`, had not been given the date in its name. Claude found its Date Taken was the placeholder 1904-01-01 00:00:00, and that Python on Windows cannot convert any date before 1970 (BUG-37). Michele Kummer asked for the placeholder to count as blank, for a date that cannot be synced to be logged as failed, and for scanned photos older than 1970 to be supported.
+- **Updated 2026-11-15:** Michele Kummer asked why a second `--sync-timestamps` run synced almost every file again. Claude found that the step never compared a file's times with its Date Taken before writing them (BUG-38).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -47,11 +48,11 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 |---|---|
 | Epics | 8 |
 | User stories | 58 (38 Done, 2 Partly done, 18 Not started) |
-| Bugs | 37 (3 open, 34 resolved) |
+| Bugs | 38 (3 open, 35 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 1 | 17 | 18 |
+| Michele Kummer | 1 | 18 | 19 |
 | Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -463,7 +464,7 @@ As a media owner, I want Date Created and Date Modified to match when the photo 
 - Date Created is set through the Win32 API. On other systems only Date Modified is synced.
 - Dates before 1970, such as scanned old photos, are synced too (BUG-37).
 - A file whose date cannot be turned into a file time is listed as `FAILED`, and the rest are still synced.
-
+- A file whose times already match, within 2 seconds, is left alone and counted as `already-synced` instead of being listed, so a second run lists only what changed (BUG-38). The 2 seconds allow for FAT32 and exFAT drives, which store Date Modified in 2-second steps.
 - Without `--apply` it lists each file that would be synced (`WOULD SYNC`) and changes no timestamp.
 
 **Status:** Partly done. One unreadable file stops the whole step (BUG-02).
@@ -948,7 +949,7 @@ To find files that hold nothing but null bytes, `_has_no_data` reads in 1 MB chu
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (34: 17 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (35: 18 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -988,6 +989,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
 | BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
 | BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
+| BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | pending |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1205,5 +1207,17 @@ An edge case. `--sync-timestamps --apply` on `E:\Pictures\2020` stopped partway 
 **Actual:** `--fill-blanks` counts the photo as already dated, and the sync stops with `OSError: [Errno 22]`.
 
 **Fix:** A Date Taken of exactly 1904-01-01 00:00:00 (`PLACEHOLDER_DATES`) is read as blank, so `--fill-blanks` replaces it with the date in the filename or folder name. 1904 dates at any other time are kept. A HEIC photo whose `DateTimeOriginal` is the placeholder now falls back to `DateTimeDigitized`. A new `_local_timestamp` turns a date before 1970 into a file time by finding the time zone offset 28 years on (or a multiple of 28, which keeps weekdays and leap years lined up) and shifting back, so scanned photos are synced to their real dates. The conversion is inside the `try`, so a date that still cannot be converted is listed as `FAILED` and the rest are synced. Ten tests in `tests/test_old_and_placeholder_dates.py` cover it.
+
+#### BUG-38 Timestamp sync rewrote and listed files that were already synced
+**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** pending
+
+A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` again, as if the first run had not worked. It had: `sync_timestamps` simply never looked at a file's current Date Created and Date Modified before writing them, so it wrote the same times again and counted every dated file as synced. Only files with no Date Taken were left out, which is why it was almost every file rather than all of them. The preview did the same, listing every file as `WOULD SYNC`. Nothing was harmed, but the output could not show what a run had actually changed.
+
+**Steps to reproduce:** run `--sync-timestamps --apply` on a folder of dated photos twice.
+
+**Expected:** The second run changes nothing and lists no file.
+**Actual:** The second run lists every dated file as `SYNCED`.
+
+**Fix:** A new `_already_synced` compares the file's Date Created (on Windows) and, for unedited files, its Date Modified with the Date Taken before anything is written. A file within 2 seconds (`SYNC_TOLERANCE_SECONDS`) on every time that would be set is counted as `already-synced`, not listed, and not written. The 2 seconds allow for FAT32 and exFAT drives, which store Date Modified in 2-second steps. An edited file's Date Modified is not compared, since sync leaves it alone. Twelve tests in `tests/test_sync_timestamps.py` cover it.
 
 </details>
