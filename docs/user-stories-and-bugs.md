@@ -26,6 +26,8 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-14:** Claude suggested more names that usually hold photos waiting to be sorted, and Michele Kummer asked for all of them to be flattened too: New folder, DCIM and the camera folders inside it (`100APPLE`), Camera, Unsorted, To Sort, Misc, Downloads and Import. US-55 and US-56 now list them.
 - **Updated 2026-11-14:** Michele Kummer asked why three WebP pictures in `E:\Pictures\2022\Temp\2022-05-08` were not given the date in their names. Claude found that `--fill-blanks` writes no date into WebP, and Michele Kummer asked for WebP to be converted to dated JPEGs (US-57, built the same day).
 - **Updated 2026-11-14:** Michele Kummer asked for the cleanup step to include WebP, and for it to move every converted PNG, BMP and WebP into `_converted` instead of deleting it (US-58, built the same day). No step deletes files any more; US-11, US-21, US-29, US-31, US-34, US-36 and US-57 now say so.
+- **Updated 2026-11-15:** Michele Kummer found that `--move-incomplete` ran much more slowly than the other steps. Claude traced it to the null-byte check reading 1 MB of every photo (BUG-36).
+- **Updated 2026-11-15:** Michele Kummer found that `--sync-timestamps` on `E:\Pictures\2020` stopped with `OSError: [Errno 22]`, and that the photo it stopped on, `VideoCapture_20200614-211024.jpg`, had not been given the date in its name. Claude found its Date Taken was the placeholder 1904-01-01 00:00:00, and that Python on Windows cannot convert any date before 1970 (BUG-37). Michele Kummer asked for the placeholder to count as blank, for a date that cannot be synced to be logged as failed, and for scanned photos older than 1970 to be supported.
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -45,11 +47,11 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 |---|---|
 | Epics | 8 |
 | User stories | 58 (38 Done, 2 Partly done, 18 Not started) |
-| Bugs | 35 (2 open, 33 resolved) |
+| Bugs | 37 (3 open, 34 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 16 | 16 |
+| Michele Kummer | 1 | 17 | 18 |
 | Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -130,6 +132,7 @@ As a photo owner, I want photos with a blank Date Taken to get one from the best
 - Looks at the root and every subfolder at any depth, skipping `_ads`, `_incomplete` and `_empty_folders`.
 - The date comes from the filename (`IMG_20190830_101500`), else from the containing folder's name (`2019-08-30`, `2026-08-19 11-44-31`, `08-19-2026`, `Aug 19 2026`) at 12:00:00.
 - The file's modified time is never used, because copying and importing resets it.
+- A Date Taken of exactly 1904-01-01 00:00:00 counts as blank. It is the QuickTime time zero that some apps write when they have no date, such as Windows frame grabs named `VideoCapture_20200614-211024.jpg` (BUG-37).
 - JPEGs get their EXIF block replaced without re-encoding the picture. HEIC is written with ExifTool.
 - Empty files are skipped and counted.
 - Without `--apply` it lists what would be written (US-27).
@@ -458,6 +461,8 @@ As a media owner, I want Date Created and Date Modified to match when the photo 
 - `--sync-timestamps` sets Date Created to the photo's Date Taken, or the video's Media Created, on every dated file at any depth.
 - Date Modified is set too, but only on files that look unedited. A photo looks edited when EXIF `DateTime` differs from `DateTimeOriginal` by a minute or more, or when `Software` names a known editor (Photoshop, Lightroom, Snapseed and others). An edited file keeps its Date Modified.
 - Date Created is set through the Win32 API. On other systems only Date Modified is synced.
+- Dates before 1970, such as scanned old photos, are synced too (BUG-37).
+- A file whose date cannot be turned into a file time is listed as `FAILED`, and the rest are still synced.
 
 - Without `--apply` it lists each file that would be synced (`WOULD SYNC`) and changes no timestamp.
 
@@ -900,7 +905,7 @@ As a media owner, I want to type the folder names that **Flatten** should empty,
 Severity: **High** means files are lost or the plugin can't be used. **Medium** means a wrong result, or a step that fails or stops. **Low** means a cosmetic problem, or one with a workaround.
 
 <details>
-<summary><strong>Open bugs</strong> (2, both found by Claude on 2026-10-21)</summary>
+<summary><strong>Open bugs</strong> (3: 2 found by Claude on 2026-10-21, 1 by Michele Kummer on 2026-11-15)</summary>
 
 Each was reproduced on synthetic files, except where noted.
 
@@ -928,10 +933,22 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 **Steps to reproduce:** `detect_type` on a file starting `....ftyphevc` or `....ftypavif` returns `.mp4`.
 **Expected:** HEIF brands (`hevc`, `heim`, `heis`, `hevx`) return `.heic`. Unknown brands return `None`.
 
+#### BUG-36 `--move-incomplete` reads 1 MB of every photo, so it runs slowly
+**Severity:** Low · **Found by:** Michele Kummer · **Affects:** photos and videos · **Where:** [organize.py](../skills/media-date-organizer/scripts/organize.py) `_has_no_data`, called by `_incomplete_kind`
+
+To find files that hold nothing but null bytes, `_has_no_data` reads in 1 MB chunks and checks each chunk only after reading it. A normal photo has non-null header bytes in its first few bytes, but the whole first 1 MB is still read before the check. `_incomplete_kind` runs this on every photo, and on every video without an MP4 or MOV header (AVI, MPG, WMV). On 10,000 photos that is about 10 GB read, where the other steps read a few hundred bytes to a few KB of each file. The step is slowest on a hard drive or network share, or when another program is using the disk. Michele Kummer noticed the slowdown and Claude found the cause by reading the code; it was not timed on synthetic files.
+
+**Steps to reproduce**
+1. Point `--root` at a folder of several thousand photos on a hard drive.
+2. Run `--move-incomplete`, then `--fix-extensions`, and compare how long each takes.
+
+**Expected:** `--move-incomplete` takes about as long as `--fix-extensions`. It reads a small first piece of each file (4 KB, say) and only reads further, in 1 MB chunks, when that piece is all null bytes. The result is the same.
+**Actual:** `--move-incomplete` takes far longer, because it reads 1 MB of every file.
+
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (33: 16 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (34: 17 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -970,6 +987,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
 | BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
 | BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
+| BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1173,5 +1191,19 @@ The fix for BUG-33 made `--move-junk` move phone thumbnails into `_thumbnails`. 
 
 `--flatten --root E:\Pictures\2022` left every photo in `Temp\<number>` folders where it was, and did not list them as `LEFT` either, so nothing said they had been passed over. `flatten` found its files with `iter_media`, which lists the folders directly inside the root and the files directly inside each of those, and goes no deeper. `Temp\5\photo.jpg` is two levels down, so it was never seen, and `Temp` was never emptied, so the final check reported it as `NOT FLATTENED`. The other steps that set files aside (`--quarantine-ads`, `--move-junk`) already searched every depth. Going one level deep also meant the opposite problem one level up: every first-level folder was emptied, whatever its name, including folders named for a child, a trip or a wedding.
 **Fix:** `--flatten` now goes all the way down through dated folders, scratch folders (Temp, Junk, Delete, Weird, Review) and every folder below a scratch folder, and leaves every other folder as it is, listed as `KEPT (named folder)` (US-55). A camcorder file with no date in its name takes the date of the nearest dated folder above it. Orphan Sony sidecars are looked for in the same folders. The name clash checks and the final check use the same rule, and the final check lists named folders as `NAMED FOLDER (left as is)` instead of `NOT FLATTENED`. `iter_media`, which nothing else used, was replaced by `_flatten_walk`. Two tests in `tests/test_smoke.py` cover the scratch folder names and a flatten of a year folder with files two and three levels down in `Temp`, named folders, `_review` and the final check.
+
+#### BUG-37 A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync
+**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** not yet committed
+
+An edge case. `--sync-timestamps --apply` on `E:\Pictures\2020` stopped partway with `OSError: [Errno 22] Invalid argument`. The photo it stopped on, `Temp\2020-06-14\VideoCapture_20200614-211024.jpg`, is a Windows frame grab whose EXIF Date Taken is `1904:01:01 00:00:00`: QuickTime's time zero, which the capturing app wrote instead of leaving the field empty. Two things went wrong. First, `_parse_exif_dt` accepted any date it could read, so `--fill-blanks` treated the photo as already dated and never used the date in its name. Video dates already threw away anything before 1971, but photo dates had no such check. Second, `sync_timestamps` called `datetime.timestamp()` to turn the date into a file time. That asks the C library for the local time zone, and on Windows the library rejects every date before 1970, so any photo older than 1970, such as a scanned print, would stop the step in the same way. Windows itself stores file times back to 1601, so the limit was Python's, not the file system's. The call was also outside the `try`, so one bad date stopped the whole step instead of being reported.
+
+**Steps to reproduce**
+1. Write a JPEG named `VideoCapture_20200614-211024.jpg` with EXIF `DateTimeOriginal` set to `1904:01:01 00:00:00`.
+2. Run `--fill-blanks --apply`, then `--sync-timestamps --apply`.
+
+**Expected:** `--fill-blanks` writes 2020-06-14 21:10:24 from the filename, and the sync sets the file times to it. A photo dated 1955 is synced to 1955.
+**Actual:** `--fill-blanks` counts the photo as already dated, and the sync stops with `OSError: [Errno 22]`.
+
+**Fix:** A Date Taken of exactly 1904-01-01 00:00:00 (`PLACEHOLDER_DATES`) is read as blank, so `--fill-blanks` replaces it with the date in the filename or folder name. 1904 dates at any other time are kept. A HEIC photo whose `DateTimeOriginal` is the placeholder now falls back to `DateTimeDigitized`. A new `_local_timestamp` turns a date before 1970 into a file time by finding the time zone offset 28 years on (or a multiple of 28, which keeps weekdays and leap years lined up) and shifting back, so scanned photos are synced to their real dates. The conversion is inside the `try`, so a date that still cannot be converted is listed as `FAILED` and the rest are synced. Ten tests in `tests/test_old_and_placeholder_dates.py` cover it.
 
 </details>

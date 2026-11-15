@@ -464,13 +464,43 @@ def _heic_dates(path: str) -> dict:
     return out
 
 
+# A Date Taken some apps write when they have no date: 1904-01-01 00:00:00
+# is time zero for QuickTime and classic Mac dates. Windows frame grabs
+# (VideoCapture_*.jpg) carry it. It is read as blank, so the date in the
+# filename or folder name is used instead.
+PLACEHOLDER_DATES = (datetime.datetime(1904, 1, 1, 0, 0, 0),)
+
+
 def _parse_exif_dt(s: str) -> Optional[datetime.datetime]:
+    """Parse an EXIF "YYYY:MM:DD HH:MM:SS" date. Returns None when it is
+    missing, unreadable or a placeholder (PLACEHOLDER_DATES)."""
     if not s:
         return None
     try:
-        return datetime.datetime.strptime(s.strip(), "%Y:%m:%d %H:%M:%S")
-    except (ValueError, AttributeError):
+        dt = datetime.datetime.strptime(s.strip(), "%Y:%m:%d %H:%M:%S")
+    except (ValueError, AttributeError, TypeError):
         return None
+    return None if dt in PLACEHOLDER_DATES else dt
+
+
+def _local_timestamp(dt: datetime.datetime) -> float:
+    """POSIX timestamp of a naive local datetime, for any year from 1601.
+    datetime.timestamp() asks the C library for the local time zone, and on
+    Windows that library rejects dates before 1970 (OSError: [Errno 22]).
+    Windows itself stores file times back to 1601, so an earlier date is
+    shifted forward by whole 28-year cycles (which keep the weekdays and
+    leap years lined up) to find the time zone offset, then shifted back."""
+    try:
+        return dt.timestamp()
+    except (OSError, OverflowError, ValueError):
+        pass
+    cycles = (1972 - dt.year) // 28 + 1
+    try:
+        shifted = dt.replace(year=dt.year + 28 * cycles)
+    except ValueError:
+        # 29 February in a year with no leap day 28 years on (1700, 1800, 1900)
+        shifted = (dt - datetime.timedelta(days=1)).replace(year=dt.year + 28 * cycles) + datetime.timedelta(days=1)
+    return shifted.timestamp() - (shifted - dt).total_seconds()
 
 
 def _utc_to_local(dt: datetime.datetime) -> datetime.datetime:
@@ -587,7 +617,8 @@ def read_metadata(path: str, ftype: str) -> dict:
     out = {'date_taken': None, 'modify_time': None, 'software': None, 'camera': None}
     if ftype == '.heic':
         d = _heic_dates(path)
-        out['date_taken'] = _parse_exif_dt(d.get('DateTimeOriginal') or d.get('DateTimeDigitized'))
+        out['date_taken'] = (_parse_exif_dt(d.get('DateTimeOriginal'))
+                             or _parse_exif_dt(d.get('DateTimeDigitized')))
         out['modify_time'] = _parse_exif_dt(d.get('DateTime'))
         out['software'] = d.get('Software')
         out['camera'] = _camera(d)
@@ -1661,7 +1692,6 @@ def sync_timestamps(root: str, dry_run: bool = False) -> dict:
         if meta['date_taken'] is None:
             counts['no-date-taken'] += 1
             continue
-        ts = meta['date_taken'].timestamp()
         if dry_run:
             when = f"{meta['date_taken']:%Y-%m-%d %H:%M:%S}"
             if _is_unedited(meta):
@@ -1676,6 +1706,7 @@ def sync_timestamps(root: str, dry_run: bool = False) -> dict:
             continue
         if not _is_unedited(meta):
             try:
+                ts = _local_timestamp(meta['date_taken'])
                 if _set_creation_time(full, ts):
                     counts['created-only-edited'] += 1
                     print(f"SYNCED created only (edited) {meta['date_taken']:%Y-%m-%d %H:%M:%S}: {label}")
@@ -1687,6 +1718,7 @@ def sync_timestamps(root: str, dry_run: bool = False) -> dict:
                 print(f"FAILED {label}: {e}", file=sys.stderr)
             continue
         try:
+            ts = _local_timestamp(meta['date_taken'])
             os.utime(full, (ts, ts))
             if not _set_creation_time(full, ts):
                 counts['created-unsupported'] += 1

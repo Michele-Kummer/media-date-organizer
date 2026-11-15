@@ -4,7 +4,7 @@ Every step only previews what it would do. The commands below have --apply (-App
 
 ```powershell
 cd C:\Code\media-date-organizer
-$root = "D:\Pictures\2026"
+$root = "E:\Pictures\2026"
 
 py skills\media-date-organizer\scripts\organize.py --root $root --audit
 
