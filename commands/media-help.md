@@ -45,7 +45,7 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Set aside AAE, Thumbs.db, Mac `._` files, and plist and XMP files | `Move the junk files in D:\Pictures\2026` |
 | Set aside broken or empty files | `Move the incomplete files in D:\Pictures\2026` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
-| Clean up converted files (deletes PNGs and BMPs already turned into JPEGs) | `Clean up the converted files in D:\Pictures\2026` |
+| Clean up converted files (moves PNGs, BMPs and WebPs already turned into JPEGs into `_converted`) | `Clean up the converted files in D:\Pictures\2026` |
 
 ## Good to know
 
@@ -54,6 +54,6 @@ Show the user the list below as it is, then ask which one they want to do and fo
 - The plain-language steps are previewed first too, and Claude asks before going ahead.
 - `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, phone thumbnails, moving to date folders, flatten, BMP and WebP conversion and cleanup unless you ask for them.
 - Phone thumbnails are set aside only by `/move-thumbnails`, after their dates are written, so each keeps its folder's date. One with no date yet is left where it is.
-- Ads, junk, phone thumbnails, converted WebPs, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_converted`, `_incomplete` and `_empty_folders`, not deleted. The only step that deletes is cleaning up converted files, and Claude asks first.
+- Ads, junk, phone thumbnails, converted originals, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_converted`, `_incomplete` and `_empty_folders`. Nothing is deleted.
 - Each folder gets an audit spreadsheet (`.xlsx`) recording everything that was done.
 - First time? Try it on a small folder, or a copy of one.

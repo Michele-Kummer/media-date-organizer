@@ -49,7 +49,7 @@ Two fixes considered:
 1. Set file-system timestamps to match the EXIF date. Sorts correctly, wrong column.
 2. Convert PNG → JPEG preserving EXIF. Populates Date Taken, slight lossy re-encode.
 
-The user picked option 2 for the four screenshots. The plugin's PNG-to-JPEG converter re-encodes at quality 95, copies the EXIF bytes through, and leaves the original PNG for the cleanup script to remove.
+The user picked option 2 for the four screenshots. The plugin's PNG-to-JPEG converter re-encodes at quality 95, copies the EXIF bytes through, and leaves the original PNG for the cleanup script, which now moves it into `_converted`.
 
 ## Final move: sort by real date
 

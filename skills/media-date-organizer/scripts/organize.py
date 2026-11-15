@@ -1480,9 +1480,9 @@ def _same_picture(original: str, jpeg: str) -> Optional[str]:
 def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
     """Convert every <ext> file in root and every subfolder, holding folders
     excepted, to a JPEG of the same name at quality 95, keeping its EXIF.
-    A PNG or BMP original is left for Cleanup-Pictures.ps1 to remove, which
-    cannot read WebP, so a WebP original moves into root/_converted once
-    the JPEG is confirmed to be the same picture."""
+    A PNG or BMP original is left for Cleanup-Pictures.ps1 to move into
+    root/_converted; a WebP original moves there now, once the JPEG is
+    confirmed to be the same picture."""
     counts = Counter()
     claimed = set()
     kind_name = ext.lstrip('.').upper()
@@ -1574,8 +1574,8 @@ def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
                   f"{os.path.basename(new)}{dated}")
             if ext != '.webp':
                 continue
-            # Cleanup-Pictures.ps1 cannot read WebP, so the original is set
-            # aside here, and only once the JPEG is known to match it
+            # The original is set aside here, and only once the JPEG is
+            # known to match it
             differs = None if dry_run else _same_picture(p, new)
             if differs:
                 counts['kept-differs'] += 1

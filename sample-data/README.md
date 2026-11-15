@@ -48,4 +48,4 @@ Videos need ffmpeg (`pip install "imageio-ffmpeg>=0.5"`) and are left out withou
 
 The misfiled photos were taken in the same year they were filed under. The tool moves a photo next to the folder it is in, so one taken in another year would stay in the year folder it was found in.
 
-Converted PNGs are kept beside their JPEGs until you run the cleanup step, which deletes them and asks first.
+Converted PNGs are kept beside their JPEGs until you run the cleanup step, which moves them into `_converted`.

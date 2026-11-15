@@ -25,6 +25,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-14:** Michele Kummer found that `--flatten` on `E:\Pictures\2022` left the photos in `Temp\<number>` folders where they were, because it only looked one subfolder deep (BUG-35). Michele Kummer asked for flatten to go all the way down, but only through dated folders and folders named Temp, Junk, Delete, Weird or Review, leaving folders named for a child, a trip or a wedding as they are (US-55, built the same day). Michele Kummer then asked for the desktop app to let the user list the folder names to flatten, with an option for all folders (US-56).
 - **Updated 2026-11-14:** Claude suggested more names that usually hold photos waiting to be sorted, and Michele Kummer asked for all of them to be flattened too: New folder, DCIM and the camera folders inside it (`100APPLE`), Camera, Unsorted, To Sort, Misc, Downloads and Import. US-55 and US-56 now list them.
 - **Updated 2026-11-14:** Michele Kummer asked why three WebP pictures in `E:\Pictures\2022\Temp\2022-05-08` were not given the date in their names. Claude found that `--fill-blanks` writes no date into WebP, and Michele Kummer asked for WebP to be converted to dated JPEGs (US-57, built the same day).
+- **Updated 2026-11-14:** Michele Kummer asked for the cleanup step to include WebP, and for it to move every converted PNG, BMP and WebP into `_converted` instead of deleting it (US-58, built the same day). No step deletes files any more; US-11, US-21, US-29, US-31, US-34, US-36 and US-57 now say so.
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -43,7 +44,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 57 (37 Done, 2 Partly done, 18 Not started) |
+| User stories | 58 (38 Done, 2 Partly done, 18 Not started) |
 | Bugs | 35 (2 open, 33 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -162,7 +163,7 @@ As a photo owner, I want my BMP pictures turned into JPEGs with the right Date T
 - `--convert-bmp` converts each BMP in the folder and every subfolder to a JPEG of the same name at quality 95. The picture is unchanged.
 - The JPEG gets the date `--fill-blanks` would use: the date in the filename (`IMG_20210503_101500.bmp`), else the folder's date at 12:00:00. Moving and flattening then treat it like any other photo.
 - A `.bmp` that is really another format is reported as `NOT A BMP` and left alone. BMPs with transparent pixels stay BMP.
-- The original is left in place. `Cleanup-Pictures.ps1` deletes it only once the JPEG is confirmed to be the same picture (same size, pixels within 1%), as for PNGs (US-11).
+- The original is left in place. `Cleanup-Pictures.ps1` moves it into `_converted` only once the JPEG is confirmed to be the same picture (same size, pixels within 1%), as for PNGs (US-11, US-58).
 - Not part of `--all`; add `--convert-bmp` to include it. It previews unless `--apply` is given. `--fill-blanks` ends with a `NOTE` pointing to it when it skipped BMPs.
 - `tests/test_bmp_and_ads.py` covers conversion, the date, a misnamed BMP and the cleanup.
 
@@ -189,7 +190,7 @@ As a photo owner, I want my WebP pictures turned into JPEGs with the right Date 
 - A Date Taken already in the WebP is kept. Otherwise the JPEG gets the date `--fill-blanks` would use: the date in the filename (`IMG_20220508_185526_425.webp` gives 2022-05-08 18:55:26), else the folder's date at 12:00:00. A WebP with neither is still converted, with no date.
 - Animated WebPs and WebPs with transparent pixels stay WebP and are listed as `SKIPPED`, since a JPEG would keep one frame and lose the transparency. A `.webp` that is really another format is reported as `NOT A WEBP` and left alone.
 - A JPEG already holding the name is never overwritten. The WebP is listed as `SKIPPED (<name>.jpg already exists)` and stays.
-- `Cleanup-Pictures.ps1` cannot read WebP, so the original is moved, not deleted: once the JPEG is confirmed to be the same picture (same size, pixels within 1%), the WebP moves straight into `_converted` inside the folder, with no subfolders. A name already there gets its folder's name added. If the JPEG does not match, the WebP stays where it is and is listed as `KEPT`.
+- The original is moved, not deleted: once the JPEG is confirmed to be the same picture (same size, pixels within 1%), the WebP moves straight into `_converted` inside the folder, with no subfolders. A name already there gets its folder's name added. If the JPEG does not match, the WebP stays where it is and is listed as `KEPT`. `Cleanup-Pictures.ps1` moves any WebP still beside a matching JPEG the same way (US-58).
 - Every step skips `_converted`, and the final check reports what is in it (`IN CONVERTED`).
 - Not part of `--all`; add `--convert-webp` to include it. It runs before `--fill-blanks`, and previews (`WOULD CONVERT`, `WOULD MOVE`) unless `--apply` is given. `--fill-blanks` ends with a `NOTE` pointing to it when it skipped WebPs.
 - `tests/test_webp.py` covers the preview, the conversion, each source of the date, animated and transparent WebPs, a misnamed WebP, a JPEG already holding the name, a name already in `_converted`, a second run, the same-picture check, and the final check.
@@ -199,7 +200,7 @@ As a photo owner, I want my WebP pictures turned into JPEGs with the right Date 
 </details>
 
 <details>
-<summary><strong>Epic 3 — Organize folders</strong> (US-09 to US-11, US-55)</summary>
+<summary><strong>Epic 3 — Organize folders</strong> (US-09 to US-11, US-55, US-58)</summary>
 
 Put each photo and video where its date says it belongs, then tidy the folder structure.
 
@@ -231,18 +232,18 @@ As a media owner, I want every dated photo and video moved up into the media fol
 #### US-11 Remove leftover PNGs after conversion
 As a photo owner, I want the PNG left behind by a conversion removed, and empty folders set aside, so that the folder is clean.
 
-- `Cleanup-Pictures.ps1` deletes a PNG only when it has already been converted to JPEG. Nothing else is ever deleted.
+- `Cleanup-Pictures.ps1` moves a PNG into `_converted` only when it has already been converted to JPEG. BMPs and WebPs are handled the same way (US-58). Nothing is deleted.
 - **Which files are paired:** each `.png` with a `.jpg`, else a `.jpeg`, of the same base name in the same folder. Letter case does not matter (`IMG_1.PNG` pairs with `img_1.jpg`). Files in different folders are never paired.
-- **How the two pictures are compared**, in two checks, both through .NET's `System.Drawing`:
+- **How the two pictures are compared**, in two checks, both through .NET's `System.Drawing` (a WebP is decoded by the Windows Imaging Component first, US-58):
   1. **Size.** Only each file's header is read, to get its width and height in pixels. They must match, and the JPEG must not be empty. `--convert-png` keeps the size, so a real conversion always matches.
   2. **Pixels.** Both pictures are decoded and shrunk to 128x128, and the mean difference of their red, green and blue values is taken as a percentage (0 = same picture). This is the same measure as `--visual-compare`, and gives the same score to within 0.02%. The PNG counts as converted at **1% or less**, which `--visual-compare` calls `DUPLICATE` with high confidence. `-MaxPixelDifference` changes the limit.
   - Measured on test pictures: a converted screenshot scores 0.01% and a converted photo-like picture 0.03%. A different screenshot of the same size scores 12–35%. Random per-pixel noise, the hardest case for JPEG, scores 1.7% after conversion, so it is kept unless the limit is raised to 2.
   - File size, EXIF dates and modified times are not compared.
 - **When they differ:** a different size, a difference over the limit, or a file that cannot be read means the files are treated as different pictures. Both are kept, and the PNG is listed with the reason: `KEPT (not the same picture, PNG 1170x2532, JPG 4032x3024)`, `KEPT (not the same picture, pixel difference 11.9%)`, or `cannot read picture size` / `cannot read pixels`.
 - Every other file that shares a name is kept: a Live Photo video next to its photo, a sidecar (`.xmp`, `.aae`), or a HEIC next to a JPG.
-- `_ads`, `_incomplete`, `_no-image-data` and `_empty_folders` are skipped.
+- `_ads`, `_incomplete`, `_no-image-data`, `_junk`, `_thumbnails`, `_converted` and `_empty_folders` are skipped.
 - Empty folders are moved into `_empty_folders`, keeping their path.
-- It previews unless `-Apply` is given. The console, the summary and the audit workbook all list each PNG deleted (or that would be) and each one kept.
+- It previews unless `-Apply` is given. The console, the summary and the audit workbook all list each PNG moved (or that would be) and each one kept.
 
 **Status:** Done
 
@@ -259,6 +260,18 @@ As a media owner, I want flatten to empty my dated folders and my scratch folder
 - The final check lists a named folder as `NAMED FOLDER (left as is)`, counted as `named-folders`, not as `NOT FLATTENED`, so it does not make a year look unfinished.
 - The name clash checks (`--compare-collisions` and the final check) look at the same folders as `--flatten`.
 - A test in `tests/test_smoke.py` flattens a year folder with files two and three levels down in `Temp`, each scratch name, named folders at the top and inside a dated folder, `Template`, `_review` and an empty named folder, then runs the final check.
+
+**Status:** Done
+
+#### US-58 Set converted originals aside instead of deleting them
+As a photo owner, I want the PNG, BMP or WebP left behind by a conversion moved into `_converted` rather than deleted, so that I can look at the originals before I throw them away, and so that cleanup covers WebP too.
+
+- `Cleanup-Pictures.ps1` pairs each `.png`, `.bmp` and `.webp` with a `.jpg`, else a `.jpeg`, of the same name in the same folder, and checks them as in US-11: same size, pixels within 1%.
+- A matching original moves straight into `_converted` in the folder cleaned, with no subfolders, as `--convert-webp` does: `MOVED (converted to scan.jpg): 2021-05-04\scan.bmp -> _converted\scan.bmp`. A name already there gets its folder's name added (`scan_2021-05-04.bmp`). When that is taken too, the original stays and is listed as `COLLISION, skipping`. Nothing is deleted.
+- `System.Drawing` cannot read WebP, so a WebP is decoded through the Windows Imaging Component, which reads it with the WebP Image Extension that comes with Windows 11. A WebP it cannot read is listed as `KEPT (not the same picture, cannot read picture size)` and stays.
+- `--convert-webp` still moves each WebP it converts into `_converted` itself. Cleanup catches any WebP still beside a matching JPEG.
+- The summary gives `Converted PNGs, BMPs and WebPs moved : N (into _converted)`, the pairs kept, and any names taken in `_converted`. It previews (`WOULD MOVE`) unless `-Apply` is given.
+- `CleanupConvertedTests` in `tests/test_bmp_and_ads.py` covers the preview, a PNG, BMP and WebP moving, a WebP whose JPEG differs, a name taken once and twice in `_converted`, and pairs inside `_converted` being left alone.
 
 **Status:** Done
 
@@ -454,7 +467,7 @@ As a media owner, I want Date Created and Date Modified to match when the photo 
 As a media owner, I want photos and videos moved aside rather than deleted, except in steps that say they delete, so that mistakes can be undone.
 
 - `_ads`, `_junk`, `_thumbnails`, `_incomplete`, `_converted` and `_empty_folders` hold what was set aside. Every step skips them.
-- Only `Cleanup-Pictures.ps1` deletes files: PNGs and BMPs already converted to JPEG. `organize.py` deletes nothing (BUG-27).
+- No step deletes files. `Cleanup-Pictures.ps1` moves PNGs, BMPs and WebPs already converted to JPEG into `_converted` (US-58), and `organize.py` deletes nothing (BUG-27).
 - The README's **Guardrails** section lists every safety rule in one place.
 
 **Status:** Done
@@ -506,11 +519,11 @@ As a media owner, I want every step that changes my photos and videos to preview
 #### US-31 Choose between step by step and all in one go
 As a media owner, I want to know how the two ways of running `/fix-media-dates` differ and in what order to run the steps, so that I pick the right one and don't run the steps twice or in the wrong order.
 
-- `/fix-media-dates <folder>` walks through every step and asks which optional steps the user wants: ads, BMP conversion, PNG conversion, moving to date folders, timestamp sync, flatten, and cleaning up converted files. It always asks about cleanup, the one step that deletes (BUG-28).
+- `/fix-media-dates <folder>` walks through every step and asks which optional steps the user wants: ads, BMP conversion, PNG conversion, moving to date folders, timestamp sync, flatten, and cleaning up converted files. It always asks about cleanup, which sets the converted originals aside (BUG-28).
 - `/fix-media-dates <folder> --all` runs the routine steps in one go with no questions, fixing extensions first (BUG-26). It deletes nothing.
 - The README has a table showing which steps each way runs, says to choose one of them for a folder, and gives the recommended order of every step, from fixing extensions to the final check.
 - The README's **Guardrails** section lists the safety rules that hold for every step.
-- In the recommended order, the visual compare comes before cleaning up converted files, because cleanup removes one file of each PNG/JPG pair it would compare.
+- In the recommended order, the visual compare comes before cleaning up converted files, because cleanup moves one file of each PNG/JPG pair it would compare into `_converted`.
 
 **Status:** Done
 
@@ -600,7 +613,7 @@ As a media owner, I want to set the folder and the options that every step uses 
   - **Library folder**: the folder that holds the year folders, for example `D:\Pictures`. It is used by **Final check** and **Find the opposite type**. When the folder to organize is named for a year, it fills in with the folder above it.
   - **Audit workbook name**: blank uses the default name (`<folder>_<photos|videos>_media_audit_<date>.xlsx`). Anything typed is passed as `--xlsx`.
   - **PNG quality** and **BMP quality** (US-38).
-  - **Cleanup pixel difference limit**: the most two pictures may differ, from 0.1% to 5%, for **Clean up converted files** to count a PNG or BMP as converted. Default 1%. Passed as `-MaxPixelDifference`.
+  - **Cleanup pixel difference limit**: the most two pictures may differ, from 0.1% to 5%, for **Clean up converted files** to count a PNG, BMP or WebP as converted. Default 1%. Passed as `-MaxPixelDifference`.
 - Every step button and both **Run all selected** and **Preview all selected** are unavailable until the folder exists. A folder that does not exist is named in a message next to the box.
 - The settings are saved for each folder on this computer (not in the media folder) and come back when that folder is chosen again.
 - **Reset to defaults** puts every setting except the folders back to its default.
@@ -648,7 +661,7 @@ As a media owner, I want to tick the steps I want in a full run, starting from a
 - The default is ticked for the six steps `--all` runs (fix extensions, set junk aside, set incomplete files aside, fill in missing dates, convert PNG to JPEG, sync timestamps), and unticked for the rest, so a full run with the defaults does what `--all` does.
 - **Reset to default selection** puts the ticks back to the default. **Select all** and **Clear all** do what they say.
 - Ticking **Flatten** while **Move to date folders** is ticked (or the other way round) shows a note that they are alternatives, with a button to untick the other one. It does not block the choice.
-- Ticking **Clean up converted files**, the only step that deletes, shows a note saying so.
+- Ticking **Clean up converted files** shows a note saying it moves the converted originals into `_converted`.
 - The selection is saved with the project's parameters (US-33).
 
 **Status:** Not started
@@ -657,7 +670,7 @@ As a media owner, I want to tick the steps I want in a full run, starting from a
 As a media owner, I want one button that previews every ticked step and one that runs them, so that I can check the whole plan and then carry it out.
 
 - **Preview all selected** runs each ticked step without `--apply`, in the recommended order, and changes nothing. It says, as `--all` does, that a later step may do more once the earlier ones have really run.
-- **Run all selected** first asks for confirmation, listing the steps that will change files. When **Clean up converted files** is ticked, the confirmation says it deletes the PNGs and BMPs it has checked. When no preview has run since the selection or settings changed, it says so and offers **Preview first**.
+- **Run all selected** first asks for confirmation, listing the steps that will change files. When **Clean up converted files** is ticked, the confirmation says it moves the PNGs, BMPs and WebPs it has checked into `_converted`. When no preview has run since the selection or settings changed, it says so and offers **Preview first**.
 - **Run all selected** runs each ticked step with `--apply`, in the recommended order, so **Visual compare** always comes before **Clean up converted files**.
 - Each step is recorded in the audit workbook as it would be from the command line.
 - Both buttons are unavailable while nothing is ticked, and say why.
@@ -704,7 +717,7 @@ As a media owner, I want every button to explain briefly what it does and what i
 | Fill in missing dates | Writes a Date Taken or Media Created into files that have none. Videos and HEIC need ExifTool. |
 | Move to date folders, Flatten | Moves files between folders. Use one or the other. |
 | Sync timestamps | Changes Date Created, and Date Modified on files that look unedited. The old times are not kept. |
-| Clean up converted files | Deletes each PNG and BMP already converted, after checking they are the same picture. This cannot be undone. |
+| Clean up converted files | Moves each PNG, BMP and WebP already converted into `_converted`, after checking they are the same picture. Nothing is deleted. |
 | Any report | Changes nothing. |
 
 - **Run all selected**, **Preview all selected**, **Apply** and **Stop** have tooltips too.

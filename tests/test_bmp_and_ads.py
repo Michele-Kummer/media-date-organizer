@@ -70,6 +70,7 @@ class BmpTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn('scan.bmp', names(self.day))
         self.assertIn('scan.jpg', names(self.day))
+        self.assertEqual(names(self.root / '_converted'), ['scan.bmp'], 'moved aside, not deleted')
         self.assertIn('other.bmp', names(self.day), 'a BMP whose JPG differs must be kept')
 
     @unittest.skipUnless(os.name == 'nt' and powershell(), 'needs PowerShell on Windows')
@@ -87,6 +88,71 @@ class BmpTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn('scan.bmp', names(day))
         self.assertEqual(names(ads), ['scan.bmp', 'scan.jpg'])
+
+
+@unittest.skipUnless(os.name == 'nt' and powershell(), 'needs PowerShell on Windows')
+class CleanupConvertedTests(unittest.TestCase):
+    """Cleanup-Pictures.ps1 moves converted PNGs, BMPs and WebPs into
+    _converted rather than deleting them."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp(prefix='media-date-organizer-'))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.day = self.root / '2021-05-04'
+        self.converted = self.root / '_converted'
+
+    def cleanup(self, *args):
+        r = subprocess.run([powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                            str(SCRIPTS / 'Cleanup-Pictures.ps1'), '-Path', str(self.root), *args],
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r.stdout
+
+    def pair(self, folder, stem, fmt, ext):
+        make_image(folder / f'{stem}.{ext}', fmt=fmt)
+        make_image(folder / f'{stem}.jpg', fmt='JPEG')
+
+    def test_png_bmp_and_webp_move_into_converted_and_nothing_is_deleted(self):
+        self.pair(self.day, 'shot', 'PNG', 'png')
+        self.pair(self.day, 'scan', 'BMP', 'bmp')
+        self.pair(self.day, 'saved', 'WEBP', 'webp')
+        before = snapshot(self.root)
+        out = self.cleanup()
+        self.assertEqual(snapshot(self.root), before, 'a preview must not move anything')
+        self.assertIn('WOULD MOVE (converted to saved.jpg): '
+                      + os.path.join('2021-05-04', 'saved.webp') + ' -> '
+                      + os.path.join('_converted', 'saved.webp'), out)
+        self.assertIn('Converted PNGs, BMPs and WebPs would be moved : 3', out)
+
+        out = self.cleanup('-Apply')
+        self.assertEqual(names(self.day), ['saved.jpg', 'scan.jpg', 'shot.jpg'])
+        self.assertEqual(names(self.converted), ['saved.webp', 'scan.bmp', 'shot.png'])
+        self.assertIn('Converted PNGs, BMPs and WebPs moved : 3', out)
+
+    def test_a_webp_whose_jpg_differs_is_kept(self):
+        make_image(self.day / 'saved.webp', fmt='WEBP')
+        make_image(self.day / 'saved.jpg', color=(10, 200, 10), fmt='JPEG')
+        out = self.cleanup('-Apply')
+        self.assertIn('KEPT (not the same picture', out)
+        self.assertEqual(names(self.day), ['saved.jpg', 'saved.webp'])
+        self.assertFalse(self.converted.exists())
+
+    def test_a_name_already_in_converted_gets_its_folder_name_then_collides(self):
+        other = self.root / '2021-05-05'
+        third = self.root / 'more' / '2021-05-05'
+        for folder in (self.day, other, third):
+            self.pair(folder, 'shot', 'PNG', 'png')
+        out = self.cleanup('-Apply')
+        # Taken in path order: the first keeps its name, the second gets its
+        # folder's name, and the third finds both taken and stays
+        self.assertEqual(names(self.converted), ['shot.png', 'shot_2021-05-05.png'])
+        self.assertEqual(names(third), ['shot.jpg', 'shot.png'])
+        self.assertIn('COLLISION, skipping: ' + os.path.join('more', '2021-05-05', 'shot.png'), out)
+
+    def test_holding_folders_are_left_alone(self):
+        self.pair(self.converted, 'shot', 'PNG', 'png')
+        self.cleanup('-Apply')
+        self.assertEqual(names(self.converted), ['shot.jpg', 'shot.png'])
 
 
 class GameAdTests(unittest.TestCase):
