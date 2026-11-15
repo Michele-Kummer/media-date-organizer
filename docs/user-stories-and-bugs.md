@@ -939,7 +939,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | `8b96016` |
 | BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
 | BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
-| BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `FIXHASH` |
+| BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1139,7 +1139,7 @@ The fix for BUG-33 made `--move-junk` move phone thumbnails into `_thumbnails`. 
 **Fix:** `--move-junk` no longer touches phone thumbnails. A new optional phase, `--move-thumbnails` (slash command `/move-thumbnails`), moves them into `_thumbnails` only once they have a Date Taken, and lists any without one as `LEFT`. It is not part of `--all`; added to it, it runs after the dates are written. Tests in `tests/test_fix_extensions_and_junk.py` and `tests/test_dry_run.py` cover it, and the sample generator adds `--move-thumbnails` to its run (US-54).
 
 #### BUG-35 `--flatten` only looked one subfolder deep
-**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** `FIXHASH`
+**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** `a155436`
 
 `--flatten --root E:\Pictures\2022` left every photo in `Temp\<number>` folders where it was, and did not list them as `LEFT` either, so nothing said they had been passed over. `flatten` found its files with `iter_media`, which lists the folders directly inside the root and the files directly inside each of those, and goes no deeper. `Temp\5\photo.jpg` is two levels down, so it was never seen, and `Temp` was never emptied, so the final check reported it as `NOT FLATTENED`. The other steps that set files aside (`--quarantine-ads`, `--move-junk`) already searched every depth. Going one level deep also meant the opposite problem one level up: every first-level folder was emptied, whatever its name, including folders named for a child, a trip or a wedding.
 **Fix:** `--flatten` now goes all the way down through dated folders, scratch folders (Temp, Junk, Delete, Weird, Review) and every folder below a scratch folder, and leaves every other folder as it is, listed as `KEPT (named folder)` (US-55). A camcorder file with no date in its name takes the date of the nearest dated folder above it. Orphan Sony sidecars are looked for in the same folders. The name clash checks and the final check use the same rule, and the final check lists named folders as `NAMED FOLDER (left as is)` instead of `NOT FLATTENED`. `iter_media`, which nothing else used, was replaced by `_flatten_walk`. Two tests in `tests/test_smoke.py` cover the scratch folder names and a flatten of a year folder with files two and three levels down in `Temp`, named folders, `_review` and the final check.
