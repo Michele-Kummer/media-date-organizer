@@ -23,6 +23,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-13:** Michele Kummer asked for plist and XMP files to be moved into `_junk` instead of only being reported. US-14 and US-28 now say so. Michele Kummer then asked, as part of the desktop app's design, for a setting for each kind of junk (US-51), incomplete file (US-52) and ad (US-53).
 - **Updated 2026-11-14:** Michele Kummer found that `--move-junk` sets phone thumbnails aside before any date is written, so they leave their dated folder with no date, and that it does so on every run with no way to opt out (BUG-34). Michele Kummer asked for the move to be undone and for setting thumbnails aside to become an optional slash command of its own, run after dates are applied (US-54, built the same day).
 - **Updated 2026-11-14:** Michele Kummer found that `--flatten` on `E:\Pictures\2022` left the photos in `Temp\<number>` folders where they were, because it only looked one subfolder deep (BUG-35). Michele Kummer asked for flatten to go all the way down, but only through dated folders and folders named Temp, Junk, Delete, Weird or Review, leaving folders named for a child, a trip or a wedding as they are (US-55, built the same day). Michele Kummer then asked for the desktop app to let the user list the folder names to flatten, with an option for all folders (US-56).
+- **Updated 2026-11-14:** Claude suggested more names that usually hold photos waiting to be sorted, and Michele Kummer asked for all of them to be flattened too: New folder, DCIM and the camera folders inside it (`100APPLE`), Camera, Unsorted, To Sort, Misc, Downloads and Import. US-55 and US-56 now list them.
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -235,7 +236,8 @@ As a media owner, I want flatten to empty my dated folders and my scratch folder
 
 - `--flatten` goes into three kinds of subfolder, at any depth:
   - a dated folder: any name holding a full date (`2022-02-14`, `Aug 19 2023`, `Trip 11-11-2019`);
-  - a scratch folder: a name holding the word Temp, Junk, Delete, Weird or Review as a whole word, in any case (`Temp`, `temp2`, `To Delete`, `Weird ones`, `To Review`), but not `Template`, `Junkyard` or a name starting with an underscore (`_review`, `_duplicates`), which is a folder things were set aside in on purpose;
+  - a scratch folder: a name holding one of these words or phrases as a whole word, in any case: Temp, Junk, Delete, Weird, Review, New folder, DCIM, Camera, Unsorted, To Sort, Misc, Download, Downloads, Import, Imports or Imported (`Temp`, `temp2`, `To Delete`, `Weird ones`, `To Review`, `New folder (2)`, `Camera Roll`, `Imported 2022`). A space, underscore or dash may join a phrase (`to_sort`, `NewFolder`). Not `Template`, `Junkyard`, `Sorted`, `Important` or a name starting with an underscore (`_review`, `_duplicates`), which is a folder things were set aside in on purpose;
+  - a camera's or phone's own folder inside `DCIM`, named by the camera file standard: 3 digits from 100, then 5 letters, digits or underscores (`100APPLE`, `101ANDRO`, `100_PANA`);
   - every folder below a scratch folder, whatever its name (`Temp\5`, `Temp\2022-02-14\7`).
 - Every other folder is a named folder (`Emma`, `Hawaii`, `Wedding`, or `2022-03-01\Emma` inside a dated folder). It is left exactly as it is, with everything inside it, its dated subfolders and empty subfolders included, and listed as `KEPT (named folder): Wedding (40 file(s))`, counted as `named-folders-kept`.
 - A named folder holding no file at any depth is set aside in `_empty_folders`, like any other empty folder.
@@ -847,7 +849,7 @@ As a media owner, I want to choose which kinds of ad names are moved aside, so t
 As a media owner, I want to type the folder names that **Flatten** should empty, besides dated folders, or tell it to flatten every folder, so that I can flatten my own scratch folders (such as `Unsorted` or `From Phone`) without editing the script, and still keep the folders I named for a child, a trip or a wedding.
 
 - The **Project** panel (US-33) has a **Folders to flatten** setting with two choices:
-  - **Dated folders and these names** (the default), with a list the user can add names to and remove names from. It starts with `Temp`, `Junk`, `Delete`, `Weird` and `Review`, the words `--flatten` uses today (US-55).
+  - **Dated folders and these names** (the default), with a list the user can add names to and remove names from. It starts with the words and phrases `--flatten` uses today (US-55): `Temp`, `Junk`, `Delete`, `Weird`, `Review`, `New folder`, `DCIM`, `Camera`, `Unsorted`, `To Sort`, `Misc`, `Download`, `Downloads`, `Import`, `Imports` and `Imported`. Camera folders such as `100APPLE` are always flattened, like dated folders.
   - **All folders**: every subfolder at any depth is flattened, named ones included. Choosing it shows a note that folders named for a child, a trip or a wedding will be emptied too.
 - Dated folders are always flattened, whichever choice is made.
 - Each name is matched as `--flatten` matches the built-in words: as a whole word, in any case, anywhere in the folder's name (`Unsorted` matches `Unsorted 2022`), and never in a name starting with an underscore. Every folder below a matching folder is flattened too.
@@ -856,7 +858,7 @@ As a media owner, I want to type the folder names that **Flatten** should empty,
 - The preview of **Flatten** (US-35) lists which folders would be emptied and which named folders would be kept (`KEPT (named folder)`), so the user can check the list before running it.
 - The final check uses the same setting, so a folder the user chose to flatten is reported as `NOT FLATTENED` when it still holds files, and is not listed as a named folder.
 - The tooltip (US-39) gives an example of each choice.
-- The setting is saved with the project's other settings, and **Reset to defaults** puts back the five built-in words.
+- The setting is saved with the project's other settings, and **Reset to defaults** puts back the built-in words.
 - Tests cover a name the user added, a name removed from the list, **All folders**, a name starting with an underscore, and a run with neither option.
 
 **Status:** Not started

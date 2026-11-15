@@ -590,10 +590,14 @@ class SmokeTests(unittest.TestCase):
 
     def test_scratch_folder_names(self):
         for name in ('Temp', 'temp', 'TEMP2', 'temp_3', 'Junk', 'To Delete', 'Delete Me',
-                     'Weird', 'Weird ones', 'Review', 'To Review'):
+                     'Weird', 'Weird ones', 'Review', 'To Review',
+                     'New folder', 'New Folder (2)', 'NewFolder', 'DCIM', '100APPLE', '101ANDRO',
+                     '100_PANA', 'Camera', 'Camera Roll', 'Camera Uploads', 'Unsorted', 'To Sort',
+                     'to_sort', 'Misc', 'Download', 'Downloads', 'Import', 'Imports', 'Imported 2022'):
             self.assertTrue(organize.is_scratch_folder(name), name)
         for name in ('Template', 'Attempt', 'Junkyard', 'Reviewed', 'Wedding', 'Emma', '5',
-                     '_review', '_temp'):
+                     '_review', '_temp', 'Sorted', 'Cameras', 'Important', 'Miscellany',
+                     'New York', '2022', '99APPLE', '100', '100 Days', 'Disney 2023'):
             self.assertFalse(organize.is_scratch_folder(name), name)
 
     def test_flatten_goes_all_the_way_down_temp_but_leaves_named_folders(self):
@@ -607,6 +611,8 @@ class SmokeTests(unittest.TestCase):
         make_image(year / 'Temp' / '5' / 'undated.jpg')
         for scratch in ('Junk', 'To Delete', 'Weird ones', 'To Review'):
             make_image(year / scratch / f'{scratch}.jpg', taken=taken)
+        make_image(year / 'DCIM' / '100APPLE' / 'IMG_0001.jpg', taken=taken)
+        make_image(year / 'Camera Roll' / 'Edits' / 'IMG_0002.jpg', taken=taken)
         make_image(year / '2022-03-01' / 'day.jpg', taken=taken)
         # Named folders, wherever they are, are left as they are
         make_image(year / 'Wedding' / 'w.jpg', taken=taken)
@@ -633,7 +639,8 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         loose = [n for n in names(year) if '.' in n and not n.endswith('.xlsx')]
         self.assertEqual(loose, sorted(['deep.jpg', 'deeper.jpg', 'holiday_2022-02-15.m2ts', 'day.jpg',
-                                        'junk.jpg', 'to delete.jpg', 'weird ones.jpg', 'to review.jpg']))
+                                        'junk.jpg', 'to delete.jpg', 'weird ones.jpg', 'to review.jpg',
+                                        'img_0001.jpg', 'img_0002.jpg']))
         self.assertEqual(names(year / 'Temp'), ['5'])
         self.assertEqual(names(year / 'Temp' / '5'), ['undated.jpg'])
         self.assertEqual(names(year / 'Wedding'), ['2022-06-01', 'ceremony', 'w.jpg'])
@@ -643,7 +650,8 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(names(year / '_review'), ['r.jpg'])
         # Emptied folders are set aside, and so is a named folder holding no file
         self.assertEqual(names(year / '_empty_folders'),
-                         ['hawaii', 'junk', 'temp', 'to delete', 'to review', 'weird ones'])
+                         ['camera roll', 'dcim', 'hawaii', 'junk', 'temp', 'to delete', 'to review',
+                          'weird ones'])
         self.assertEqual(names(year / '_empty_folders' / 'Temp'), ['2022-02-14', '2022-02-15'])
 
         code, out = run(self.root, '--final-check')

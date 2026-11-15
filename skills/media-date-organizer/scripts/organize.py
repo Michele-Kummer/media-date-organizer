@@ -148,7 +148,10 @@ and a summary of every phase's counts and problems is printed at the end):
                         empty into _empty_folders (nothing is deleted there).
                         Only dated folders (2022-02-14, Aug 19 2023), scratch
                         folders (a name holding the word Temp, Junk, Delete,
-                        Weird or Review, not starting with an underscore)
+                        Weird, Review, New folder, DCIM, Camera, Unsorted,
+                        To Sort, Misc, Download(s) or Import(s/ed), or a
+                        camera folder such as 100APPLE, not starting with an
+                        underscore)
                         and every folder below a scratch folder
                         (Temp\\5) are flattened. Any other folder (Emma,
                         Hawaii, Wedding) is left as it is and listed as KEPT
@@ -685,18 +688,27 @@ SIDECAR_EXTS = ('.modd', '.moff')
 # Folders that only hold photos until they are sorted. --flatten empties
 # these, and every folder below them, as it does dated folders. Any other
 # folder with no date in its name (a child's name, a trip, a wedding) is left
-# as it is. Matched as a whole word, in any case: "Temp", "temp2", "To Delete",
-# "To Review" and "Weird ones" match; "Template" and "Attempt" do not. A name
+# as it is. Matched as a whole word or phrase, in any case: "Temp", "temp2",
+# "To Delete", "To Review", "Weird ones", "New folder (2)", "Camera Roll" and
+# "Downloads" match; "Template", "Attempt" and "Sorted" do not. A name
 # starting with an underscore (_review, _duplicates) is a folder things were
 # set aside in on purpose, so it never counts.
-SCRATCH_WORDS = ('temp', 'junk', 'delete', 'weird', 'review')
-_SCRATCH_RE = re.compile(r'(?<![a-z])(?:' + '|'.join(SCRATCH_WORDS) + r')(?![a-z])', re.IGNORECASE)
+SCRATCH_WORDS = ('temp', 'junk', 'delete', 'weird', 'review', 'new folder', 'dcim', 'camera',
+                 'unsorted', 'to sort', 'misc', 'download', 'downloads', 'import', 'imports', 'imported')
+_SCRATCH_RE = re.compile(
+    r'(?<![a-z])(?:' + '|'.join(w.replace(' ', r'[ _-]?') for w in SCRATCH_WORDS) + r')(?![a-z])',
+    re.IGNORECASE)
+# A camera's or phone's own folder inside DCIM, named by the DCF standard: 3
+# digits from 100, then 5 letters, digits or underscores (100APPLE, 101ANDRO,
+# 100MEDIA, 100_PANA, 100CANON)
+_DCF_FOLDER_RE = re.compile(r'^[1-9]\d\d[a-z_][a-z0-9_]{4}$', re.IGNORECASE)
 
 
 def is_scratch_folder(name: str) -> bool:
     """True for a folder that only holds photos until they are sorted (Temp,
-    Junk, Delete, Weird, To Review), so --flatten empties it."""
-    return not name.startswith('_') and bool(_SCRATCH_RE.search(name))
+    Junk, Delete, Weird, To Review, New folder, DCIM, 100APPLE, Camera,
+    Unsorted, To Sort, Misc, Downloads, Import), so --flatten empties it."""
+    return not name.startswith('_') and bool(_SCRATCH_RE.search(name) or _DCF_FOLDER_RE.match(name))
 
 
 def _flatten_walk(root: str) -> tuple:
@@ -2980,7 +2992,7 @@ def main(argv=None):
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
-    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their dated and scratch (Temp, Junk, Delete, Weird, Review) subfolders, at any depth, into the root, then move the emptied subfolders into _empty_folders (not deleted). Named folders (Emma, Hawaii) are left as they are. Inside _ads, or with an _ads folder as the root, files move up into _ads itself even with no Date Taken.')
+    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their dated and scratch (Temp, Junk, Delete, Weird, Review, New folder, DCIM, 100APPLE, Camera, Unsorted, To Sort, Misc, Downloads, Import) subfolders, at any depth, into the root, then move the emptied subfolders into _empty_folders (not deleted). Named folders (Emma, Hawaii) are left as they are. Inside _ads, or with an _ads folder as the root, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. --move-junk moves these into _junk; every other phase leaves them alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')
