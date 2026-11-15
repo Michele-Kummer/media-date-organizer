@@ -1004,7 +1004,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
 | BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
 | BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
-| BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | not yet committed |
+| BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | `5be9fb5` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1236,7 +1236,7 @@ A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` ag
 **Fix:** A new `_already_synced` compares the file's Date Created (on Windows) and, for unedited files, its Date Modified with the Date Taken before anything is written. A file within 2 seconds (`SYNC_TOLERANCE_SECONDS`) on every time that would be set is counted as `already-synced`, not listed, and not written. The 2 seconds allow for FAT32 and exFAT drives, which store Date Modified in 2-second steps. An edited file's Date Modified is not compared, since sync leaves it alone. Twelve tests in `tests/test_sync_timestamps.py` cover it.
 
 #### BUG-39 Phone transfer stubs were not set aside as incomplete
-**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** `5be9fb5`
 
 `E:\Pictures\2018\Temp` held 451 photos of 16 to 345 bytes (shown as 1 KB in Explorer) that `--move-incomplete` left where they were. None of them holds any picture. Each is an MTP object property list, which Windows can leave under a photo's name when a copy from a phone over MTP fails: a 4-byte count, then that many entries of object handle, property code (`0xDC08` date created, `0xDC44` file name, `0xDC89` size and so on), data type and value. `_incomplete_kind` only looked for files that were 0 bytes or all null bytes, and these are neither, so they stayed in their dated folders, and `--fix-extensions` listed each one as `UNKNOWN FORMAT (left alone)`.
 
