@@ -987,7 +987,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
 | BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
 | BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `a155436` |
-| BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | not yet committed |
+| BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1193,7 +1193,7 @@ The fix for BUG-33 made `--move-junk` move phone thumbnails into `_thumbnails`. 
 **Fix:** `--flatten` now goes all the way down through dated folders, scratch folders (Temp, Junk, Delete, Weird, Review) and every folder below a scratch folder, and leaves every other folder as it is, listed as `KEPT (named folder)` (US-55). A camcorder file with no date in its name takes the date of the nearest dated folder above it. Orphan Sony sidecars are looked for in the same folders. The name clash checks and the final check use the same rule, and the final check lists named folders as `NAMED FOLDER (left as is)` instead of `NOT FLATTENED`. `iter_media`, which nothing else used, was replaced by `_flatten_walk`. Two tests in `tests/test_smoke.py` cover the scratch folder names and a flatten of a year folder with files two and three levels down in `Temp`, named folders, `_review` and the final check.
 
 #### BUG-37 A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync
-**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** not yet committed
+**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** `575d9bb`
 
 An edge case. `--sync-timestamps --apply` on `E:\Pictures\2020` stopped partway with `OSError: [Errno 22] Invalid argument`. The photo it stopped on, `Temp\2020-06-14\VideoCapture_20200614-211024.jpg`, is a Windows frame grab whose EXIF Date Taken is `1904:01:01 00:00:00`: QuickTime's time zero, which the capturing app wrote instead of leaving the field empty. Two things went wrong. First, `_parse_exif_dt` accepted any date it could read, so `--fill-blanks` treated the photo as already dated and never used the date in its name. Video dates already threw away anything before 1971, but photo dates had no such check. Second, `sync_timestamps` called `datetime.timestamp()` to turn the date into a file time. That asks the C library for the local time zone, and on Windows the library rejects every date before 1970, so any photo older than 1970, such as a scanned print, would stop the step in the same way. Windows itself stores file times back to 1601, so the limit was Python's, not the file system's. The call was also outside the `try`, so one bad date stopped the whole step instead of being reported.
 
