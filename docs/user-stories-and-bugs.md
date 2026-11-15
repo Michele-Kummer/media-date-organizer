@@ -903,7 +903,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-31 | `--quarantine-ads` put every year's ads in one `_ads` | Photos and videos (ads) | Medium | Michele Kummer | `8b96016` |
 | BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | `8b96016` |
 | BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
-| BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `FIXHASH` |
+| BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1097,7 +1097,7 @@ An import from a phone brought along its gallery's thumbnail cache: 2,520 small 
 **Fix:** `--move-junk` recognises a phone thumbnail (`is_phone_thumbnail`: a JPEG named only by a number, at most 1024 pixels on its long side, with no camera Make or Model) and moves it into a new `_thumbnails` holding folder, which every step skips and the final check reports (`IN THUMBNAILS`). `Cleanup-Pictures.ps1` skips it too. On the real files it caught 4,005 of the 4,014 thumbnails and none of the photos. `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` covers the check, the move, name clashes, `--all` setting them aside before they get a date, and the final check.
 
 #### BUG-34 Phone thumbnails were set aside before they got a date, with no way to opt out
-**Found by:** Michele Kummer · **Affects:** photos (phone thumbnails) · **Fixed in:** `FIXHASH`
+**Found by:** Michele Kummer · **Affects:** photos (phone thumbnails) · **Fixed in:** `4b5f2ed`
 
 The fix for BUG-33 made `--move-junk` move phone thumbnails into `_thumbnails`. `--move-junk` is step 3 and part of `--all`, so it runs before `--fill-blanks` (step 8). On `E:\Pictures\2022` it moved 4,017 thumbnails, from the year folder itself and from 196 day folders under `Temp`, into `_thumbnails` with no Date Taken. Every step skips `_thumbnails`, so the folders' dates were lost, and the move could not be left out of a run. The 4,017 moves were undone from the audit workbook's Run log, putting each file back where it came from.
 **Fix:** `--move-junk` no longer touches phone thumbnails. A new optional phase, `--move-thumbnails` (slash command `/move-thumbnails`), moves them into `_thumbnails` only once they have a Date Taken, and lists any without one as `LEFT`. It is not part of `--all`; added to it, it runs after the dates are written. Tests in `tests/test_fix_extensions_and_junk.py` and `tests/test_dry_run.py` cover it, and the sample generator adds `--move-thumbnails` to its run (US-54).
