@@ -30,6 +30,9 @@ py skills\media-date-organizer\scripts\organize.py --root $root --convert-bmp --
 py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks
 py skills\media-date-organizer\scripts\organize.py --root $root --fill-blanks --apply
 
+py skills\media-date-organizer\scripts\organize.py --root $root --move-thumbnails
+py skills\media-date-organizer\scripts\organize.py --root $root --move-thumbnails --apply
+
 py skills\media-date-organizer\scripts\organize.py --root $root --convert-png
 py skills\media-date-organizer\scripts\organize.py --root $root --convert-png --apply
 

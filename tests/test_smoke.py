@@ -588,6 +588,70 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(moved.is_dir())
         self.assertNotIn('MOVED EMPTY', out)
 
+    def test_scratch_folder_names(self):
+        for name in ('Temp', 'temp', 'TEMP2', 'temp_3', 'Junk', 'To Delete', 'Delete Me',
+                     'Weird', 'Weird ones', 'Review', 'To Review'):
+            self.assertTrue(organize.is_scratch_folder(name), name)
+        for name in ('Template', 'Attempt', 'Junkyard', 'Reviewed', 'Wedding', 'Emma', '5',
+                     '_review', '_temp'):
+            self.assertFalse(organize.is_scratch_folder(name), name)
+
+    def test_flatten_goes_all_the_way_down_temp_but_leaves_named_folders(self):
+        # BUG-35: Temp/5 is two levels down, and flatten only looked one deep
+        year = self.root / '2022'
+        taken = datetime.datetime(2022, 2, 14, 10, 0, 0)
+        make_image(year / 'Temp' / '5' / 'deep.jpg', taken=taken)
+        make_image(year / 'Temp' / '2022-02-14' / '7' / 'deeper.jpg', taken=taken)
+        (year / 'Temp' / '2022-02-15' / 'Cam').mkdir(parents=True)
+        (year / 'Temp' / '2022-02-15' / 'Cam' / 'holiday.m2ts').write_bytes(b'camcorder video data')
+        make_image(year / 'Temp' / '5' / 'undated.jpg')
+        for scratch in ('Junk', 'To Delete', 'Weird ones', 'To Review'):
+            make_image(year / scratch / f'{scratch}.jpg', taken=taken)
+        make_image(year / '2022-03-01' / 'day.jpg', taken=taken)
+        # Named folders, wherever they are, are left as they are
+        make_image(year / 'Wedding' / 'w.jpg', taken=taken)
+        make_image(year / 'Wedding' / '2022-06-01' / 'w2.jpg', taken=taken)
+        (year / 'Wedding' / 'Ceremony').mkdir()
+        make_image(year / '2022-03-01' / 'Emma' / 'e.jpg', taken=taken)
+        make_image(year / 'Template' / 't.jpg', taken=taken)
+        make_image(year / '_review' / 'r.jpg', taken=taken)
+        (year / 'Hawaii' / 'Day 1').mkdir(parents=True)        # named, but holds no file
+
+        code, out = run(year, '--flatten')
+        self.assertEqual(code, 0, out)
+        self.assertIn('WOULD MOVE: Temp/5/deep.jpg -> deep.jpg', out)
+        self.assertIn('WOULD MOVE: Temp/2022-02-14/7/deeper.jpg -> deeper.jpg', out)
+        self.assertIn('LEFT (no Date Taken): Temp/5/undated.jpg', out)
+        self.assertIn('KEPT (named folder): Wedding (2 file(s))', out)
+        self.assertIn('KEPT (named folder): 2022-03-01/Emma (1 file(s))', out)
+        self.assertIn('KEPT (named folder): Template (1 file(s))', out)
+        self.assertIn('KEPT (named folder): _review (1 file(s))', out)
+        self.assertTrue((year / 'Temp' / '5' / 'deep.jpg').exists(), 'a dry run must not move anything')
+
+        code, out = run(year, '--flatten', '--apply')
+
+        self.assertEqual(code, 0, out)
+        loose = [n for n in names(year) if '.' in n and not n.endswith('.xlsx')]
+        self.assertEqual(loose, sorted(['deep.jpg', 'deeper.jpg', 'holiday_2022-02-15.m2ts', 'day.jpg',
+                                        'junk.jpg', 'to delete.jpg', 'weird ones.jpg', 'to review.jpg']))
+        self.assertEqual(names(year / 'Temp'), ['5'])
+        self.assertEqual(names(year / 'Temp' / '5'), ['undated.jpg'])
+        self.assertEqual(names(year / 'Wedding'), ['2022-06-01', 'ceremony', 'w.jpg'])
+        self.assertEqual(names(year / 'Wedding' / '2022-06-01'), ['w2.jpg'])
+        self.assertEqual(names(year / '2022-03-01'), ['emma'])
+        self.assertEqual(names(year / 'Template'), ['t.jpg'])
+        self.assertEqual(names(year / '_review'), ['r.jpg'])
+        # Emptied folders are set aside, and so is a named folder holding no file
+        self.assertEqual(names(year / '_empty_folders'),
+                         ['hawaii', 'junk', 'temp', 'to delete', 'to review', 'weird ones'])
+        self.assertEqual(names(year / '_empty_folders' / 'Temp'), ['2022-02-14', '2022-02-15'])
+
+        code, out = run(self.root, '--final-check')
+        self.assertEqual(code, 0, out)
+        self.assertIn('NAMED FOLDER (left as is): 2022/Wedding (2 file(s))', out)
+        self.assertIn('NOT FLATTENED: 2022/Temp (1 file(s))', out)
+        self.assertNotIn('NOT FLATTENED: 2022/Wedding', out)
+
     def test_duplicate_checks_tell_copies_from_different_pictures(self):
         day = self.root / '2020-01-01'
         make_image(day / 'same.png')

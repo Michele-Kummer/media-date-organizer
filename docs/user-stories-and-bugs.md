@@ -22,6 +22,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-09:** Claude checked the new screenshots against the sample data. Michele Kummer fixed the captions and asked for the panels to show the same columns and for the README to explain what a reader may wonder about (US-50).
 - **Updated 2026-11-13:** Michele Kummer asked for plist and XMP files to be moved into `_junk` instead of only being reported. US-14 and US-28 now say so. Michele Kummer then asked, as part of the desktop app's design, for a setting for each kind of junk (US-51), incomplete file (US-52) and ad (US-53).
 - **Updated 2026-11-14:** Michele Kummer found that `--move-junk` sets phone thumbnails aside before any date is written, so they leave their dated folder with no date, and that it does so on every run with no way to opt out (BUG-34). Michele Kummer asked for the move to be undone and for setting thumbnails aside to become an optional slash command of its own, run after dates are applied (US-54, built the same day).
+- **Updated 2026-11-14:** Michele Kummer found that `--flatten` on `E:\Pictures\2022` left the photos in `Temp\<number>` folders where they were, because it only looked one subfolder deep (BUG-35). Michele Kummer asked for flatten to go all the way down, but only through dated folders and folders named Temp, Junk, Delete, Weird or Review, leaving folders named for a child, a trip or a wedding as they are (US-55, built the same day). Michele Kummer then asked for the desktop app to let the user list the folder names to flatten, with an option for all folders (US-56).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -40,12 +41,12 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 54 (35 Done, 2 Partly done, 17 Not started) |
-| Bugs | 34 (2 open, 32 resolved) |
+| User stories | 56 (36 Done, 2 Partly done, 18 Not started) |
+| Bugs | 35 (2 open, 33 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 0 | 15 | 15 |
+| Michele Kummer | 0 | 16 | 16 |
 | Claude | 2 | 17 | 19 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -182,7 +183,7 @@ As a photo owner, I want to set the JPEG quality that PNG and BMP conversions us
 </details>
 
 <details>
-<summary><strong>Epic 3 — Organize folders</strong> (US-09 to US-11)</summary>
+<summary><strong>Epic 3 — Organize folders</strong> (US-09 to US-11, US-55)</summary>
 
 Put each photo and video where its date says it belongs, then tidy the folder structure.
 
@@ -202,8 +203,9 @@ As a media owner, I want each photo and video in a folder named for its real dat
 #### US-10 Flatten dated subfolders
 As a media owner, I want every dated photo and video moved up into the media folder itself, so that I have one flat folder per year.
 
-- `--flatten` (or `/flatten-media`) moves photos and videos that have a date up out of their subfolders. A name already taken in the root gets a `_<date-taken>` ending.
-- Camcorder, MPEG, WMV and AVI videos move too, going by the date in the filename, else the subfolder name. The date is appended to the name when it came from the folder.
+- `--flatten` (or `/flatten-media`) moves photos and videos that have a date up out of their subfolders, at any depth (BUG-35). A name already taken in the root gets a `_<date-taken>` ending.
+- Only dated and scratch folders are flattened; named folders are left as they are (US-55).
+- Camcorder, MPEG, WMV and AVI videos move too, going by the date in the filename, else the nearest dated folder above them. The date is appended to the name when it came from a folder.
 - Inside `_ads`, files in subfolders at any depth, game `.raw` ads included, move up into `_ads` itself, dated or not. The same holds when the root given is an `_ads` folder itself (`E:\Pictures\2020\_ads`), whose emptied subfolders go into the `_empty_folders` beside it (BUG-29). It also holds for a root anywhere inside an `_ads` folder (`E:\Pictures\_ads\2022`), whose emptied subfolders go into its own `_empty_folders` (BUG-30).
 - Subfolders left empty are moved into `_empty_folders`, keeping their path. Nothing is deleted.
 - Without `--apply` it only previews.
@@ -225,6 +227,21 @@ As a photo owner, I want the PNG left behind by a conversion removed, and empty 
 - `_ads`, `_incomplete`, `_no-image-data` and `_empty_folders` are skipped.
 - Empty folders are moved into `_empty_folders`, keeping their path.
 - It previews unless `-Apply` is given. The console, the summary and the audit workbook all list each PNG deleted (or that would be) and each one kept.
+
+**Status:** Done
+
+#### US-55 Keep named folders when flattening
+As a media owner, I want flatten to empty my dated folders and my scratch folders such as `Temp`, at any depth, but leave folders I named for a child, a trip or a wedding as they are, so that one run flattens the year without breaking up the folders I made on purpose.
+
+- `--flatten` goes into three kinds of subfolder, at any depth:
+  - a dated folder: any name holding a full date (`2022-02-14`, `Aug 19 2023`, `Trip 11-11-2019`);
+  - a scratch folder: a name holding the word Temp, Junk, Delete, Weird or Review as a whole word, in any case (`Temp`, `temp2`, `To Delete`, `Weird ones`, `To Review`), but not `Template`, `Junkyard` or a name starting with an underscore (`_review`, `_duplicates`), which is a folder things were set aside in on purpose;
+  - every folder below a scratch folder, whatever its name (`Temp\5`, `Temp\2022-02-14\7`).
+- Every other folder is a named folder (`Emma`, `Hawaii`, `Wedding`, or `2022-03-01\Emma` inside a dated folder). It is left exactly as it is, with everything inside it, its dated subfolders and empty subfolders included, and listed as `KEPT (named folder): Wedding (40 file(s))`, counted as `named-folders-kept`.
+- A named folder holding no file at any depth is set aside in `_empty_folders`, like any other empty folder.
+- The final check lists a named folder as `NAMED FOLDER (left as is)`, counted as `named-folders`, not as `NOT FLATTENED`, so it does not make a year look unfinished.
+- The name clash checks (`--compare-collisions` and the final check) look at the same folders as `--flatten`.
+- A test in `tests/test_smoke.py` flattens a year folder with files two and three levels down in `Temp`, each scratch name, named folders at the top and inside a dated folder, `Template`, `_review` and an empty named folder, then runs the final check.
 
 **Status:** Done
 
@@ -552,7 +569,7 @@ As a media owner reading the README, I want the before and after screenshots lai
 </details>
 
 <details>
-<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43, US-45, US-51 to US-53)</summary>
+<summary><strong>Epic 8 — Desktop app</strong> (US-33 to US-43, US-45, US-51 to US-53, US-56)</summary>
 
 Run every step from a window with buttons, checkboxes and settings instead of typing commands. The app runs the existing scripts on this computer, with the same preview-first rules, so it adds no new way to lose a file. Requested by Michele Kummer on 2026-10-26; nothing is built yet.
 
@@ -826,6 +843,24 @@ As a media owner, I want to choose which kinds of ad names are moved aside, so t
 
 **Status:** Not started
 
+#### US-56 Choose which folders are flattened
+As a media owner, I want to type the folder names that **Flatten** should empty, besides dated folders, or tell it to flatten every folder, so that I can flatten my own scratch folders (such as `Unsorted` or `From Phone`) without editing the script, and still keep the folders I named for a child, a trip or a wedding.
+
+- The **Project** panel (US-33) has a **Folders to flatten** setting with two choices:
+  - **Dated folders and these names** (the default), with a list the user can add names to and remove names from. It starts with `Temp`, `Junk`, `Delete`, `Weird` and `Review`, the words `--flatten` uses today (US-55).
+  - **All folders**: every subfolder at any depth is flattened, named ones included. Choosing it shows a note that folders named for a child, a trip or a wedding will be emptied too.
+- Dated folders are always flattened, whichever choice is made.
+- Each name is matched as `--flatten` matches the built-in words: as a whole word, in any case, anywhere in the folder's name (`Unsorted` matches `Unsorted 2022`), and never in a name starting with an underscore. Every folder below a matching folder is flattened too.
+- An empty name, or one already in the list, is not added, and the list says why.
+- `organize.py` gets the back end, added when the app is built: an option giving the words to flatten (replacing the built-in list), and an option to flatten all folders. Given neither, `--flatten` works as it does today. The **Command** line under the button (US-37) shows the options.
+- The preview of **Flatten** (US-35) lists which folders would be emptied and which named folders would be kept (`KEPT (named folder)`), so the user can check the list before running it.
+- The final check uses the same setting, so a folder the user chose to flatten is reported as `NOT FLATTENED` when it still holds files, and is not listed as a named folder.
+- The tooltip (US-39) gives an example of each choice.
+- The setting is saved with the project's other settings, and **Reset to defaults** puts back the five built-in words.
+- Tests cover a name the user added, a name removed from the list, **All folders**, a name starting with an underscore, and a run with neither option.
+
+**Status:** Not started
+
 </details>
 
 ---
@@ -866,7 +901,7 @@ A HEIF photo read as video has no video date. `--fill-blanks` would then try to 
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (32: 15 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (33: 16 found by Michele Kummer, 17 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -904,6 +939,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-32 | Other steps went into a year's own `_ads` | Photos and videos (ads) | Medium | Claude | `8b96016` |
 | BUG-33 | Phone thumbnails were dated and flattened in among the photos | Photos (phone thumbnails) | Medium | Michele Kummer | `a8db9d2` |
 | BUG-34 | Phone thumbnails were set aside before they got a date, with no way to opt out | Photos (phone thumbnails) | Medium | Michele Kummer | `4b5f2ed` |
+| BUG-35 | `--flatten` only looked one subfolder deep | Photos and videos | Medium | Michele Kummer | `FIXHASH` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1101,5 +1137,11 @@ An import from a phone brought along its gallery's thumbnail cache: 2,520 small 
 
 The fix for BUG-33 made `--move-junk` move phone thumbnails into `_thumbnails`. `--move-junk` is step 3 and part of `--all`, so it runs before `--fill-blanks` (step 8). On `E:\Pictures\2022` it moved 4,017 thumbnails, from the year folder itself and from 196 day folders under `Temp`, into `_thumbnails` with no Date Taken. Every step skips `_thumbnails`, so the folders' dates were lost, and the move could not be left out of a run. The 4,017 moves were undone from the audit workbook's Run log, putting each file back where it came from.
 **Fix:** `--move-junk` no longer touches phone thumbnails. A new optional phase, `--move-thumbnails` (slash command `/move-thumbnails`), moves them into `_thumbnails` only once they have a Date Taken, and lists any without one as `LEFT`. It is not part of `--all`; added to it, it runs after the dates are written. Tests in `tests/test_fix_extensions_and_junk.py` and `tests/test_dry_run.py` cover it, and the sample generator adds `--move-thumbnails` to its run (US-54).
+
+#### BUG-35 `--flatten` only looked one subfolder deep
+**Found by:** Michele Kummer · **Affects:** photos and videos · **Fixed in:** `FIXHASH`
+
+`--flatten --root E:\Pictures\2022` left every photo in `Temp\<number>` folders where it was, and did not list them as `LEFT` either, so nothing said they had been passed over. `flatten` found its files with `iter_media`, which lists the folders directly inside the root and the files directly inside each of those, and goes no deeper. `Temp\5\photo.jpg` is two levels down, so it was never seen, and `Temp` was never emptied, so the final check reported it as `NOT FLATTENED`. The other steps that set files aside (`--quarantine-ads`, `--move-junk`) already searched every depth. Going one level deep also meant the opposite problem one level up: every first-level folder was emptied, whatever its name, including folders named for a child, a trip or a wedding.
+**Fix:** `--flatten` now goes all the way down through dated folders, scratch folders (Temp, Junk, Delete, Weird, Review) and every folder below a scratch folder, and leaves every other folder as it is, listed as `KEPT (named folder)` (US-55). A camcorder file with no date in its name takes the date of the nearest dated folder above it. Orphan Sony sidecars are looked for in the same folders. The name clash checks and the final check use the same rule, and the final check lists named folders as `NAMED FOLDER (left as is)` instead of `NOT FLATTENED`. `iter_media`, which nothing else used, was replaced by `_flatten_walk`. Two tests in `tests/test_smoke.py` cover the scratch folder names and a flatten of a year folder with files two and three levels down in `Temp`, named folders, `_review` and the final check.
 
 </details>

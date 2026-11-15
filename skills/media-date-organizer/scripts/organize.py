@@ -143,9 +143,16 @@ and a summary of every phase's counts and problems is printed at the end):
                         Files are found in the root and every subfolder at
                         any depth.
     --flatten           Move every file that has a Date Taken or Media Created
-                        out of its subfolder and up into the root folder
-                        itself, then move the subfolders left empty into
-                        _empty_folders (nothing is deleted there). Files
+                        out of its subfolder, at any depth, and up into the
+                        root folder itself, then move the subfolders left
+                        empty into _empty_folders (nothing is deleted there).
+                        Only dated folders (2022-02-14, Aug 19 2023), scratch
+                        folders (a name holding the word Temp, Junk, Delete,
+                        Weird or Review, not starting with an underscore)
+                        and every folder below a scratch folder
+                        (Temp\\5) are flattened. Any other folder (Emma,
+                        Hawaii, Wedding) is left as it is and listed as KEPT
+                        (named folder), with everything inside it. Files
                         with no Date Taken or Media Created stay where they are
                         (the folder name may be the only record of their date),
                         so their folders survive. A name already taken in the
@@ -211,7 +218,9 @@ and a summary of every phase's counts and problems is printed at the end):
                         _thumbnails folder (IN THUMBNAILS), photos among videos
                         or videos among photos (as --opposite-type lists
                         them), subfolders still there after --flatten (NOT
-                        FLATTENED, with how many files each holds), name
+                        FLATTENED, with how many files each holds; a named
+                        folder --flatten leaves alone on purpose is listed as
+                        NAMED FOLDER instead), name
                         collisions --flatten met (COLLISION, one line per
                         pair, saying whether the two files are identical or
                         different and whether the file was renamed with a
@@ -673,22 +682,65 @@ CAMCORDER_EXTS = ('.m2ts', '.mts', '.mpg', '.mpeg', '.wmv', '.avi')
 SIDECAR_EXTS = ('.modd', '.moff')
 
 
-def iter_media(root: str, exts=None):
-    """Yield (folder_name, filename, full_path) for every media file under
-    root, or every file with one of exts if given."""
-    exts = MEDIA_EXTS if exts is None else exts
-    for folder in sorted(os.listdir(root)):
-        fp = os.path.join(root, folder)
-        if not os.path.isdir(fp) or folder in HOLDING_DIRS:
-            continue
+# Folders that only hold photos until they are sorted. --flatten empties
+# these, and every folder below them, as it does dated folders. Any other
+# folder with no date in its name (a child's name, a trip, a wedding) is left
+# as it is. Matched as a whole word, in any case: "Temp", "temp2", "To Delete",
+# "To Review" and "Weird ones" match; "Template" and "Attempt" do not. A name
+# starting with an underscore (_review, _duplicates) is a folder things were
+# set aside in on purpose, so it never counts.
+SCRATCH_WORDS = ('temp', 'junk', 'delete', 'weird', 'review')
+_SCRATCH_RE = re.compile(r'(?<![a-z])(?:' + '|'.join(SCRATCH_WORDS) + r')(?![a-z])', re.IGNORECASE)
+
+
+def is_scratch_folder(name: str) -> bool:
+    """True for a folder that only holds photos until they are sorted (Temp,
+    Junk, Delete, Weird, To Review), so --flatten empties it."""
+    return not name.startswith('_') and bool(_SCRATCH_RE.search(name))
+
+
+def _flatten_walk(root: str) -> tuple:
+    """Return (folders, named) for --flatten. folders are the subfolders of
+    root, at any depth, whose files --flatten moves up into root, each as
+    (path relative to root with / separators, full path): a folder with a
+    full date in its name (2022-02-14, Aug 19 2023), a scratch folder (see
+    is_scratch_folder) and every folder below a scratch folder (Temp/5), or
+    below a root that is one. named are the full paths of the other folders
+    met (Emma, Hawaii, Wedding): they are left as they are and not looked
+    into. Holding folders are skipped."""
+    folders, named = [], []
+
+    def visit(path: str, rel: str, scratch: bool) -> None:
+        for d in sorted(os.listdir(path)):
+            full = os.path.join(path, d)
+            if not os.path.isdir(full) or d.lower() in HOLDING_DIRS:
+                continue
+            sub_rel = f"{rel}/{d}" if rel else d
+            sub_scratch = scratch or is_scratch_folder(d)
+            if sub_scratch or _folder_name_date(d) is not None:
+                folders.append((sub_rel, full))
+                visit(full, sub_rel, sub_scratch)
+            else:
+                named.append(full)
+
+    visit(root, '', is_scratch_folder(os.path.basename(os.path.normpath(root))))
+    return folders, named
+
+
+def _iter_folder_files(folders: list, exts):
+    """Yield (folder, filename, full_path) for every file with one of exts
+    directly inside each of folders, given as _flatten_walk returns them."""
+    for rel, fp in folders:
         for name in sorted(os.listdir(fp)):
             full = os.path.join(fp, name)
-            if not os.path.isfile(full):
-                continue
-            ext = pathlib.Path(name).suffix.lower()
-            if ext not in exts:
-                continue
-            yield folder, name, full
+            if os.path.isfile(full) and pathlib.Path(name).suffix.lower() in exts:
+                yield rel, name, full
+
+
+def _nearest_folder_date(rel: str) -> Optional[datetime.datetime]:
+    """The date in the name of the nearest folder in rel (a / separated
+    path) that has one, or None: Temp/2022-02-14/5 gives 2022-02-14."""
+    return next((d for d in map(_folder_name_date, reversed(rel.split('/'))) if d is not None), None)
 
 
 # YYYY-MM-DD or YYYYMMDD, optionally followed by HHMMSS, not embedded in a
@@ -982,7 +1034,7 @@ def _collision_pairs(root: str, plan: list):
         if key in plain:
             for name in names:
                 yield os.path.join(root, name), os.path.join(root, plain[key])
-    for _folder, name, full in iter_media(root, exts):
+    for _folder, name, full in _iter_folder_files(_flatten_walk(root)[0], exts):
         key = name.lower()
         for peer in ([plain[key]] if key in plain else []) + suffixed.get(key, []):
             yield full, os.path.join(root, peer)
@@ -1558,8 +1610,10 @@ def _iter_ads(ads: str, exts):
 
 
 def flatten(root: str, dry_run: bool = False) -> dict:
-    """Move dated files up from their subfolder into root, then move the
-    subfolders that end up empty into _empty_folders. Undated files are left
+    """Move dated files up into root from its dated and scratch subfolders at
+    any depth (see _flatten_walk), then move the subfolders that end up empty
+    into _empty_folders. Named folders (Emma, Hawaii, Wedding) are left as
+    they are and listed as KEPT. Undated files are left
     in place, except inside the _ads folder: ads rarely have a Date Taken, so
     there every file moves up from its subfolder into _ads itself, dated or
     not. A root that is itself an _ads folder (E:\\Pictures\\2020\\_ads) is
@@ -1582,6 +1636,14 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     else:
         ads = os.path.join(root, QUARANTINE_DIR)
         bases = (root, ads)
+    # The folders root's files move up from, and the named ones left alone
+    flat_folders, named = ([], []) if ads_root else _flatten_walk(root)
+    for path in named:
+        n = _count_files(path)
+        if n:
+            counts['named-folders-kept'] += 1
+            rel = os.path.relpath(path, root).replace(os.sep, '/')
+            print(f"KEPT (named folder): {rel} ({n:,} file(s))")
     for base in bases:
         if not os.path.isdir(base):
             continue
@@ -1599,7 +1661,7 @@ def flatten(root: str, dry_run: bool = False) -> dict:
             # dumps are ads too
             files = _iter_ads(base, MEDIA_EXTS | {'.raw'})
         else:
-            files = iter_media(base, MEDIA_EXTS | set(CAMCORDER_EXTS))
+            files = _iter_folder_files(flat_folders, MEDIA_EXTS | set(CAMCORDER_EXTS))
         for folder, name, full in files:
             from_folder = False
             if in_ads:
@@ -1610,7 +1672,7 @@ def flatten(root: str, dry_run: bool = False) -> dict:
                 if dt is None:
                     # The folder's date goes into the name, so it survives
                     # the file leaving the folder
-                    dt = _folder_name_date(folder)
+                    dt = _nearest_folder_date(folder)
                     from_folder = dt is not None
                 if dt is None:
                     counts['left-undated'] += 1
@@ -1691,9 +1753,7 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     # (not in _ads, which a run on its parent leaves alone too)
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
     claimed = set()
-    subfolders = sorted(d for d in os.listdir(root)
-                        if os.path.isdir(os.path.join(root, d)) and d not in HOLDING_DIRS)
-    for folder in ([] if ads_root else [''] + subfolders):
+    for folder in ([] if ads_root else [''] + [rel for rel, _path in flat_folders]):
         fp = os.path.join(root, folder)
         for name in sorted(os.listdir(fp)):
             p = pathlib.Path(name)
@@ -1713,6 +1773,9 @@ def flatten(root: str, dry_run: bool = False) -> dict:
     # The other holding folders are for the user to look over, not flatten
     kept = tuple(os.path.join(root, d) + os.sep
                  for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR, THUMBNAILS_DIR))
+    # So are named folders holding any file; one holding none is set aside
+    # like any other empty folder
+    kept += tuple(p + os.sep for p in named if _count_files(p))
     empty = []
     for dirpath, _dirs, _files in os.walk(root, topdown=False):
         if dirpath in (root, ads) or (dirpath + os.sep).startswith(kept):
@@ -2030,12 +2093,18 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
             year[f'collisions-{verdict}'] += 1
             pair = ' | '.join(os.path.relpath(p, root).replace(os.sep, '/') for p in (src, dst))
             print(f"COLLISION, {verdict} files ({how}): {pair}")
+        named = set(_flatten_walk(top)[1])
         for d in sorted(os.listdir(top)):
             sub = os.path.join(top, d)
             if not os.path.isdir(sub) or d in HOLDING_DIRS:
                 continue
             # With no year folders, root's own subfolders are named as they are
             rel = d if top == root else f"{label}/{d}"
+            if sub in named:
+                # --flatten leaves named folders (Emma, Hawaii) alone on purpose
+                counts['named-folders'] += 1
+                print(f"NAMED FOLDER (left as is): {rel} ({_count_files(sub, skip_holding=True):,} file(s))")
+                continue
             year['folders-not-flattened'] += 1
             print(f"NOT FLATTENED: {rel} ({_count_files(sub, skip_holding=True):,} file(s))")
         counts.update(year)
@@ -2911,7 +2980,7 @@ def main(argv=None):
     ap.add_argument('--compare-collisions', action='store_true', help='Report only: compare each file --apply-moves skips as a COLLISION with the file already holding its name in the target folder, and list the pair as IDENTICAL or DIFFERENT. Also covers files --flatten renamed with a _<date-taken> suffix or left in their subfolder. Changes nothing. Not part of --all.')
     ap.add_argument('--visual-compare', action='store_true', help='Report only: compare the pixels of each pair of possible duplicates (collision pairs, and same-named files in different formats) and report DUPLICATE, DIFFERENT or UNSURE with a confidence level. Runs entirely on this computer; videos need ffmpeg (pip install "imageio-ffmpeg>=0.5"). Changes nothing. Not part of --all.')
     ap.add_argument('--sync-timestamps', action='store_true', help='Set Date Created to Date Taken, and Date Modified too for files that have not been edited, in the root and every subfolder at any depth.')
-    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their subfolders into the root, then move the emptied subfolders into _empty_folders (not deleted). Inside _ads, or with an _ads folder as the root, files move up into _ads itself even with no Date Taken.')
+    ap.add_argument('--flatten', action='store_true', help='Move files that have a Date Taken up out of their dated and scratch (Temp, Junk, Delete, Weird, Review) subfolders, at any depth, into the root, then move the emptied subfolders into _empty_folders (not deleted). Named folders (Emma, Hawaii) are left as they are. Inside _ads, or with an _ads folder as the root, files move up into _ads itself even with no Date Taken.')
     ap.add_argument('--find-plists', action='store_true', help='Report only: list every file named as a photo or video (IMG_E5239.JPG) that really holds plist, XMP or other XML text, such as an iPhone .AAE edit file saved under a picture name. --move-junk moves these into _junk; every other phase leaves them alone and reports them as NOT MEDIA. Changes nothing. Not part of --all.')
     ap.add_argument('--opposite-type', action='store_true', help='Report only: give the folder that holds the year folders (D:\\Videos) as --root. Lists every photo filed among the videos, or video among the photos, with a count for each year folder. Changes nothing. Not part of --all.')
     ap.add_argument('--other-year', action='store_true', help='Report only: list every photo and video whose Date Taken (Media Created for a video) is in a different year from its year folder, with a count. Give a year folder (D:\\Pictures\\2020) or the folder that holds them as --root. Cleanup-Pictures.ps1 runs it at the end. Changes nothing. Not part of --all.')
