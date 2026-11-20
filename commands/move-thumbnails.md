@@ -16,7 +16,7 @@ Set aside the phone gallery thumbnails an import brought along, after `/fix-medi
 
 ## What it does
 
-- A phone thumbnail is a JPEG named only by a number (`46.jpg`, or `46 (2).jpg`), at most 1024 pixels on its long side, with no camera Make or Model. Photos that only look like one (a camera photo, a full-size picture, `IMG_46.jpg`) are left alone.
+- A phone thumbnail is a JPEG named only by a number of up to 10 digits (`46.jpg`, `46 (2).jpg`, or `1000000714.jpg` from Android 11 and later), at most 1024 pixels on its long side, with no camera Make or Model. Photos that only look like one (a camera photo, a full-size picture, `IMG_46.jpg`) are left alone.
 - Every thumbnail in `<folder>` and its subfolders at any depth that **already has a Date Taken** moves straight into `<folder>/_thumbnails`, with no subfolders. A name already taken there gets a `_<subfolder-name>` suffix (`46_2026-11-03.jpg`); if that is taken too, the file stays and is listed as a `COLLISION`.
 - A thumbnail with **no Date Taken yet** stays where it is and is listed as `LEFT (no Date Taken yet; run --fill-blanks first)`. Every step skips `_thumbnails`, so a thumbnail moved there before it is dated would lose its folder's date for good. If the user sees `LEFT` lines, suggest running `/fix-media-dates <folder>` (step 8, writing Date Taken where blank) first, then this command again.
 - Nothing is deleted. Some thumbnails may be the only copy left of a photo deleted from the phone, so tell the user to compare `_thumbnails` with their photos before deleting any.

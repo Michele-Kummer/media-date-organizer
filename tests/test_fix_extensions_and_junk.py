@@ -265,6 +265,20 @@ class PhoneThumbnailTests(unittest.TestCase):
         self.assertTrue(organize.is_phone_thumbnail(str(self.day / '46.jpg')))
         self.assertTrue(organize.is_phone_thumbnail(str(self.day / '47 (2).jpg')))
 
+    def test_recognises_newer_android_ten_digit_names(self):
+        """BUG-41: Android 11 and later number media from 1000000000, so
+        1000000714.jpg was kept among the photos."""
+        for name in ('1000000714.jpg', '1000000127_2024-10-15.jpg', '1000000604 (2).jpg'):
+            make_thumbnail(self.day / name)
+            self.assertTrue(organize.is_phone_thumbnail(str(self.day / name)), name)
+
+    def test_keeps_long_numbered_names_that_are_not_thumbnails(self):
+        """A 19 digit name some apps give photos is not a gallery number, and
+        only a date may follow the number."""
+        for name in ('1038549574306920334.jpg', '1000000714_edited.jpg', '10000007140.jpg'):
+            make_thumbnail(self.day / name)
+            self.assertFalse(organize.is_phone_thumbnail(str(self.day / name)), name)
+
     def test_keeps_photos_that_only_look_like_one(self):
         make_thumbnail(self.day / '48.jpg', camera='samsung')        # camera info
         make_thumbnail(self.day / '49.jpg', size=(3000, 4000))       # full size

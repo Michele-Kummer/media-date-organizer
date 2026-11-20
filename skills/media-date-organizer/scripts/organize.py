@@ -2803,11 +2803,15 @@ def fix_extensions(root: str, dry_run: bool = False) -> dict:
 # names, not a pattern: "west sucking thumb.jpg" is a photo.
 THUMBS_NAMES = ('thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db')
 
-# Phone gallery thumbnails are named by number (1234.jpg) and are at most
-# 1024 pixels on the long side (most are 512 to 640); a real photo or
-# screenshot is larger
+# Phone gallery thumbnails are named by number and are at most 1024 pixels
+# on the long side (most are 512 to 640); a real photo or screenshot is
+# larger. Older phones number them from 1 (1234.jpg); Android 11 and later
+# number media from 1000000000 (1000000714.jpg, BUG-41). Longer numbers,
+# such as the 19 digit names some apps give full size photos, are not
+# thumbnails. A _<date> suffix is allowed, as --flatten adds one when the
+# name is already taken (1000000127_2024-10-15.jpg).
 PHONE_THUMB_MAX_EDGE = 1024
-_PHONE_THUMB_NAME_RE = re.compile(r'^\d{1,7}(?: \(\d+\))?$')
+_PHONE_THUMB_NAME_RE = re.compile(r'^\d{1,10}(?:_\d{4}-\d{2}-\d{2})?(?: \(\d+\))?$')
 
 # Thumbnails a backup, gallery or web album saves beside or apart from the
 # photo, named for it (thumb_IMG_1234.jpg, IMG_1234_thumb.jpg,

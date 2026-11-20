@@ -32,6 +32,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-15:** Michele Kummer asked why `--fix-extensions` took so long. Claude timed a preview on `E:\Pictures\2026`, a USB hard drive: 258 seconds the first time and 0.6 seconds the second, and found that it can open each file up to four times. Michele Kummer asked for it to open each file only once (US-59).
 - **Updated 2026-11-15:** Michele Kummer found that many 1 KB files in `E:\Pictures\2018\Temp` were not moved to `_incomplete`. Claude found that all 451 of them are MTP property lists left by a failed phone transfer, with no picture in them, and that `--move-incomplete` did not recognise them (BUG-39, fixed the same day).
 - **Updated 2026-11-20:** Michele Kummer asked for screenshots and backup thumbnails to be sorted out of the photos into groups of their own, in an optional step that deletes nothing, recognised by the formats Claude knows of (US-60, built the same day). While building it, Claude found that writing a date into a PNG, or converting a PNG to JPEG, dropped its XMP, and with it the tag that marks an iPhone screenshot (BUG-40, fixed the same day).
+- **Updated 2026-11-20:** Michele Kummer found that `1000000714.jpg` in `E:\Pictures\2024`, a phone gallery thumbnail, was not set aside by `--move-thumbnails`. Claude found that Android 11 and later number media from 1000000000, so the name has 10 digits, while the step only accepted 1 to 7 (BUG-41, fixed the same day).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -51,11 +52,11 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 |---|---|
 | Epics | 8 |
 | User stories | 60 (39 Done, 2 Partly done, 19 Not started) |
-| Bugs | 40 (3 open, 37 resolved) |
+| Bugs | 41 (3 open, 38 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
-| Michele Kummer | 1 | 19 | 20 |
+| Michele Kummer | 1 | 20 | 21 |
 | Claude | 2 | 18 | 20 |
 | Automated tests | 0 | 0 | 0 |
 
@@ -381,7 +382,7 @@ As a media owner, I want the button images, cache files and colour swatches that
 #### US-54 Set phone thumbnails aside once they are dated
 As a photo owner, I want phone gallery thumbnails set aside only when I ask, and only after they have a date, so that each one keeps its folder's date and I can still compare it with my photos.
 
-- `/move-thumbnails <folder>` (flag `--move-thumbnails`) moves phone gallery thumbnails straight into `_thumbnails`, with no subfolders. A thumbnail is a JPEG named only by a number (`1234.jpg`, or `1234 (2).jpg`), at most 1024 pixels on its long side, with no camera Make or Model.
+- `/move-thumbnails <folder>` (flag `--move-thumbnails`) moves phone gallery thumbnails straight into `_thumbnails`, with no subfolders. A thumbnail is a JPEG named only by a number of up to 10 digits (`1234.jpg`, `1234 (2).jpg`, or `1000000714.jpg` from Android 11 and later, BUG-41), optionally followed by a `_YYYY-MM-DD` suffix, at most 1024 pixels on its long side, with no camera Make or Model.
 - Only a thumbnail that already has a Date Taken is moved. One with none stays where it is and is listed as `LEFT (no Date Taken yet; run --fill-blanks first)`, counted as `left-undated`, because every step skips `_thumbnails` and its folder's date would be lost (BUG-34).
 - It is optional and not part of `--all`. `--all --move-thumbnails` runs it after `--fill-blanks` and `--convert-png`, and before `--apply-moves` and `--flatten`, whatever order the flags are typed in.
 - A name already taken in `_thumbnails` gets a `_<subfolder-name>` suffix (`46_2026-11-03.jpg`). If that is taken as well, it is a `COLLISION`, and the file stays where it is.
@@ -984,7 +985,7 @@ To find files that hold nothing but null bytes, `_has_no_data` reads in 1 MB chu
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (37: 19 found by Michele Kummer, 18 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (38: 20 found by Michele Kummer, 18 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -1027,6 +1028,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
 | BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | `5be9fb5` |
 | BUG-40 | Writing a date into a PNG, or converting it to JPEG, dropped its XMP | Photos (PNG) | Medium | Claude | `76022e8` |
+| BUG-41 | Thumbnails from newer Android phones were not set aside | Photos | Medium | Michele Kummer | Not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1274,5 +1276,11 @@ A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` ag
 
 Found while building US-60. `_write_exif_date_image` re-saves a PNG through Pillow with only its EXIF and colour profile, so `--fill-blanks` dropped every text chunk in the PNG, the XMP packet included. `_convert_to_jpeg` saved the JPEG with EXIF only, so `--convert-png` lost the XMP the same way. An iPhone screenshot named `IMG_1234.PNG` carries its "Screenshot" tag in that XMP, so once it had been dated or converted, `--move-screenshots` no longer recognised it and left it among the photos. Any other XMP, such as a caption or a rating, was lost too.
 **Fix:** `_write_exif_date_image` now copies the PNG's text chunks, XMP included, into the re-saved file. `_convert_to_jpeg` passes the XMP on to the JPEG; Pillow 11 and later write it, and older versions leave it out as before. `KeepScreenshotTagTests` in `tests/test_sort_pictures.py` checks that `--fill-blanks`, `--convert-png` and writing a date into the JPEG all keep the tag.
+
+#### BUG-41 Thumbnails from newer Android phones were not set aside
+**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** Not yet committed
+
+`is_phone_thumbnail` only accepted a name of 1 to 7 digits, the way older phones number their gallery thumbnails (`46.jpg`). Android 11 and later number media from 1000000000, so their thumbnails are named like `1000000714.jpg`, and `--move-thumbnails` left them among the photos. `E:\Pictures\2024` held 3,159 of them: JPEGs of 512 pixels or less with no camera Make or Model. Eight more had a `_2024-10-15` suffix, which `--flatten` adds when a name is already taken.
+**Fix:** `_PHONE_THUMB_NAME_RE` now accepts 1 to 10 digits, followed by an optional `_YYYY-MM-DD` suffix. Longer numbers are still not thumbnails, so the 19 digit names some apps give full size photos (`1038549574306920334.JPG`) stay where they are, as do names like `1000000714_edited.jpg`. A preview on `E:\Pictures\2024` would now move 3,171 phone thumbnails. Two tests in `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` cover the new names and the ones it must still leave alone.
 
 </details>
