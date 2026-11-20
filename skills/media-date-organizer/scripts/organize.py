@@ -56,7 +56,27 @@ and a summary of every phase's counts and problems is printed at the end):
                         your photos before deleting any. Run it after
                         --fill-blanks: a thumbnail with no Date Taken yet is
                         left where it is and listed, so it keeps its folder's
-                        date. Nothing is deleted.
+                        date. Nothing is deleted. Also moves backup
+                        thumbnails: a picture no larger than that, with no
+                        camera info, named as a thumbnail
+                        (IMG_1234_thumb.jpg, thumb_IMG_1234.jpg,
+                        IMG_1234.thumb.jpg, tn_IMG_1234.jpg) or kept in a
+                        thumbnail folder (.thumbnails, Thumbs), and thumbnail
+                        cache files from iPhone backups (F1019_1.ithmb) and
+                        Android (.thumbdata3--1967290299), which hold no
+                        date and move as they are.
+    --move-screenshots  Optional; not part of --all. Move every screenshot
+                        (a PNG, JPEG or HEIC with no camera Make or Model,
+                        named as phones and computers name screenshots, such
+                        as Screenshot_20231220-142355.png, Screenshot (12).png
+                        or Screen Shot 2023-12-20 at 2.23.55 PM.png, or
+                        tagged "Screenshot" in EXIF UserComment or XMP, as
+                        iPhone screenshots named IMG_1234.PNG are) that
+                        already has a Date Taken straight into a
+                        "_screenshots" folder inside the root, with no
+                        subfolders. One with no Date Taken yet is left where
+                        it is and listed. Nothing is deleted.
+    --sort-pictures     Shorthand for --move-screenshots --move-thumbnails.
     --audit             Audit dates: scan and write audit XLSX; make no
                         changes. Photos and videos are found in the root and
                         every subfolder at any depth. --report-only is the old
@@ -342,6 +362,7 @@ if sys.version_info < (3, 9):
 
 try:
     from PIL import Image, ImageChops, ImageStat
+    from PIL.PngImagePlugin import PngInfo
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -679,13 +700,18 @@ JUNK_DIR = '_junk'
 # left of a photo deleted from the phone. Every phase ignores it.
 THUMBNAILS_DIR = '_thumbnails'
 
+# Folder inside root that --move-screenshots moves screenshots into, with no
+# subfolders, so they can be looked through apart from the photos. Every
+# phase ignores it.
+SCREENSHOTS_DIR = '_screenshots'
+
 # Folder inside root that --convert-webp moves each WebP into, with no
 # subfolders, once its JPEG is confirmed to be the same picture. Kept, not
 # deleted, so the user can compare them. Every phase ignores it.
 CONVERTED_DIR = '_converted'
 
 HOLDING_DIRS = (QUARANTINE_DIR, INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR,
-                THUMBNAILS_DIR, CONVERTED_DIR)
+                THUMBNAILS_DIR, SCREENSHOTS_DIR, CONVERTED_DIR)
 
 
 def _prune_holding(dirs: list) -> None:
@@ -1316,6 +1342,13 @@ def _write_exif_date_image(path: str, dt: datetime.datetime) -> None:
             save_kwargs = {'exif': exif_bytes}
             if 'icc_profile' in img.info:
                 save_kwargs['icc_profile'] = img.info['icc_profile']
+            if fmt == 'PNG' and getattr(img, 'text', None):
+                # Keep the PNG's text and XMP (an iPhone screenshot's
+                # "Screenshot" tag lives there), which a plain re-save drops
+                info = PngInfo()
+                for key, value in img.text.items():
+                    info.add_itxt(key, value)
+                save_kwargs['pnginfo'] = info
             img.save(tmp, format=fmt, **save_kwargs)
     if fmt in ('JPEG', 'MPO'):
         _jpeg_set_exif(path, exif_bytes)
@@ -1590,7 +1623,12 @@ def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
                             if fill_dt is not None:
                                 dated = f" (Date Taken {fill_dt:%Y-%m-%d %H:%M:%S} from {source})"
                     if not dry_run:
-                        img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True)
+                        # The XMP goes along too (an iPhone screenshot's
+                        # "Screenshot" tag); Pillow before 11 leaves it out
+                        xmp = img.info.get('XML:com.adobe.xmp') or img.info.get('xmp')
+                        img.convert('RGB').save(new, 'JPEG', quality=95, exif=exif_bytes, optimize=True,
+                                                **({'xmp': xmp.encode('utf-8') if isinstance(xmp, str) else xmp}
+                                                   if xmp else {}))
                 if not dry_run and fill_dt is not None:
                     _write_exif_date_image(new, fill_dt)
             except (OSError, SyntaxError, ValueError, MemoryError) as e:
@@ -1943,7 +1981,8 @@ def flatten(root: str, dry_run: bool = False) -> dict:
 
     # The other holding folders are for the user to look over, not flatten
     kept = tuple(os.path.join(root, d) + os.sep
-                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR, THUMBNAILS_DIR))
+                 for d in (INCOMPLETE_DIR, LEGACY_NO_DATA_DIR, EMPTY_FOLDERS_DIR, JUNK_DIR, THUMBNAILS_DIR,
+                           SCREENSHOTS_DIR))
     # So are named folders holding any file; one holding none is set aside
     # like any other empty folder
     kept += tuple(p + os.sep for p in named if _count_files(p))
@@ -2242,6 +2281,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
                 key, tag = {QUARANTINE_DIR: ('ads-files', 'IN ADS'),
                             JUNK_DIR: ('junk-files', 'IN JUNK'),
                             THUMBNAILS_DIR: ('thumbnail-files', 'IN THUMBNAILS'),
+                            SCREENSHOTS_DIR: ('screenshot-files', 'IN SCREENSHOTS'),
                             CONVERTED_DIR: ('converted-files', 'IN CONVERTED')}.get(d, ('incomplete-files', 'INCOMPLETE'))
                 year[key] += n
                 rel = os.path.relpath(os.path.join(dirpath, d), root).replace(os.sep, '/')
@@ -2287,6 +2327,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
             f"{year['junk-files']:,} in _junk, "
             # Only named when there are some, as few years have any
             + (f"{year['thumbnail-files']:,} in _thumbnails, " if year['thumbnail-files'] else '')
+            + (f"{year['screenshot-files']:,} in _screenshots, " if year['screenshot-files'] else '')
             + (f"{year['converted-files']:,} in _converted, " if year['converted-files'] else '')
             + f"{year[opposite]:,} {minor}(s) among {major}s, "
             f"{year['folders-not-flattened']:,} folder(s) not flattened, "
@@ -2298,6 +2339,7 @@ def final_check(root: str, own_xlsx: Optional[str] = None, dry_run: bool = False
     print(f"FINAL CHECK: {counts['ads-files']:,} in _ads, {counts['incomplete-files']:,} in _incomplete, "
           f"{counts['junk-files']:,} in _junk, "
           + (f"{counts['thumbnail-files']:,} in _thumbnails, " if counts['thumbnail-files'] else '')
+          + (f"{counts['screenshot-files']:,} in _screenshots, " if counts['screenshot-files'] else '')
           + (f"{counts['converted-files']:,} in _converted, " if counts['converted-files'] else '')
           + f"{counts[opposite]:,} {minor}(s) among {major}s, "
           f"{counts['folders-not-flattened']:,} folder(s) not flattened, "
@@ -2767,6 +2809,49 @@ THUMBS_NAMES = ('thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db')
 PHONE_THUMB_MAX_EDGE = 1024
 _PHONE_THUMB_NAME_RE = re.compile(r'^\d{1,7}(?: \(\d+\))?$')
 
+# Thumbnails a backup, gallery or web album saves beside or apart from the
+# photo, named for it (thumb_IMG_1234.jpg, IMG_1234_thumb.jpg,
+# IMG_1234.thumb.jpg, IMG_1234-thumbnail.jpg, tn_IMG_1234.jpg). The marker
+# must be joined to the name by _ - or . so "west sucking thumb.jpg" is safe.
+_THUMB_MARKER_RE = re.compile(
+    r'^(?:thumb|thumbnail|tn)[_.-].|[_.-](?:thumb|thumbs|thumbnail)(?: \(\d+\))?$', re.IGNORECASE)
+# Folders a phone, backup or photo app keeps thumbnails in (Android
+# DCIM/.thumbnails, an iPhone backup's Thumbnails, a web album's thumbs).
+# Any small picture with no camera info inside one, at any depth, is a
+# thumbnail.
+THUMB_FOLDER_NAMES = ('.thumbnails', 'thumbnails', '.thumbs', 'thumbs', '.thumb', 'thumb')
+# Thumbnail extensions --move-thumbnails looks at by name and size
+THUMB_PICTURE_EXTS = ('.jpg', '.jpeg', '.png')
+# Thumbnail cache files that hold many thumbnails in a format nothing on
+# Windows opens: iTunes' iPhone and iPod "Photo Cache" (F1019_1.ithmb), and
+# Android's gallery cache (.thumbdata3--1967290299). Moved with no date
+# check, since no step can date them.
+_THUMB_CACHE_RE = re.compile(r'(?:\.ithmb|^\.?thumbdata\d*(?:-.*)?)$', re.IGNORECASE)
+
+# Screenshots, by the names phones and computers give them (each may carry a
+# copy marker or more after the part shown):
+#   Android, Samsung, Pixel, Xiaomi  Screenshot_20231220-142355.png,
+#                                    Screenshot_20231220_142355_Chrome.jpg
+#   Windows                          Screenshot (12).png,
+#                                    Screenshot 2023-12-20 142355.png
+#   macOS                            Screen Shot 2023-12-20 at 2.23.55 PM.png,
+#                                    Screenshot 2023-12-20 at 14.23.55.png
+#   Linux (GNOME)                    Screenshot from 2023-12-20 14-23-55.png
+#   other tools                      screencap, Screen Capture, ScreenClip
+#   macOS in other languages         Bildschirmfoto, Capture d'écran,
+#                                    Captura de pantalla, Schermata,
+#                                    Schermafbeelding, Skärmavbild,
+#                                    Снимок экрана, スクリーンショット, 截屏
+# iPhone screenshots are named IMG_1234.PNG like photos, so they are found by
+# the "Screenshot" tag iOS (and macOS) writes in EXIF UserComment or XMP.
+_SCREENSHOT_NAME_RE = re.compile(
+    r"^(?:screen[ _-]?shots?|screen[ _-]?cap(?:ture)?|screen[ _-]?clip|bildschirmfoto"
+    r"|capture[ _-]d[’'`]?[ _-]?[ée]cran|captura[ _-]de[ _-]pantalla|schermata|schermafbeelding"
+    r"|sk[äa]rmavbild|снимок[ _-]экрана|スクリーンショット|截屏|屏幕截图|屏幕快照)(?![a-z])",
+    re.IGNORECASE)
+_SCREENSHOT_XMP_RE = re.compile(r'UserComment.{0,400}?Screenshot', re.IGNORECASE | re.DOTALL)
+SCREENSHOT_EXTS = ('.png', '.jpg', '.jpeg', '.heic')
+
 # Text sidecars that hold no image: an Apple property list, or an XMP
 # metadata file an editor such as Lightroom writes beside a photo
 JUNK_TEXT_EXTS = ('.plist', '.xmp')
@@ -2838,6 +2923,80 @@ def is_phone_thumbnail(full: str) -> bool:
     return _camera(_pil_meta(full)) is None
 
 
+def _small_picture_without_camera(full: str) -> bool:
+    """True for a JPEG or PNG no larger than PHONE_THUMB_MAX_EDGE on its long
+    side, with no camera Make or Model."""
+    if not HAS_PIL:
+        return False
+    try:
+        with Image.open(full) as img:
+            if img.format not in ('JPEG', 'MPO', 'PNG') or max(img.size) > PHONE_THUMB_MAX_EDGE:
+                return False
+    except Exception:
+        return False
+    return _camera(_pil_meta(full)) is None
+
+
+def thumbnail_kind(full: str, root: str) -> Optional[str]:
+    """What kind of thumbnail full is, or None for anything else:
+    'phone' for a phone gallery thumbnail (see is_phone_thumbnail);
+    'backup' for a small picture with no camera info that is named as a
+    thumbnail (IMG_1234_thumb.jpg, thumb_IMG_1234.jpg) or sits in a thumbnail
+    folder (.thumbnails, Thumbs) below root; 'cache' for a thumbnail cache
+    file (F1019_1.ithmb, .thumbdata3--1967290299)."""
+    p = pathlib.Path(full)
+    if _THUMB_CACHE_RE.search(p.name):
+        return 'cache'
+    if p.suffix.lower() not in THUMB_PICTURE_EXTS:
+        return None
+    if is_phone_thumbnail(full):
+        return 'phone'
+    folders = pathlib.Path(os.path.relpath(full, root)).parent.parts
+    if ((_THUMB_MARKER_RE.search(p.stem) or any(f.lower() in THUMB_FOLDER_NAMES for f in folders))
+            and _small_picture_without_camera(full)):
+        return 'backup'
+    return None
+
+
+def _screenshot_tag(full: str) -> bool:
+    """True when the picture carries the "Screenshot" tag iOS and macOS write
+    in EXIF UserComment, or in XMP."""
+    if not HAS_PIL:
+        return False
+    try:
+        with Image.open(full) as img:
+            comment = img.getexif().get_ifd(0x8769).get(0x9286)
+            if isinstance(comment, bytes):
+                # The first 8 bytes name the character set (ASCII, UNICODE)
+                comment = comment[8:].decode('utf-16' if comment[:7] == b'UNICODE' else 'latin-1', 'replace')
+            if comment and comment.strip('\x00 ').lower() == 'screenshot':
+                return True
+            xmp = img.info.get('XML:com.adobe.xmp') or img.info.get('xmp') or ''
+            if isinstance(xmp, bytes):
+                xmp = xmp.decode('utf-8', 'replace')
+            return bool(_SCREENSHOT_XMP_RE.search(xmp))
+    except Exception:
+        return False
+
+
+def screenshot_reason(full: str) -> Optional[str]:
+    """Why full is a screenshot ('name' or 'tag'), or None: a PNG, JPEG or
+    HEIC with no camera Make or Model whose name is one phones and computers
+    give screenshots (see _SCREENSHOT_NAME_RE), or that carries the
+    "Screenshot" tag iPhones write. A picture with camera info is a photo,
+    whatever it is called."""
+    p = pathlib.Path(full)
+    if p.suffix.lower() not in SCREENSHOT_EXTS:
+        return None
+    if _SCREENSHOT_NAME_RE.match(p.stem):
+        reason = 'name'
+    elif _screenshot_tag(full):
+        reason = 'tag'
+    else:
+        return None
+    return reason if _camera(_pil_meta(full)) is None else None
+
+
 def move_junk(root: str, dry_run: bool = False) -> dict:
     """Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache
     (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and every file
@@ -2878,13 +3037,27 @@ def move_junk(root: str, dry_run: bool = False) -> dict:
     return dict(counts)
 
 
+_THUMBNAIL_LABELS = {
+    'phone': ('moved-phone-thumbnails', 'phone thumbnail'),
+    'backup': ('moved-backup-thumbnails', 'backup thumbnail'),
+    'cache': ('moved-thumbnail-caches', 'thumbnail cache file'),
+}
+
+
+def _date_taken(full: str) -> Optional[datetime.datetime]:
+    """The file's Date Taken, as every other phase reads it."""
+    ftype = detect_type(full)
+    return read_metadata(full, ftype).get('date_taken') if ftype else None
+
+
 def move_thumbnails(root: str, dry_run: bool = False) -> dict:
-    """Move every phone gallery thumbnail (see is_phone_thumbnail) in root and
-    every subfolder straight into root/_thumbnails, flat, for the user to
-    compare with their photos. Optional and not part of --all. A thumbnail
-    with no Date Taken yet is left where it is: once it leaves its dated
-    folder every step skips it, so its date would be lost (BUG-34). Run
-    --fill-blanks first. Nothing is deleted."""
+    """Move every thumbnail (see thumbnail_kind) in root and every subfolder
+    straight into root/_thumbnails, flat, for the user to compare with their
+    photos. Optional and not part of --all. A thumbnail picture with no Date
+    Taken yet is left where it is: once it leaves its dated folder every step
+    skips it, so its date would be lost (BUG-34). Run --fill-blanks first.
+    Thumbnail cache files cannot be dated, so they move as they are. Nothing
+    is deleted."""
     counts = Counter()
     claimed = set()
     verb = 'WOULD MOVE' if dry_run else 'MOVED'
@@ -2893,18 +3066,51 @@ def move_thumbnails(root: str, dry_run: bool = False) -> dict:
         dirs.sort()
         for name in sorted(files):
             full = os.path.join(dirpath, name)
-            if not is_phone_thumbnail(full):
+            kind = thumbnail_kind(full, root)
+            if kind is None:
                 continue
             rel = os.path.relpath(full, root)
-            if not _pil_meta(full).get('DateTimeOriginal'):
+            if kind != 'cache' and _date_taken(full) is None:
                 counts['left-undated'] += 1
                 print(f"LEFT (no Date Taken yet; run --fill-blanks first): {rel}", file=sys.stderr)
                 continue
             dst = _move_to_junk(root, full, counts, dry_run, claimed, THUMBNAILS_DIR)
             if dst is None:
                 continue
-            counts['moved-phone-thumbnails'] += 1
-            print(f"{verb} (phone thumbnail): {rel} -> {dst}")
+            key, label = _THUMBNAIL_LABELS[kind]
+            counts[key] += 1
+            print(f"{verb} ({label}): {rel} -> {dst}")
+    return dict(counts)
+
+
+def move_screenshots(root: str, dry_run: bool = False) -> dict:
+    """Move every screenshot (see screenshot_reason) in root and every
+    subfolder straight into root/_screenshots, flat, so they can be looked
+    through apart from the photos. Optional and not part of --all. As with
+    thumbnails, one with no Date Taken yet is left where it is and listed, so
+    it keeps its folder's date: run --fill-blanks first. Nothing is
+    deleted."""
+    counts = Counter()
+    claimed = set()
+    verb = 'WOULD MOVE' if dry_run else 'MOVED'
+    for dirpath, dirs, files in os.walk(root):
+        _prune_holding(dirs)
+        dirs.sort()
+        for name in sorted(files):
+            full = os.path.join(dirpath, name)
+            reason = screenshot_reason(full)
+            if reason is None:
+                continue
+            rel = os.path.relpath(full, root)
+            if _date_taken(full) is None:
+                counts['left-undated'] += 1
+                print(f"LEFT (no Date Taken yet; run --fill-blanks first): {rel}", file=sys.stderr)
+                continue
+            dst = _move_to_junk(root, full, counts, dry_run, claimed, SCREENSHOTS_DIR)
+            if dst is None:
+                continue
+            counts['moved-screenshots'] += 1
+            print(f"{verb} (screenshot, by {reason}): {rel} -> {dst}")
     return dict(counts)
 
 
@@ -3060,7 +3266,7 @@ def append_audit_log(xlsx: str, started: datetime.datetime, runs: list) -> None:
 # in the root the other phases no longer see them).
 PHASE_ORDER = ('fix_extensions', 'move_junk', 'move_incomplete', 'quarantine_ads', 'convert_bmp', 'convert_webp',
                'fill_blanks', 'convert_png',
-               'move_thumbnails', 'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
+               'move_thumbnails', 'move_screenshots', 'apply_moves', 'compare_collisions', 'visual_compare', 'sync_timestamps', 'flatten',
                'opposite_type', 'other_year', 'find_plists', 'final_check')
 ALL_PHASES = ('fix_extensions', 'move_junk', 'move_incomplete', 'fill_blanks', 'convert_png', 'sync_timestamps')
 # Phases that only report. Every other phase changes files, and only when
@@ -3135,6 +3341,8 @@ def _run_phase(phase: str, args) -> dict:
         return move_junk(args.root, dry_run)
     if phase == 'move_thumbnails':
         return move_thumbnails(args.root, dry_run)
+    if phase == 'move_screenshots':
+        return move_screenshots(args.root, dry_run)
     if phase == 'move_incomplete':
         return move_incomplete(args.root, dry_run)
     if phase == 'quarantine_ads':
@@ -3214,7 +3422,9 @@ def main(argv=None):
     ap.add_argument('--move-incomplete', '--move-no-data', action='store_true', help='Move incomplete media files (0 bytes, all null bytes, a phone transfer stub, or a video with no video header) from the root and every subfolder straight into an _incomplete folder, with no subfolders. Nothing is deleted.')
     ap.add_argument('--fix-extensions', action='store_true', help='Rename every photo and video whose extension does not match its content (a HEIC photo named .PNG becomes .HEIC), reading its first bytes, in the root and every subfolder. A name already taken is reported as a COLLISION and left alone.')
     ap.add_argument('--move-junk', '--delete-junk', action='store_true', help='Move every .AAE file (iPhone edit sidecar), Windows thumbnail cache (Thumbs.db), macOS "._" sidecar, .plist and .xmp file, and file named as a photo or video that really holds plist or XMP text (IMG_E5239.JPG) in the root and every subfolder straight into a _junk folder, with no subfolders, for you to look over and delete. Phone gallery thumbnails are left for --move-thumbnails. Nothing is deleted. --delete-junk is the old name for this flag and still works.')
-    ap.add_argument('--move-thumbnails', action='store_true', help='Move every phone gallery thumbnail (1234.jpg, at most 1024 pixels, no camera info) that already has a Date Taken from the root and every subfolder straight into a _thumbnails folder, with no subfolders, to compare with your photos. A thumbnail with no Date Taken yet is left where it is and listed: run --fill-blanks first so it keeps its folder\'s date. Nothing is deleted. Not part of --all; add it to include it, and it runs after --fill-blanks.')
+    ap.add_argument('--move-thumbnails', action='store_true', help='Move every thumbnail that already has a Date Taken (a phone gallery thumbnail such as 1234.jpg, or a backup thumbnail named IMG_1234_thumb.jpg or thumb_IMG_1234.jpg or kept in a .thumbnails or Thumbs folder; each at most 1024 pixels, with no camera info), and every thumbnail cache file (.ithmb, .thumbdata), from the root and every subfolder straight into a _thumbnails folder, with no subfolders, to compare with your photos. A thumbnail with no Date Taken yet is left where it is and listed: run --fill-blanks first so it keeps its folder\'s date. Nothing is deleted. Not part of --all; add it to include it, and it runs after --fill-blanks.')
+    ap.add_argument('--move-screenshots', action='store_true', help='Move every screenshot (PNG, JPEG or HEIC with no camera info, named as phones and computers name screenshots, such as Screenshot_20231220-142355.png or Screen Shot 2023-12-20 at 2.23.55 PM.png, or tagged "Screenshot" as iPhone screenshots are) that already has a Date Taken from the root and every subfolder straight into a _screenshots folder, with no subfolders. One with no Date Taken yet is left where it is and listed: run --fill-blanks first. Nothing is deleted. Not part of --all; add it to include it, and it runs after --fill-blanks.')
+    ap.add_argument('--sort-pictures', action='store_true', help='Shorthand for --move-screenshots --move-thumbnails: sort screenshots into _screenshots and thumbnails into _thumbnails. Not part of --all; add it to include it.')
     ap.add_argument('--apply', action='store_true', help='Make the changes. Without it, every phase that writes, converts, moves, renames or deletes files only lists what it would do, and changes nothing.')
     ap.add_argument('--dry-run', action='store_true', help='Preview without changing anything. This is the default; the option is kept so older command lines still work. Cannot be combined with --apply.')
     ap.add_argument('--xlsx', help='Audit workbook filename (relative to root). Defaults to <root folder name>_<photos|videos>_media_audit_<today>.xlsx (2014_videos_media_audit_2026-10-07.xlsx), so each folder and each day gets its own workbook. Every run appends what it did to the Run log and Run counts sheets.')
@@ -3235,6 +3445,8 @@ def main(argv=None):
         append_audit_log(out_xlsx, started, [(args.audit_log, not args.apply, {}, lines)])
         return 0
 
+    if args.sort_pictures:
+        args.move_screenshots = args.move_thumbnails = True
     phases = [p for p in PHASE_ORDER
               if getattr(args, p) or (args.all and p in ALL_PHASES)]
     if args.audit:

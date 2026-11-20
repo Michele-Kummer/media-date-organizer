@@ -12,7 +12,8 @@ COMMANDS = REPO / 'commands'
 # organize.py flags whose phase changes files
 CHANGING_FLAGS = ('--all', '--fill-blanks', '--convert-png', '--apply-moves', '--sync-timestamps',
                   '--flatten', '--final-check', '--quarantine-ads', '--move-incomplete', '--move-junk',
-                  '--delete-junk', '--fix-extensions', '--convert-webp')
+                  '--delete-junk', '--fix-extensions', '--convert-webp', '--move-thumbnails',
+                  '--move-screenshots', '--sort-pictures')
 
 # Docs that tell users and Claude what to run. docs/case-study.md and
 # docs/user-stories-and-bugs.md record history and are left out.

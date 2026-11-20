@@ -31,6 +31,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-15:** Michele Kummer asked why a second `--sync-timestamps` run synced almost every file again. Claude found that the step never compared a file's times with its Date Taken before writing them (BUG-38).
 - **Updated 2026-11-15:** Michele Kummer asked why `--fix-extensions` took so long. Claude timed a preview on `E:\Pictures\2026`, a USB hard drive: 258 seconds the first time and 0.6 seconds the second, and found that it can open each file up to four times. Michele Kummer asked for it to open each file only once (US-59).
 - **Updated 2026-11-15:** Michele Kummer found that many 1 KB files in `E:\Pictures\2018\Temp` were not moved to `_incomplete`. Claude found that all 451 of them are MTP property lists left by a failed phone transfer, with no picture in them, and that `--move-incomplete` did not recognise them (BUG-39, fixed the same day).
+- **Updated 2026-11-20:** Michele Kummer asked for screenshots and backup thumbnails to be sorted out of the photos into groups of their own, in an optional step that deletes nothing, recognised by the formats Claude knows of (US-60, built the same day). While building it, Claude found that writing a date into a PNG, or converting a PNG to JPEG, dropped its XMP, and with it the tag that marks an iPhone screenshot (BUG-40, fixed the same day).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -49,13 +50,13 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 59 (38 Done, 2 Partly done, 19 Not started) |
-| Bugs | 39 (3 open, 36 resolved) |
+| User stories | 60 (39 Done, 2 Partly done, 19 Not started) |
+| Bugs | 40 (3 open, 37 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
 |---|---|---|---|
 | Michele Kummer | 1 | 19 | 20 |
-| Claude | 2 | 17 | 19 |
+| Claude | 2 | 18 | 20 |
 | Automated tests | 0 | 0 | 0 |
 
 ---
@@ -296,7 +297,7 @@ As a photo owner, I want the PNG, BMP or WebP left behind by a conversion moved 
 </details>
 
 <details>
-<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47, US-54)</summary>
+<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47, US-54, US-60)</summary>
 
 Move ads and broken files out of the way, and delete files that hold no picture or recording.
 
@@ -386,6 +387,26 @@ As a photo owner, I want phone gallery thumbnails set aside only when I ask, and
 - A name already taken in `_thumbnails` gets a `_<subfolder-name>` suffix (`46_2026-11-03.jpg`). If that is taken as well, it is a `COLLISION`, and the file stays where it is.
 - Nothing is deleted, since a thumbnail can be the only copy left of a photo. Without `--apply` it only lists the files. The final check reports what is still in `_thumbnails` (`IN THUMBNAILS`).
 - `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` covers the dry run, the move, an undated thumbnail left in place, a name clash, `--all` leaving thumbnails alone and dating them, `--all --move-thumbnails` moving them with their date, and the final check.
+
+**Status:** Done
+
+#### US-60 Sort screenshots and backup thumbnails into their own folders
+As a photo owner, I want screenshots and backup thumbnails separated from my photos in an optional step, so that my pictures are easier to manage and nothing is deleted.
+
+- `/sort-pictures <folder>` (flag `--sort-pictures`) runs `--move-thumbnails` and then `--move-screenshots`. Each can still be run on its own.
+- `--move-screenshots` moves screenshots straight into `_screenshots`, with no subfolders. A screenshot is a PNG, JPEG or HEIC with no camera Make or Model that either:
+  - is named as phones and computers name screenshots: `Screenshot_20231220-142355.png` (Android, Samsung, Pixel, Xiaomi), `Screenshot (12).png` and `Screenshot 2023-12-20 142355.png` (Windows), `Screen Shot 2023-12-20 at 2.23.55 PM.png` and `Screenshot 2023-12-20 at 14.23.55.png` (Mac), `Screenshot from 2023-12-20 14-23-55.png` (Linux), names starting `screencap`, `Screen Capture` or `ScreenClip`, and a Mac's screenshot names in German, French, Spanish, Italian, Dutch, Swedish, Russian, Japanese and Chinese; or
+  - carries the "Screenshot" tag that iOS and macOS write in EXIF UserComment or XMP, which is how an iPhone screenshot named `IMG_1234.PNG` is found.
+- A longer word (`Screenshotting the sunset.jpg`), a name that does not start with the word (`My screenshot.png`) and a picture with camera information are not screenshots.
+- `--move-thumbnails` now also moves, into `_thumbnails`:
+  - backup thumbnails: a JPEG or PNG at most 1024 pixels with no camera Make or Model that is named as a thumbnail (`IMG_1234_thumb.jpg`, `thumb_IMG_1234.jpg`, `IMG_1234.thumb.jpg`, `IMG_1234-thumbnail.png`, `tn_IMG_1234.jpg`) or sits in a thumbnail folder (`.thumbnails`, `Thumbnails`, `.thumbs`, `Thumbs`) at any depth. The marker must be joined to the name by `_`, `-` or `.`, so `west sucking thumb.jpg` and `thumbtack.jpg` are safe. Counted as `moved-backup-thumbnails`;
+  - thumbnail cache files, which hold many thumbnails in a format Windows cannot open: `.ithmb` files from an iPhone or iPod backup's `Photo Cache` folder, and Android's `.thumbdata` files. Counted as `moved-thumbnail-caches`.
+- Only a screenshot or thumbnail picture that already has a Date Taken is moved. One with none stays where it is and is listed as `LEFT (no Date Taken yet; run --fill-blanks first)`, as in US-54. Thumbnail cache files cannot be dated, so they move as they are.
+- It is optional and not part of `--all`. `--all --sort-pictures` runs it after `--fill-blanks` and `--convert-png`, and before `--apply-moves` and `--flatten`.
+- A name already taken gets a `_<subfolder-name>` suffix. If that is taken as well, it is a `COLLISION`, and the file stays where it is.
+- Nothing is deleted. Without `--apply` it only lists the files. Every step and `Cleanup-Pictures.ps1` skip `_screenshots`, and the final check reports what is in it (`IN SCREENSHOTS`, counted as `screenshot-files`).
+- A screenshot PNG already converted to JPEG moves with its JPEG. Run the cleanup step first to have the PNG moved into `_converted` instead.
+- `tests/test_sort_pictures.py` covers every screenshot name above, the iPhone tag in PNG and JPEG, near misses, each kind of backup thumbnail and cache file, the dry run, the move, an undated picture left in place, a name clash, `--all` leaving screenshots alone, `--all --move-screenshots` moving them with their date, `--sort-pictures` running both, and the final check.
 
 **Status:** Done
 
@@ -963,7 +984,7 @@ To find files that hold nothing but null bytes, `_has_no_data` reads in 1 MB chu
 </details>
 
 <details>
-<summary><strong>Resolved bugs</strong> (36: 19 found by Michele Kummer, 17 by Claude)</summary>
+<summary><strong>Resolved bugs</strong> (37: 19 found by Michele Kummer, 18 by Claude)</summary>
 
 The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the history begins point to [case-study.md](case-study.md) instead.
 
@@ -1005,6 +1026,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
 | BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
 | BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | `5be9fb5` |
+| BUG-40 | Writing a date into a PNG, or converting it to JPEG, dropped its XMP | Photos (PNG) | Medium | Claude | not yet committed |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1246,5 +1268,11 @@ A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` ag
 **Actual:** The file is left where it is, and `--fix-extensions` lists it as `UNKNOWN FORMAT`.
 
 **Fix:** A new `_is_mtp_prop_list` recognises the property list. A file counts only if it is between 16 bytes and 64 KB, every entry's property code is in the MTP range `0xD000` to `0xDFFF`, every data type is a known one, and the entries end exactly at the end of the file, so no real photo can match. `_incomplete_kind` returns `transfer-stub` for it, and `--move-incomplete` moves it to `_incomplete` with the folder's date added, as it does other incomplete files. `--fix-extensions` now lists it as `TRANSFER STUB (no picture, left for --move-incomplete)` instead of `UNKNOWN FORMAT`. A preview on `E:\Pictures\2018\Temp` would move all 451. Four tests in `tests/test_transfer_stubs.py` cover it.
+
+#### BUG-40 Writing a date into a PNG, or converting it to JPEG, dropped its XMP
+**Found by:** Claude · **Affects:** photos (PNG) · **Fixed in:** not yet committed
+
+Found while building US-60. `_write_exif_date_image` re-saves a PNG through Pillow with only its EXIF and colour profile, so `--fill-blanks` dropped every text chunk in the PNG, the XMP packet included. `_convert_to_jpeg` saved the JPEG with EXIF only, so `--convert-png` lost the XMP the same way. An iPhone screenshot named `IMG_1234.PNG` carries its "Screenshot" tag in that XMP, so once it had been dated or converted, `--move-screenshots` no longer recognised it and left it among the photos. Any other XMP, such as a caption or a rating, was lost too.
+**Fix:** `_write_exif_date_image` now copies the PNG's text chunks, XMP included, into the re-saved file. `_convert_to_jpeg` passes the XMP on to the JPEG; Pillow 11 and later write it, and older versions leave it out as before. `KeepScreenshotTagTests` in `tests/test_sort_pictures.py` checks that `--fill-blanks`, `--convert-png` and writing a date into the JPEG all keep the tag.
 
 </details>

@@ -29,11 +29,11 @@ Missing dates are rarely just missing. They come from a handful of everyday prob
 ## What makes it different
 
 - **Nothing changes until you say so.** Every step is a dry run by default: it lists what it *would* do and touches nothing. Add `--apply` to make the changes.
-- **Nothing is lost by surprise.** Files are moved into review folders (`_ads`, `_junk`, `_thumbnails`, `_incomplete`, `_converted`, `_empty_folders`) rather than deleted. No step deletes anything. See [Guardrails](#guardrails).
+- **Nothing is lost by surprise.** Files are moved into review folders (`_ads`, `_junk`, `_thumbnails`, `_screenshots`, `_incomplete`, `_converted`, `_empty_folders`) rather than deleted. No step deletes anything. See [Guardrails](#guardrails).
 - **A full audit trail.** Every run, previews included, is logged to an Excel workbook in the folder. You can see later what changed, when, and why.
 - **Reads metadata itself.** It parses HEIC, MOV/MP4, JPEG, PNG and TIFF metadata directly, with no external tools needed just to read dates. ExifTool is only needed to write dates into HEIC and video files.
 - **Plain English or command line.** In Claude Code you can type "Fill in the missing dates in D:\Pictures\2026". Every step is also a command-line flag you can script.
-- **Tested on generated files.** 118 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell cleanup script.
+- **Tested on generated files.** 166 automated tests run against synthetic photos and videos, never real ones. They cover every step, the dry-run guarantee and the PowerShell cleanup script.
 
 ## Quick start
 
@@ -83,12 +83,14 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 |---|---|
 | Step by step: see what each step would change, and choose the optional ones (changes nothing) | `/fix-media-dates D:\Pictures\2026` |
 | Then make the changes you chose | `/fix-media-dates D:\Pictures\2026 --apply` |
-| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--move-thumbnails`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
+| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--sort-pictures`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
 | Then make all of those changes | `/fix-media-dates D:\Pictures\2026 --all --apply` |
 | See what moving everything up out of its subfolders would do (changes nothing) | `/flatten-media D:\Pictures\2026` |
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
 | See which phone thumbnails would be set aside, once their dates are written (changes nothing) | `/move-thumbnails D:\Pictures\2026` |
 | Then move them into `_thumbnails` | `/move-thumbnails D:\Pictures\2026 --apply` |
+| See which screenshots and thumbnails (phone and backup) would be sorted into their own folders, once their dates are written (changes nothing) | `/sort-pictures D:\Pictures\2026` |
+| Then move them into `_screenshots` and `_thumbnails` | `/sort-pictures D:\Pictures\2026 --apply` |
 | Find photos or videos that are copies of each other | `Find duplicates in D:\Pictures\2012` |
 | See photos filed among videos, or videos among photos | `/report-opposite-type D:\Videos` |
 | Find photos and videos taken in a different year from their year folder (changes nothing) | `Find the files from another year in D:\Pictures\2020` |
@@ -128,6 +130,7 @@ Lines starting with `/` are slash commands. The others are plain requests: any w
 | Sync timestamps | If you choose it | Yes |
 | Flatten | If you choose it | Only with `--flatten` |
 | Set phone thumbnails aside in `_thumbnails` | No; run `/move-thumbnails` afterwards | Only with `--move-thumbnails` |
+| Sort screenshots into `_screenshots` and thumbnails into `_thumbnails` | No; run `/sort-pictures` afterwards | Only with `--sort-pictures` |
 | Clean up converted files | Always asks you | No; run it on its own afterwards |
 | Deletes anything | Never | Never |
 
@@ -161,6 +164,8 @@ These are the steps inside, in the order they run:
 
 **Then, optionally, set phone thumbnails aside.** `/move-thumbnails D:\Pictures\2026` (flag `--move-thumbnails`) moves phone gallery thumbnails (a JPEG named only by a number, such as `1234.jpg`, small, with no camera make or model) into `_thumbnails`. Run it after the dates are written: a thumbnail with no Date Taken yet is left where it is and listed, because once it is in `_thumbnails` no step dates it. Some thumbnails are the only copy left of a photo, so compare them with your photos before deleting any. Added to `--all`, it runs after the dates are written and before moving and flattening.
 
+**Or sort screenshots and thumbnails into groups.** `/sort-pictures D:\Pictures\2026` (flag `--sort-pictures`) moves screenshots into `_screenshots` and thumbnails into `_thumbnails`, so each group can be looked through apart from the photos. A screenshot is a PNG, JPEG or HEIC with no camera make or model, named as phones and computers name screenshots (`Screenshot_20231220-142355.png`, `Screenshot (12).png`, `Screen Shot 2023-12-20 at 2.23.55 PM.png`) or carrying the "Screenshot" tag an iPhone writes inside the file. Thumbnails are phone gallery thumbnails as above, backup thumbnails (a small picture with no camera make or model named `IMG_1234_thumb.jpg`, `thumb_IMG_1234.jpg` or `tn_IMG_1234.jpg`, or kept in a `.thumbnails` or `Thumbs` folder), and the thumbnail cache files from iPhone backups (`.ithmb`) and Android (`.thumbdata`). As with `/move-thumbnails`, a picture with no Date Taken yet is left where it is. `--move-screenshots` sorts the screenshots on their own.
+
 **2. Check and tidy.** Once the dates are fixed:
 
 | # | Step | What it does | Type |
@@ -170,7 +175,7 @@ These are the steps inside, in the order they run:
 | 15 | Find files from another year (report) | Photos and videos whose Date Taken (Media Created for a video) is in a different year from the year folder they are filed in, with a count for each year and how many have no date. Give one year folder or the folder that holds them. `Cleanup-Pictures.ps1` also runs it at the end. | `--other-year` |
 | 16 | Visual compare (report) | Compares the pixels of each possible copy, including each PNG and BMP with its new JPEG, and gives a verdict with a confidence level. Run it before step 17, which removes one file of each of those pairs. | `--visual-compare` |
 | 17 | Clean up converted files | Moves each PNG, BMP and WebP already converted to JPEG into `_converted`, once it has checked they are the same picture, and moves empty folders into `_empty_folders`. The step-by-step route asks about it as its last step. | `Cleanup-Pictures.ps1` |
-| 18 | Final check (report) | What is left in `_ads`, `_junk`, `_thumbnails`, `_converted` and `_incomplete`, folders not flattened, name collisions and audit workbooks. | `Run the final check on D:\Pictures` |
+| 18 | Final check (report) | What is left in `_ads`, `_junk`, `_thumbnails`, `_screenshots`, `_converted` and `_incomplete`, folders not flattened, name collisions and audit workbooks. | `Run the final check on D:\Pictures` |
 
 Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 
@@ -179,11 +184,11 @@ Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 These hold for every step, whichever way you run it:
 
 - **Preview by default.** Every step that changes files only lists what it would do (`WOULD MOVE`, `WOULD WRITE`, ...) until you add `--apply` (`-Apply` for the PowerShell cleanup script). In Claude Code, Claude shows you the preview and asks before applying.
-- **Moved aside, not deleted.** Ads go to `_ads`, junk to `_junk`, phone thumbnails to `_thumbnails`, converted PNGs, BMPs and WebPs to `_converted` and broken copies to `_incomplete`, all flat (no subfolders). An ad or broken copy with no Date Taken gets its folder's date added to its name, so the date is not lost. Empty folders go to `_empty_folders`, keeping their path. Every step skips these folders. Deleting them is your call, once you have looked through them.
+- **Moved aside, not deleted.** Ads go to `_ads`, junk to `_junk`, thumbnails to `_thumbnails`, screenshots to `_screenshots`, converted PNGs, BMPs and WebPs to `_converted` and broken copies to `_incomplete`, all flat (no subfolders). An ad or broken copy with no Date Taken gets its folder's date added to its name, so the date is not lost. Empty folders go to `_empty_folders`, keeping their path. Every step skips these folders. Deleting them is your call, once you have looked through them.
 - **Converted originals are checked before they are set aside.** "Clean up converted files" moves a PNG, BMP or WebP into `_converted` only when a JPEG of the same name sits beside it with the same picture size and pixels no more than 1% apart. A Live Photo video, a sidecar, or a HEIC next to a JPG is always kept.
 - **Nothing is overwritten.** When a file's new name or new folder is already taken, it is reported as a `COLLISION` and stays where it is. `--flatten` gives it a `_<date taken>` suffix instead.
 - **Nothing leaves the folder.** Files are only renamed or moved inside the folder you give.
-- **Content is checked, not just names.** An ad needs an ad-style name *and* no camera make or model. A `._` file must carry the Mac sidecar signature. `Thumbs.db` is matched by whole name, so `west sucking thumb.jpg` is safe. A phone thumbnail must be named only by a number, be small, and have no camera make or model. Plist or XMP text saved as a `.JPG` is found by its content and moved into `_junk`, never deleted. A file whose format it can't identify is never renamed.
+- **Content is checked, not just names.** An ad needs an ad-style name *and* no camera make or model. A `._` file must carry the Mac sidecar signature. `Thumbs.db` is matched by whole name, so `west sucking thumb.jpg` is safe. A phone thumbnail must be named only by a number, be small, and have no camera make or model. A backup thumbnail needs a thumbnail name or folder *and* must be small with no camera make or model, and `thumb` must be joined to the name by `_`, `-` or `.`. A screenshot needs a screenshot name or the iPhone's "Screenshot" tag *and* no camera make or model. Plist or XMP text saved as a `.JPG` is found by its content and moved into `_junk`, never deleted. A file whose format it can't identify is never renamed.
 - **Real dates win.** A date already in the file is never replaced. Missing dates come from the filename, then the folder name, never from the file's modified time.
 - **Originals are kept on conversion.** PNG and BMP originals stay until you choose to clean them up, which moves them into `_converted`. WebP originals move into `_converted` straight away, once the JPEG is checked to be the same picture. Writing a date into a JPEG doesn't re-encode the picture.
 - **Edits are respected.** Timestamp sync leaves Date Modified alone on photos that look edited.
@@ -196,12 +201,12 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 - **Python 3.9+** (`organize.py`, about 2,750 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
 - **PowerShell** cleans up converted files (`Cleanup-Pictures.ps1`), using .NET `System.Drawing` to compare pixels, and the Windows Imaging Component to read WebP.
 - **Claude Code plugin:** three skills and four slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
-- **Tests:** `py -m unittest discover tests -v` runs 97 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
+- **Tests:** `py -m unittest discover tests -v` runs 166 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
 
 ```
 .
 ├── .claude-plugin/              Plugin manifest and marketplace entry
-├── commands/                    Slash commands: fix-media-dates, flatten-media, report-opposite-type, media-help
+├── commands/                    Slash commands: fix-media-dates, flatten-media, move-thumbnails, sort-pictures, report-opposite-type, media-help
 ├── skills/media-date-organizer/ Main skill: organize.py and the cleanup script
 ├── skills/final-check-report/   Skill: what is left after organizing
 ├── skills/find-duplicates/      Skill: identical and likely duplicate files

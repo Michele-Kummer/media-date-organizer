@@ -1,6 +1,6 @@
 ---
 description: Ensure every photo and video in a folder has a Date Taken — fix extensions, set junk aside, write missing dates, convert PNG to JPEG where needed, sort by date, and clean up. Previews only; add --apply to make the changes.
-argument-hint: <path-to-media-folder> [--all [--quarantine-ads] [--move-thumbnails] [--apply-moves] [--flatten]] [--apply]
+argument-hint: <path-to-media-folder> [--all [--quarantine-ads] [--move-thumbnails] [--sort-pictures] [--apply-moves] [--flatten]] [--apply]
 ---
 
 # /fix-media-dates
@@ -9,7 +9,7 @@ Ensure every photo and video in the media folder has a readable Date Taken (Medi
 
 ## Dry run or apply
 
-`$ARGUMENTS` is the media folder, optionally followed by `--all` (with `--quarantine-ads`, `--move-thumbnails`, `--apply-moves` or `--flatten` to opt in to those), `--apply`, or both. Below, `<folder>` means that folder without these flags.
+`$ARGUMENTS` is the media folder, optionally followed by `--all` (with `--quarantine-ads`, `--move-thumbnails`, `--sort-pictures`, `--apply-moves` or `--flatten` to opt in to those), `--apply`, or both. Below, `<folder>` means that folder without these flags.
 
 - **With `--all`**, skip the step-by-step walk below and follow "All in one go" instead. `--all` alone is a dry run of every step it includes; `--all --apply` makes all the changes.
 
@@ -58,7 +58,7 @@ pip install "pillow>=10.0" "openpyxl>=3.1"
 
 `/fix-media-dates <folder> --all` runs `python skills/media-date-organizer/scripts/organize.py --root "<folder>" --all`. It fixes extensions (step 1), moves junk into `<folder>/_junk` (step 3) and incomplete files into `<folder>/_incomplete` (step 4), then fills blanks, converts PNG and syncs timestamps (steps 8, 9 and 11). It deletes nothing and asks no questions: every step it includes runs.
 
-- **Left out unless opted in:** ad quarantine, setting phone thumbnails aside, moving to date folders and flatten. They run only if the user adds `--quarantine-ads`, `--move-thumbnails`, `--apply-moves` or `--flatten` to the slash command (`/fix-media-dates <folder> --all --flatten --apply`); pass those flags on to `organize.py`. `--move-thumbnails` runs after the dates are written, so each thumbnail keeps its folder's date.
+- **Left out unless opted in:** ad quarantine, setting phone thumbnails aside, sorting screenshots and thumbnails into groups, moving to date folders and flatten. They run only if the user adds `--quarantine-ads`, `--move-thumbnails`, `--sort-pictures`, `--apply-moves` or `--flatten` to the slash command (`/fix-media-dates <folder> --all --flatten --apply`); pass those flags on to `organize.py`. `--move-thumbnails` and `--sort-pictures` run after the dates are written, so each thumbnail and screenshot keeps its folder's date.
 - **Not part of `--all`:** the date audit (step 2), the plist report (step 6), BMP and WebP conversion (step 7) and cleaning up converted files (step 13). Run them on their own; after `--all --apply`, ask the user whether they want step 13.
 - **`--all` without `--apply`** is a dry run: nothing is changed. Each phase is previewed against the folder as it is now, so a later phase may do more once the earlier ones have run. End with: to make all these changes, type `/fix-media-dates <folder> --all --apply` (with the same `--quarantine-ads`, `--apply-moves` or `--flatten`, if any).
 - **`--all --apply`** runs the same command with `--apply` added. Unless `--apply-moves` was added, it does not update the audit workbook's Summary, Plan and Only-moves sheets; offer to run the date audit (step 2) afterwards.
@@ -69,4 +69,4 @@ It ends with a `Summary of this run` block covering every phase's counts and pro
 
 - `<folder name>_<photos|videos>_media_audit_<date>.xlsx` at the root of `<folder>`. Every step above, the cleanup script and dry runs included, appends what it did to its Run log and Run counts sheets. The workbook must be closed in Excel while a step runs, or that step is not recorded.
 - Summary message with counts (extensions corrected, junk files set aside, incomplete files set aside, ad files quarantined, dates written, files converted, files moved, timestamps synced, files flattened and empty folders moved to `_empty_folders`), saying "would" for a dry run.
-- After a dry run: the line `/fix-media-dates <folder> --apply` (or `/fix-media-dates <folder> --all --apply` after `--all`) for the user to type. After `--apply`: if step 13 was not run, ask whether the user wants to clean up converted files, and if phone thumbnails were not set aside, mention `/move-thumbnails <folder>`.
+- After a dry run: the line `/fix-media-dates <folder> --apply` (or `/fix-media-dates <folder> --all --apply` after `--all`) for the user to type. After `--apply`: if step 13 was not run, ask whether the user wants to clean up converted files, and if phone thumbnails were not set aside, mention `/sort-pictures <folder>`, which sorts screenshots and thumbnails into their own folders.

@@ -15,12 +15,14 @@ Show the user the list below as it is, then ask which one they want to do and fo
 |---|---|
 | Step by step: see what each step would change, and choose the optional ones, cleanup included (changes nothing) | `/fix-media-dates D:\Pictures\2026` |
 | Then make the changes you chose | `/fix-media-dates D:\Pictures\2026 --apply` |
-| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
+| All in one go: see what the routine steps would change, with no questions (changes nothing; add `--quarantine-ads`, `--sort-pictures`, `--apply-moves` or `--flatten` to include those) | `/fix-media-dates D:\Pictures\2026 --all` |
 | Then make all of those changes | `/fix-media-dates D:\Pictures\2026 --all --apply` |
 | See what moving everything up out of its subfolders would do (changes nothing) | `/flatten-media D:\Pictures\2026` |
 | Then move them | `/flatten-media D:\Pictures\2026 --apply` |
 | See which phone thumbnails (`1234.jpg`, small, no camera info) would be set aside, once their dates are written (changes nothing) | `/move-thumbnails D:\Pictures\2026` |
 | Then move them into `_thumbnails` | `/move-thumbnails D:\Pictures\2026 --apply` |
+| See which screenshots and thumbnails (phone and backup) would be sorted into their own folders, once their dates are written (changes nothing) | `/sort-pictures D:\Pictures\2026` |
+| Then move them into `_screenshots` and `_thumbnails` | `/sort-pictures D:\Pictures\2026 --apply` |
 
 **Check, without changing anything**
 
@@ -44,16 +46,17 @@ Show the user the list below as it is, then ask which one they want to do and fo
 | Set aside ad and app junk images | `Quarantine the ads in D:\Pictures\2026` |
 | Set aside AAE, Thumbs.db, Mac `._` files, and plist and XMP files | `Move the junk files in D:\Pictures\2026` |
 | Set aside broken or empty files | `Move the incomplete files in D:\Pictures\2026` |
+| Set screenshots aside in their own folder | `Move the screenshots in D:\Pictures\2026 aside` |
 | Make Date Created and Date Modified match Date Taken | `Sync the timestamps in D:\Pictures\2026` |
 | Clean up converted files (moves PNGs, BMPs and WebPs already turned into JPEGs into `_converted`) | `Clean up the converted files in D:\Pictures\2026` |
 
 ## Good to know
 
 - Lines starting with `/` are typed in the Claude chat, not in PowerShell.
-- `/fix-media-dates`, `/flatten-media` and `/move-thumbnails` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
+- `/fix-media-dates`, `/flatten-media`, `/move-thumbnails` and `/sort-pictures` only show what they would do. Nothing changes until you type the same command again with `--apply` on the end.
 - The plain-language steps are previewed first too, and Claude asks before going ahead.
 - `/fix-media-dates` on its own goes step by step and asks which optional steps you want. With `--all` it runs the routine steps in one go without asking, and leaves out ads, phone thumbnails, moving to date folders, flatten, BMP and WebP conversion and cleanup unless you ask for them.
-- Phone thumbnails are set aside only by `/move-thumbnails`, after their dates are written, so each keeps its folder's date. One with no date yet is left where it is.
-- Ads, junk, phone thumbnails, converted originals, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_converted`, `_incomplete` and `_empty_folders`. Nothing is deleted.
+- Thumbnails and screenshots are set aside only by `/move-thumbnails` or `/sort-pictures`, after their dates are written, so each keeps its folder's date. One with no date yet is left where it is.
+- Ads, junk, thumbnails, screenshots, converted originals, incomplete files and empty folders are moved into `_ads`, `_junk`, `_thumbnails`, `_screenshots`, `_converted`, `_incomplete` and `_empty_folders`. Nothing is deleted.
 - Each folder gets an audit spreadsheet (`.xlsx`) recording everything that was done.
 - First time? Try it on a small folder, or a copy of one.

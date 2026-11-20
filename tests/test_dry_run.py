@@ -19,6 +19,7 @@ CHANGING = {
     'fix_extensions': '--fix-extensions',
     'move_junk': '--move-junk',
     'move_thumbnails': '--move-thumbnails',
+    'move_screenshots': '--move-screenshots',
     'move_incomplete': '--move-incomplete',
     'quarantine_ads': '--quarantine-ads',
     'fill_blanks': '--fill-blanks',
@@ -47,6 +48,8 @@ def build(root):
     (day / 'IMG_1.AAE').write_text('<plist/>')                                   # junk
     (day / 'Thumbs.db').write_bytes(b'\0cache')                                  # junk
     make_image(day / '46.jpg', taken=datetime.datetime(2020, 1, 1, 12, 0, 0))    # phone thumbnail
+    make_image(day / 'Screenshot_20200101-120000.jpg',
+               taken=datetime.datetime(2020, 1, 1, 12, 0, 0))                   # screenshot
     (root / 'media_audit_2019-05-05.xlsx').write_bytes(b'old workbook')          # final check renames
     (root / 'Empty' / 'Inner').mkdir(parents=True)                               # flatten sets aside
 
