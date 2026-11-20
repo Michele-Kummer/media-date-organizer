@@ -179,6 +179,70 @@ These are the steps inside, in the order they run:
 
 Steps 2, 6, 13, 14, 15, 16 and 18 only report. Run them whenever you like.
 
+## Why each step is needed
+
+Each step fixes a problem that something else caused: a phone, a cloud service, a messaging app or a copy that went wrong. Knowing the cause helps you decide which optional steps your folder needs.
+
+| Step | Why run it | Where the problem comes from |
+|---|---|---|
+| Fix extensions | A file whose extension lies can't be read or dated. Every later step goes by the extension, so a HEIC photo named `.PNG` fails each of them. | Share sheets, email, messaging apps and some transfer tools change a file's format but keep its old name. An iPhone Live Photo's video can arrive named as a picture. In the [case study](docs/case-study.md), 13 of 35 files were misnamed. |
+| Audit dates (report) | Shows how many files have no date, or sit in the wrong folder, before anything changes. | Nothing is wrong yet. It is a baseline to compare against. |
+| Set junk aside | Junk files look like pictures in a folder but hold none, and they make the other steps report errors. | An iPhone writes an `.AAE` file for every photo edited on it. Windows Explorer leaves `Thumbs.db` in folders it has shown as thumbnails. A Mac writes a `._` file beside everything it copies to a USB drive or memory card. Lightroom and other editors write `.xmp` files. Some of these arrive under a photo's name (`IMG_E5239.JPG`). |
+| Set incomplete files aside | A broken file can never get a date and can't be opened. It is clutter, and a sign that the original still needs copying. | A copy that stopped part way: the phone was unplugged, the drive was full, or a transfer from a phone over USB (MTP) failed and left a tiny stub under the photo's name. |
+| Set ads aside | Ads, stickers and app images get dated and filed among real photos, and they bury them. | Games and apps save their images to the phone's gallery, and a full phone backup or a copy of the whole storage brings them along. |
+| Find plist and XMP files (report) | Lists files that look like photos but are really edit data, so you know what the junk step will move. | Same as junk: an iPhone or Mac edit file saved under a picture name. |
+| Convert BMP and WebP | Neither shows a Date Taken in Explorer. BMP can't hold one at all, and WebP usually has none. | BMP comes from old scanners, Paint and old games. WebP is what browsers save from web pages, and what WhatsApp and other messaging apps use for stickers and shared pictures. |
+| Fill in missing dates | A photo with no Date Taken sorts by the day it was copied, not the day it was taken. | Messaging apps (WhatsApp, Messenger), social media downloads and many editing apps remove the date when they save or send a picture. Screenshots, scans and downloads never had one. |
+| Convert PNG to JPEG | Explorer never shows Date Taken for a PNG, even when the date is inside the file. | Phones and computers save screenshots as PNG, and Windows only reads Date Taken from JPEG, HEIC, TIFF and RAW. |
+| Move to date folders | Files sit in folders named for the wrong day. | Import tools (Windows Photos, phone companion apps) name folders after the day you copied the files, not the day they were taken. |
+| Sync timestamps | Other apps and cloud services sort by Date Created or Date Modified, which show the copy date. | Copying a file sets Date Created to the moment of the copy. Converting a file makes a new one, created today. |
+| Flatten | Photos are spread across dozens of day folders and `Temp` folders, so you can't browse a year at a glance. | Import tools make a folder per day, and quick sorting leaves folders such as `Temp`, `To Sort` and `New folder` behind. |
+| Set phone thumbnails aside | Thousands of small copies of your photos sit among the originals and look like duplicates. | A phone's gallery keeps a small preview of every photo in a hidden folder (`DCIM/.thumbnails`). Copying the whole phone, or a full backup, brings them along, named only by a number (`1234.jpg`). |
+| Sort screenshots and backup thumbnails | Screenshots and small backup copies are mixed in with the photos, which makes the photos hard to browse. | Phones save screenshots to the camera roll alongside photos. Cloud backups (Google Photos, iCloud, OneDrive) and gallery apps download or keep a smaller copy of each photo, known as a thumbnail, beside or instead of the original, often named `IMG_1234_thumb.jpg` or kept in a `Thumbnails` folder. When storage-saving settings are on, the cloud sends the thumbnail and keeps the full picture online. iTunes and Finder backups of an iPhone or iPod keep thumbnails in `.ithmb` files, and Android keeps them in `.thumbdata` files. |
+| Find duplicates (report) | The same picture saved twice wastes space and clutters albums. | Importing the same phone twice, restoring a backup over a folder that already had the photos, and sharing apps that save a re-sized copy. |
+| Find the opposite type (report) | Videos in the photo library, or photos in the video library, are missed when you browse either one. | Import tools put everything from a phone in one folder, and a Live Photo comes with a short video beside the picture. |
+| Find files from another year (report) | A photo filed under the wrong year is hard to find. | It was filed by the date it was copied, or its date was filled in from the wrong folder. |
+| Visual compare (report) | Tells you whether two files that share a name are really the same picture before one is set aside. | Conversions, re-saved copies and name clashes in the steps above. |
+| Clean up converted files | After conversion, every PNG, BMP and WebP sits beside its JPEG twin. | The conversion steps keep the original until it has been checked against the JPEG. |
+| Final check (report) | Shows what is still waiting for you in the set-aside folders, and anything a step had to leave. | The steps never delete anything, so something is always left for you to look over. |
+
+## Running steps earlier or later
+
+The order under [Recommended order](#recommended-order) is the one that gives the cleanest result in one pass, and `--all` always runs its steps in that order, whatever order you type the flags in. When you run steps one at a time, this is what happens if you change the order:
+
+| If you run… | …before or after… | What happens |
+|---|---|---|
+| Fix extensions | after anything else | The earlier steps skip or fail on misnamed files (`FAILED`, `NOT MEDIA`). Fix extensions, then run them again. |
+| Set junk and incomplete files aside | after filling in dates | Fill in dates lists every plist saved under a photo name as `NOT MEDIA` and skips every broken file, so its report is noisy. Nothing is harmed. |
+| Set ads aside | after filling in dates | Each ad gets its folder's date written into it, and looks like a dated photo in the audit. It is still found and moved afterwards, because the ad test goes by name and missing camera info, not by date. |
+| Convert PNG to JPEG | before filling in dates | Each JPEG is made without a date. The next fill-in run dates the PNG and the JPEG separately, so the result is the same, but it takes two runs. |
+| Sync timestamps | before converting | Each new JPEG shows today as Date Created. Run sync again after converting. |
+| Move to date folders and Flatten | together | They undo each other: one files photos into day folders, the other empties them. Pick one. |
+| Flatten | before filling in dates | Flatten only moves photos that have a Date Taken, so undated ones stay in their subfolders. Fill in dates, then flatten again. |
+| Set thumbnails aside, or sort screenshots and thumbnails | before filling in dates | A thumbnail or screenshot with no date is left where it is and listed as `LEFT`, because once it is in `_thumbnails` or `_screenshots` no step dates it. Fill in dates, then run it again. |
+| Set thumbnails aside, or sort screenshots and thumbnails | after flattening | They are flattened in among the photos first. They are still found and moved afterwards, but the year folder looks cluttered in between. |
+| Sort screenshots | before cleanup | A screenshot PNG already converted to JPEG moves into `_screenshots` with its JPEG, and cleanup skips `_screenshots`, so the PNG stays beside its JPEG there. |
+| Sort screenshots | after cleanup | Cleanup moves the converted PNG into `_converted` first, so only the JPEG goes into `_screenshots`. This is the tidier order. |
+| Visual compare | after cleanup | The PNG and BMP originals are no longer beside their JPEGs, so those pairs can't be compared. Run it first if you want to check them. |
+| Set ads aside | on a year folder, or on the folder that holds the year folders | On a year folder, the ads go into that year's `_ads`. On the folder above, each year's ads still go into its own `_ads`, and only stray ones go into the top `_ads`. |
+| Final check | before the other steps | It works, but it reports what the other steps are about to fix. Run it last. |
+
+## Limits
+
+- **Windows only.** Setting Date Created, and checking what Explorer shows, only work on Windows.
+- **No RAW camera files, and large video libraries are slow.** RAW files (`.CR2`, `.NEF`, `.ARW`) are not read or dated. More than a few thousand videos in one folder take a long time.
+- **Writing HEIC and video dates needs ExifTool.** Without it, those files are listed as needing a date but not changed.
+- **Some formats can't show a date in Explorer.** A PNG with transparent areas stays PNG, and an animated or transparent WebP stays WebP, so Explorer still shows no Date Taken for them.
+- **A filled-in date is only as exact as its source.** A date taken from a folder name is set to 12:00 noon on that day. A video folder named only for a year (`2014`) is not used, and those videos are listed instead.
+- **Video times use this computer's time zone.** Videos store their time in UTC, and it is converted to the time zone of the computer running the tool, so a video recorded while travelling may be a few hours off.
+- **Ads are recognised by name.** An ad also needs no camera information, so an ad that carries some is kept. Numbered BMPs (`8824_1269.bmp`) are not treated as ads, because in real libraries they are as often the owner's own pictures.
+- **Thumbnails are recognised by name, size and missing camera info.** A thumbnail larger than 1024 pixels is not caught. A small photo you resized yourself and named only by a number (`12.jpg`) could be taken for a phone thumbnail, so look through `_thumbnails` before deleting anything.
+- **Screenshots are recognised by name or by the iPhone's tag.** A HEIC screenshot is only found by its name, because its tag can't be read without an extra library. The old Snipping Tool name `Capture.PNG` is not matched, because it is too general. A screenshot renamed to something else, with no tag, is not found.
+- **Converting a PNG keeps its XMP only with Pillow 11 or later.** With an older Pillow, the iPhone's Screenshot tag is not carried into the JPEG.
+- **Duplicates are only reported.** Nothing is moved or deleted by the duplicate and compare steps; deciding which copy to keep is yours.
+- **The audit workbook must be closed.** If it is open in Excel, the run can't be recorded in it.
+- **Known open bugs.** One unreadable file can stop a step part way (BUG-02). HEIF and AVIF photos are read as MP4 video, so fix extensions leaves them alone (BUG-04). Setting incomplete files aside is slow on large folders (BUG-36). See [User stories and bugs](docs/user-stories-and-bugs.md#part-2--bugs).
+
 ## Guardrails
 
 These hold for every step, whichever way you run it:
@@ -198,9 +262,9 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 
 ## How it's built
 
-- **Python 3.9+** (`organize.py`, about 2,750 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
+- **Python 3.9+** (`organize.py`, about 3,500 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
 - **PowerShell** cleans up converted files (`Cleanup-Pictures.ps1`), using .NET `System.Drawing` to compare pixels, and the Windows Imaging Component to read WebP.
-- **Claude Code plugin:** three skills and four slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
+- **Claude Code plugin:** three skills and six slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
 - **Tests:** `py -m unittest discover tests -v` runs 166 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
 
 ```

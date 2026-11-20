@@ -1026,7 +1026,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-37 | A 1904 placeholder date was kept, and dates before 1970 stopped timestamp sync | Photos | Medium | Michele Kummer | `575d9bb` |
 | BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
 | BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | `5be9fb5` |
-| BUG-40 | Writing a date into a PNG, or converting it to JPEG, dropped its XMP | Photos (PNG) | Medium | Claude | not yet committed |
+| BUG-40 | Writing a date into a PNG, or converting it to JPEG, dropped its XMP | Photos (PNG) | Medium | Claude | `76022e8` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1270,7 +1270,7 @@ A second `--sync-timestamps --apply` run listed almost every file as `SYNCED` ag
 **Fix:** A new `_is_mtp_prop_list` recognises the property list. A file counts only if it is between 16 bytes and 64 KB, every entry's property code is in the MTP range `0xD000` to `0xDFFF`, every data type is a known one, and the entries end exactly at the end of the file, so no real photo can match. `_incomplete_kind` returns `transfer-stub` for it, and `--move-incomplete` moves it to `_incomplete` with the folder's date added, as it does other incomplete files. `--fix-extensions` now lists it as `TRANSFER STUB (no picture, left for --move-incomplete)` instead of `UNKNOWN FORMAT`. A preview on `E:\Pictures\2018\Temp` would move all 451. Four tests in `tests/test_transfer_stubs.py` cover it.
 
 #### BUG-40 Writing a date into a PNG, or converting it to JPEG, dropped its XMP
-**Found by:** Claude · **Affects:** photos (PNG) · **Fixed in:** not yet committed
+**Found by:** Claude · **Affects:** photos (PNG) · **Fixed in:** `76022e8`
 
 Found while building US-60. `_write_exif_date_image` re-saves a PNG through Pillow with only its EXIF and colour profile, so `--fill-blanks` dropped every text chunk in the PNG, the XMP packet included. `_convert_to_jpeg` saved the JPEG with EXIF only, so `--convert-png` lost the XMP the same way. An iPhone screenshot named `IMG_1234.PNG` carries its "Screenshot" tag in that XMP, so once it had been dated or converted, `--move-screenshots` no longer recognised it and left it among the photos. Any other XMP, such as a caption or a rating, was lost too.
 **Fix:** `_write_exif_date_image` now copies the PNG's text chunks, XMP included, into the re-saved file. `_convert_to_jpeg` passes the XMP on to the JPEG; Pillow 11 and later write it, and older versions leave it out as before. `KeepScreenshotTagTests` in `tests/test_sort_pictures.py` checks that `--fill-blanks`, `--convert-png` and writing a date into the JPEG all keep the tag.
