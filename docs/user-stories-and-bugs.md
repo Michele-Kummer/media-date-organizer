@@ -1028,7 +1028,7 @@ The list is oldest first. **Fixed in** gives the commit. Bugs fixed before the h
 | BUG-38 | Timestamp sync rewrote and listed files that were already synced | Photos and videos | Low | Michele Kummer | `407497b` |
 | BUG-39 | Phone transfer stubs were not set aside as incomplete | Photos | Medium | Michele Kummer | `5be9fb5` |
 | BUG-40 | Writing a date into a PNG, or converting it to JPEG, dropped its XMP | Photos (PNG) | Medium | Claude | `76022e8` |
-| BUG-41 | Thumbnails from newer Android phones were not set aside | Photos | Medium | Michele Kummer | Not yet committed |
+| BUG-41 | Thumbnails from newer Android phones were not set aside | Photos | Medium | Michele Kummer | `78fb788` |
 
 #### BUG-06 Wrong extensions hid real dates
 **Found by:** Claude · **Affects:** photos and videos · **Fixed:** before the first commit ([case-study.md](case-study.md))
@@ -1278,7 +1278,7 @@ Found while building US-60. `_write_exif_date_image` re-saves a PNG through Pill
 **Fix:** `_write_exif_date_image` now copies the PNG's text chunks, XMP included, into the re-saved file. `_convert_to_jpeg` passes the XMP on to the JPEG; Pillow 11 and later write it, and older versions leave it out as before. `KeepScreenshotTagTests` in `tests/test_sort_pictures.py` checks that `--fill-blanks`, `--convert-png` and writing a date into the JPEG all keep the tag.
 
 #### BUG-41 Thumbnails from newer Android phones were not set aside
-**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** Not yet committed
+**Found by:** Michele Kummer · **Affects:** photos · **Fixed in:** `78fb788`
 
 `is_phone_thumbnail` only accepted a name of 1 to 7 digits, the way older phones number their gallery thumbnails (`46.jpg`). Android 11 and later number media from 1000000000, so their thumbnails are named like `1000000714.jpg`, and `--move-thumbnails` left them among the photos. `E:\Pictures\2024` held 3,159 of them: JPEGs of 512 pixels or less with no camera Make or Model. Eight more had a `_2024-10-15` suffix, which `--flatten` adds when a name is already taken.
 **Fix:** `_PHONE_THUMB_NAME_RE` now accepts 1 to 10 digits, followed by an optional `_YYYY-MM-DD` suffix. Longer numbers are still not thumbnails, so the 19 digit names some apps give full size photos (`1038549574306920334.JPG`) stay where they are, as do names like `1000000714_edited.jpg`. A preview on `E:\Pictures\2024` would now move 3,171 phone thumbnails. Two tests in `PhoneThumbnailTests` in `tests/test_fix_extensions_and_junk.py` cover the new names and the ones it must still leave alone.
