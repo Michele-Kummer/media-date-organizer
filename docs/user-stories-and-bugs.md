@@ -33,6 +33,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-15:** Michele Kummer found that many 1 KB files in `E:\Pictures\2018\Temp` were not moved to `_incomplete`. Claude found that all 451 of them are MTP property lists left by a failed phone transfer, with no picture in them, and that `--move-incomplete` did not recognise them (BUG-39, fixed the same day).
 - **Updated 2026-11-20:** Michele Kummer asked for screenshots and backup thumbnails to be sorted out of the photos into groups of their own, in an optional step that deletes nothing, recognised by the formats Claude knows of (US-60, built the same day). While building it, Claude found that writing a date into a PNG, or converting a PNG to JPEG, dropped its XMP, and with it the tag that marks an iPhone screenshot (BUG-40, fixed the same day).
 - **Updated 2026-11-20:** Michele Kummer found that `1000000714.jpg` in `E:\Pictures\2024`, a phone gallery thumbnail, was not set aside by `--move-thumbnails`. Claude found that Android 11 and later number media from 1000000000, so the name has 10 digits, while the step only accepted 1 to 7 (BUG-41, fixed the same day).
+- **Updated 2026-11-21:** Michele Kummer asked for the text in screenshots to be read with OCR (US-61), and for screenshots to be grouped into categories, taken in a set order so that one that fits more than one goes into the first (US-62).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -51,7 +52,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 60 (39 Done, 2 Partly done, 19 Not started) |
+| User stories | 62 (39 Done, 2 Partly done, 21 Not started) |
 | Bugs | 41 (3 open, 38 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -298,7 +299,7 @@ As a photo owner, I want the PNG, BMP or WebP left behind by a conversion moved 
 </details>
 
 <details>
-<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47, US-54, US-60)</summary>
+<summary><strong>Epic 4 — Clear out files that aren't real photos or videos</strong> (US-12 to US-14, US-30, US-46, US-47, US-54, US-60 to US-62)</summary>
 
 Move ads and broken files out of the way, and delete files that hold no picture or recording.
 
@@ -410,6 +411,44 @@ As a photo owner, I want screenshots and backup thumbnails separated from my pho
 - `tests/test_sort_pictures.py` covers every screenshot name above, the iPhone tag in PNG and JPEG, near misses, each kind of backup thumbnail and cache file, the dry run, the move, an undated picture left in place, a name clash, `--all` leaving screenshots alone, `--all --move-screenshots` moving them with their date, `--sort-pictures` running both, and the final check.
 
 **Status:** Done
+
+#### US-61 Read the text in screenshots with OCR
+As a photo owner, I want the text in my screenshots read with OCR (optical character recognition), so that they can be sorted into categories by what they say (US-62).
+
+- An optional step, `--read-screenshots`, reads the text in every picture in `_screenshots`, so it runs after `--move-screenshots` (US-60). It is not part of `--all`.
+- The screenshots themselves are not changed, converted or moved. The text is saved beside them in one file, `_screenshots/ScreenshotText.csv`, with a row for each screenshot: its name, the text read, and the date it was read.
+- A screenshot already in that file, and unchanged since it was read, is skipped, so a second run only reads new ones.
+- The OCR runs on the PC, with no internet connection, so no screenshot leaves it. Which OCR engine to use (Windows' built-in OCR or Tesseract) is still to be decided.
+- A screenshot with no text found gets an empty row, so US-62 can tell it apart from one not read yet. A file that cannot be read is listed as `FAILED` and does not stop the run.
+- Without `--apply` it lists what it would read. Nothing is deleted.
+- Tests cover reading the text, the file it is saved in, a second run skipping what was read, a picture with no text, and a file that cannot be read.
+
+**Status:** Not started
+
+#### US-62 Group screenshots into categories
+As a photo owner, I want my screenshots grouped into categories, so that I can find and look through each kind together.
+
+- An optional step, `--categorize-screenshots`, moves each screenshot in `_screenshots` into a folder for its category inside `_screenshots`. It uses the text read in US-61, so it runs after `--read-screenshots`. It is not part of `--all`.
+- The categories are checked in this order, and a screenshot that fits more than one goes into the first it fits:
+  1. Parenting
+  2. Self help
+  3. Food
+  4. Coupons
+  5. Text messages
+  6. Health
+  7. Appears to be a photo
+  8. Security camera
+  9. Weather
+  10. Facebook posts
+- The folder names have no spaces (US-49): `Parenting`, `SelfHelp`, `Food`, `Coupons`, `TextMessages`, `Health`, `LooksLikePhoto`, `SecurityCamera`, `Weather`, `FacebookPosts`.
+- The list and its order are kept in one place, so a category can be added or moved later.
+- "Appears to be a photo" and "Security camera" may have little or no text, so they are decided from the picture as well as the text (for example, a security camera's timestamp and camera name burnt into the image). How each category is recognised is still to be decided.
+- A screenshot that fits no category stays in `_screenshots` itself and is listed as `UNCATEGORIZED`. One that has not been read yet stays where it is and is listed as `LEFT (no text read yet; run --read-screenshots first)`.
+- A name already taken in a category folder is a `COLLISION`, and the file stays where it is. Without `--apply` it only lists where each screenshot would go. Nothing is deleted.
+- The final check reports how many screenshots are in each category.
+- Tests cover each category, a screenshot that fits two categories going into the first, one that fits none, one not read yet, a name clash, and the dry run.
+
+**Status:** Not started
 
 </details>
 
