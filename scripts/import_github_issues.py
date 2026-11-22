@@ -212,17 +212,21 @@ def found_by(body):
     return match.group(1).strip() if match else None
 
 
-def build_body(item, epics, sections, numbers, epic_numbers, repo, titles=None):
+def build_body(item, epics, sections, numbers, epic_numbers, repo, titles=None, epic_of=None):
     when = item['opened'].strftime('%Y-%m-%d')
     titles = titles or {}
+    epic_of = epic_of or {sid: s['epic'] for sid, s in sections.items()}
     if item['kind'] == 'epic':
         text = epics.get(item['epic'])
         if text is None:
             raise PlanError(f'Epic "{item["epic"]}" is not in the stories file')
-        stories = [f'- #{number} {titles.get(sid, sections[sid]["title"])}'
-                   for sid, number in sorted(numbers.items(), key=lambda kv: kv[1])
-                   if sid in sections and sections[sid]['epic'] == item['epic']]
-        parts = [text, '**User stories**\n\n' + '\n'.join(stories) if stories else '']
+        children = {'story': [], 'bug': []}
+        for sid, number in sorted(numbers.items(), key=lambda kv: kv[1]):
+            kind = 'story' if sid.startswith('US-') else 'bug'
+            if epic_of.get(sid) == item['epic']:
+                children[kind].append(f'- #{number} {titles.get(sid, sections[sid]["title"])}')
+        parts = [text] + [f'**{heading}**\n\n' + '\n'.join(children[kind])
+                          for kind, heading in (('story', 'User stories'), ('bug', 'Bugs')) if children[kind]]
         source = f'Planned {when}.'
     else:
         section = sections.get(item['id'])
@@ -236,6 +240,13 @@ def build_body(item, epics, sections, numbers, epic_numbers, repo, titles=None):
         else:
             who = found_by(section['body'])
             source = f'Found {when}' + (f' by {who}.' if who else '.')
+            header = []
+            if item.get('epic'):
+                header.append(f'**Epic:** {item["epic"]} (#{epic_numbers[item["epic"]]})')
+            if item.get('story'):
+                header.append(f'**User story:** {titles[item["story"]]} (#{numbers[item["story"]]})')
+            if header:
+                parts.append(' · '.join(header))
         parts.append(section['body'])
     if item['commit']:
         source += f' Closed by {item["commit"]}.'
@@ -248,7 +259,7 @@ def build_body(item, epics, sections, numbers, epic_numbers, repo, titles=None):
 
 def labels_for(item):
     labels = {'epic': ['epic'], 'story': ['user story'], 'bug': ['bug']}[item['kind']]
-    if item['kind'] in ('epic', 'story'):
+    if item.get('epic'):
         labels.append(label_name(item['epic']))
     for code in item['labels']:
         table = PRIORITY if code.startswith('P') else SEVERITY
@@ -272,15 +283,17 @@ def build_plan(plan_text, stories_text, repo, commit_time=git_commit_time):
     items = parse_plan(plan_text, commit_time)
     epics, sections = parse_stories(stories_text)
     validate(items, sections)
+    attach_bugs(items, parse_bug_links(plan_text), sections)
     numbers = {i['id']: i['number'] for i in items if i['kind'] != 'epic'}
     epic_numbers = {i['epic']: i['number'] for i in items if i['kind'] == 'epic'}
     titles = {i['id']: i['title'] for i in items if i['kind'] != 'epic'}
+    epic_of = {i['id']: i['epic'] for i in items if i['kind'] != 'epic'}
     for item in items:
         if item['kind'] == 'bug':
             item['found_by'] = found_by(sections[item['id']]['body'])
         item['labels_full'] = labels_for(item)
         item['issue_type'] = ISSUE_TYPES.get(item['kind'])
-        item['body'] = build_body(item, epics, sections, numbers, epic_numbers, repo, titles)
+        item['body'] = build_body(item, epics, sections, numbers, epic_numbers, repo, titles, epic_of)
         item['payload'] = {'issue': {
             'title': item['title'], 'body': item['body'], 'created_at': iso(item['opened']),
             'closed': item['state'] == 'Closed', 'labels': item['labels_full']}}
@@ -288,6 +301,47 @@ def build_plan(plan_text, stories_text, repo, commit_time=git_commit_time):
             item['payload']['issue']['closed_at'] = iso(item['closed'])
             item['payload']['issue']['updated_at'] = iso(item['closed'])
     return items
+
+
+def parse_bug_links(text):
+    """The plan's 'Bugs and their stories' table: bug id -> (story id or None, epic short name)."""
+    links = {}
+    for line in text.splitlines():
+        if re.match(r'\| BUG-\d+ \|', line):
+            bug, story, epic = (_cells(line) + ['', ''])[:3]
+            links[bug] = (story or None, epic or None)
+    return links
+
+
+def attach_bugs(items, links, sections):
+    """Give each bug its user story and epic. Without the table, bugs keep no epic."""
+    if not links:
+        return
+    story_epic = {i['id']: i['epic'] for i in items if i['kind'] == 'story'}
+    problems = []
+    for item in items:
+        if item['kind'] != 'bug':
+            continue
+        if item['id'] not in links:
+            problems.append(f'{item["id"]} is not in the bugs and stories table')
+            continue
+        story, epic = links[item['id']]
+        if story and story not in story_epic:
+            problems.append(f'{item["id"]} names {story}, which is not in the plan')
+            continue
+        named_epic = EPIC_SHORT_NAMES.get(epic) if epic else None
+        if epic and not named_epic:
+            problems.append(f'{item["id"]} names an unknown epic "{epic}"')
+            continue
+        if story and named_epic and named_epic != story_epic[story]:
+            problems.append(f'{item["id"]} is under "{named_epic}", but {story} is under "{story_epic[story]}"')
+            continue
+        item['story'] = story
+        item['epic'] = story_epic[story] if story else named_epic
+        if not item['epic']:
+            problems.append(f'{item["id"]} has no user story and no epic')
+    if problems:
+        raise PlanError('\n'.join(problems))
 
 
 def validate(items, sections):
@@ -449,9 +503,9 @@ def apply(items, github, log=print, sleep=time.sleep, limit=None):
     epic_numbers = {i['epic']: i['number'] for i in items if i['kind'] == 'epic'}
     linked = {number: github.sub_issue_numbers(number) for number in epic_numbers.values()}
     for item in items:
-        if item['kind'] != 'story':
+        if item['kind'] == 'epic':
             continue
-        parent = epic_numbers.get(item['epic'])
+        parent = epic_numbers.get(item.get('epic'))
         if parent is None or item['number'] in linked[parent]:
             continue
         github.add_sub_issue(parent, github.issue_id(item['number']))

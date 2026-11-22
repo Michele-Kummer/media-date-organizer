@@ -32,6 +32,13 @@ PLAN = """# GitHub import order
 | 7 | 2026-11-03 09:01 | | BUG-02 Slow on big folders | | P3, S3 | Open |
 """
 
+BUG_TABLE = """
+| Bug | User story | Epic |
+|---|---|---|
+| BUG-01 | US-02 | Organize |
+| BUG-02 | | Setup |
+"""
+
 STORIES = """# User stories and bugs
 
 <details>
@@ -189,6 +196,49 @@ class BodyTests(unittest.TestCase):
         body = {i['id']: i for i in plan()}['Organize folders']['body']
         self.assertIn('Tidy the folders.', body)
         self.assertIn('- #4 Flatten: Flatten folders\n- #6 Keep named folders', body)
+
+
+def plan_with_bugs(table=BUG_TABLE):
+    return gi.build_plan(PLAN + table, STORIES, REPO, commit_time=COMMITS.__getitem__)
+
+
+class BugLinkTests(unittest.TestCase):
+
+    def test_a_bug_names_its_epic_and_user_story(self):
+        items = {i['id']: i for i in plan_with_bugs()}
+        self.assertTrue(items['BUG-01']['body'].startswith(
+            '**Epic:** Organize folders (#2) · **User story:** Flatten: Flatten folders (#4)\n\n'))
+        self.assertTrue(items['BUG-02']['body'].startswith('**Epic:** Setup and getting started (#1)\n\n'))
+        self.assertNotIn('User story:', items['BUG-02']['body'])
+
+    def test_a_bug_gets_its_epic_label(self):
+        items = {i['id']: i for i in plan_with_bugs()}
+        self.assertEqual(items['BUG-01']['labels_full'],
+                         ['bug', 'Organize folders', 'P1: Critical', 'S1: Blocker', 'Found by: Claude'])
+
+    def test_an_epic_lists_its_stories_and_bugs(self):
+        body = {i['id']: i for i in plan_with_bugs()}['Organize folders']['body']
+        self.assertIn('**User stories**\n\n- #4 Flatten: Flatten folders\n- #6 Keep named folders', body)
+        self.assertIn('**Bugs**\n\n- #5 Flatten lost a file', body)
+        self.assertNotIn('Slow on big folders', body)
+
+    def test_bugs_are_linked_under_their_epics(self):
+        github = FakeGitHub()
+        gi.apply(plan_with_bugs(), github, log=quiet, sleep=quiet)
+        self.assertEqual(sorted(github.links), [(1, 1003), (1, 1007), (2, 1004), (2, 1005), (2, 1006)])
+
+    def test_a_bug_missing_from_the_table_is_refused(self):
+        table = '\n'.join(line for line in BUG_TABLE.splitlines() if 'BUG-02' not in line)
+        with self.assertRaisesRegex(gi.PlanError, 'BUG-02 is not in the bugs and stories table'):
+            plan_with_bugs(table)
+
+    def test_an_epic_that_does_not_match_the_story_is_refused(self):
+        with self.assertRaisesRegex(gi.PlanError, 'BUG-01 is under "Setup and getting started", but US-02'):
+            plan_with_bugs(BUG_TABLE.replace('| US-02 | Organize |', '| US-02 | Setup |'))
+
+    def test_an_unknown_story_is_refused(self):
+        with self.assertRaisesRegex(gi.PlanError, 'BUG-01 names US-99'):
+            plan_with_bugs(BUG_TABLE.replace('US-02', 'US-99'))
 
 
 class FakeGitHub:
