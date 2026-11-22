@@ -34,6 +34,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-20:** Michele Kummer asked for screenshots and backup thumbnails to be sorted out of the photos into groups of their own, in an optional step that deletes nothing, recognised by the formats Claude knows of (US-60, built the same day). While building it, Claude found that writing a date into a PNG, or converting a PNG to JPEG, dropped its XMP, and with it the tag that marks an iPhone screenshot (BUG-40, fixed the same day).
 - **Updated 2026-11-20:** Michele Kummer found that `1000000714.jpg` in `E:\Pictures\2024`, a phone gallery thumbnail, was not set aside by `--move-thumbnails`. Claude found that Android 11 and later number media from 1000000000, so the name has 10 digits, while the step only accepted 1 to 7 (BUG-41, fixed the same day).
 - **Updated 2026-11-21:** Michele Kummer asked for the text in screenshots to be read with OCR (US-61), and for screenshots to be grouped into categories, taken in a set order so that one that fits more than one goes into the first (US-62).
+- **Updated 2026-11-22:** Michele Kummer chose to track stories and bugs in GitHub Issues instead of this file, in an order that reads as if they had been kept there from the start, with each issue's real opened and closed dates (US-63).
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -52,7 +53,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 62 (39 Done, 2 Partly done, 21 Not started) |
+| User stories | 63 (39 Done, 3 Partly done, 21 Not started) |
 | Bugs | 41 (3 open, 38 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -611,7 +612,7 @@ As a media owner, I want to know how the two ways of running `/fix-media-dates` 
 </details>
 
 <details>
-<summary><strong>Epic 7 — Maintain the plugin</strong> (US-24 to US-25, US-32, US-48 to US-50)</summary>
+<summary><strong>Epic 7 — Maintain the plugin</strong> (US-24 to US-25, US-32, US-48 to US-50, US-63)</summary>
 
 Change and test the plugin safely.
 
@@ -676,6 +677,19 @@ As a media owner reading the README, I want the before and after screenshots lai
 - The screenshots are retaken from a fresh `py sample-data/generate.py` run, so Before and After come from the same run.
 
 **Status:** Not started
+
+#### US-63 Track stories and bugs in GitHub Issues
+As a maintainer, I want every epic, user story and bug in GitHub Issues with the dates it really opened and closed, so that new work is tracked where the code lives and the history reads as if it had been kept there from the start.
+
+- `scripts/import_github_issues.py` takes the order, dates and labels from `docs/github-import-order.md`, a local plan that is not pushed, and the text of each issue from this file.
+- Epics come first, then stories and bugs mixed by date, with the Desktop app epic on the day it was asked for. Each issue keeps its US or BUG number in its title, and US and BUG numbers in its text link to their issues.
+- It uses GitHub's Issue Import API, so each issue opens on the date it was built, asked for or found, and closes at the time of the commit that built or fixed it. Open issues have no closed date.
+- Labels: `epic`, `user story` or `bug`; the epic's name on the epic and its stories; `P1: Critical` to `P4: Low`; `S1: Blocker` to `S3: Minor` on bugs; and `In progress` on Partly done stories. Missing labels are created.
+- Each story is linked to its epic as a sub-issue.
+- It previews by default and changes nothing unless `--apply` is given. Run again, it skips issues already imported, and it stops if GitHub gives an issue a number other than the one planned.
+- `tests/test_import_github_issues.py` covers it without contacting GitHub.
+
+**Status:** Partly done. The script is written, but the issues are not imported yet.
 
 </details>
 

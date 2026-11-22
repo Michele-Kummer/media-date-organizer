@@ -36,3 +36,6 @@ sample-data/Sample Pictures/
 
 # Photoshop sources for the screenshots (keep on disk, too large for the repo)
 *.psd
+
+# Working plan for importing the user stories and bugs into GitHub Issues (local only)
+docs/github-import-order.md
