@@ -522,7 +522,7 @@ def preview(items, log=print):
     kinds = {k: sum(1 for i in items if i['kind'] == k) for k in ('epic', 'story', 'bug')}
     log(f'\n{len(items)} issues: {kinds["epic"]} epics, {kinds["story"]} user stories, {kinds["bug"]} bugs '
         f'({sum(1 for i in items if i["state"] == "Closed")} closed after import). '
-        f'Each story is linked to its epic as a sub-issue.')
+        f'Each story and bug is linked to its epic as a sub-issue.')
     log('DRY RUN: nothing was changed. Run the same command again with --apply to make these changes.')
 
 
