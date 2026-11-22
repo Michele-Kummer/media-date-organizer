@@ -265,7 +265,7 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 - **Python 3.9+** (`organize.py`, about 3,500 lines) does the metadata parsing, date logic, moves and audit workbook. It uses Pillow for images and openpyxl for Excel. It reads HEIC and QuickTime metadata by walking the file's internal structure itself.
 - **PowerShell** cleans up converted files (`Cleanup-Pictures.ps1`), using .NET `System.Drawing` to compare pixels, and the Windows Imaging Component to read WebP.
 - **Claude Code plugin:** three skills and six slash commands. These turn plain-English requests into the right steps, with a preview and a confirmation before any change.
-- **Tests:** `py -m unittest discover tests -v` runs 188 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
+- **Tests:** `py -m unittest discover tests -v` runs 195 tests on generated photos and videos. Video tests need ffmpeg; the ones that write video dates also need ExifTool, and they are skipped when it is missing.
 
 ```
 .
@@ -283,7 +283,7 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 
 ## Project documents
 
-- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 63 user stories in 8 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked. Since 2026-11-22 they are tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues). `py scripts/import_github_issues.py` created each one there with the dates it really opened and closed (US-63). It previews first, and creates issues only with `--apply`.
+- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 63 user stories in 8 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked. Since 2026-11-22 they are tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues). `py scripts/import_github_issues.py` created each one there with the dates it really opened and closed (US-63). It previews first, and creates issues only with `--apply`. New ones use the **User story** and **Bug** forms in [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE), which follow the same layout, and each bug has a `Found by` label.
 - **[Case study](docs/case-study.md):** how the approach changed on the first real folder, when a "blank Date Taken" problem turned out to be files with the wrong extension.
 - **[Example audit workbook](docs/example-audit.xlsx):** what the Excel audit trail looks like.
 - **[Command cheatsheet](docs/project-cheatsheet.md):** every command, ready to copy.

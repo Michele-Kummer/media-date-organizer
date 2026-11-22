@@ -123,8 +123,14 @@ class PlanTests(unittest.TestCase):
         items = {i['id']: i for i in plan()}
         self.assertEqual(items['Setup and getting started']['labels_full'], ['epic', 'Setup and getting started'])
         self.assertEqual(items['US-02']['labels_full'], ['user story', 'Organize folders', 'P2: High', 'In progress'])
-        self.assertEqual(items['BUG-01']['labels_full'], ['bug', 'P1: Critical', 'S1: Blocker'])
-        self.assertEqual(items['BUG-02']['labels_full'], ['bug', 'P3: Medium', 'S3: Minor'])
+        self.assertEqual(items['BUG-01']['labels_full'], ['bug', 'P1: Critical', 'S1: Blocker', 'Found by: Claude'])
+        self.assertEqual(items['BUG-02']['labels_full'],
+                         ['bug', 'P3: Medium', 'S3: Minor', 'Found by: Michele Kummer'])
+
+    def test_a_bug_found_by_someone_unknown_is_refused(self):
+        stories = STORIES.replace('**Found by:** Claude', '**Found by:** Someone else')
+        with self.assertRaisesRegex(gi.PlanError, 'not one of the found-by labels'):
+            gi.build_plan(PLAN, stories, REPO, commit_time=COMMITS.__getitem__)
 
     def test_epic_labels_drop_commas_github_does_not_allow(self):
         self.assertEqual(gi.label_name('Workflow, safety and record-keeping'), 'Workflow safety and record-keeping')
@@ -152,7 +158,14 @@ class BodyTests(unittest.TestCase):
         body = {i['id']: i for i in plan()}['US-01']['body']
         self.assertTrue(body.startswith('**Epic:** Setup and getting started (#1)'))
         self.assertIn('As a media owner, I want to install it', body)
-        self.assertIn('Built 2026-10-06. Closed by aaaaaaa.', body)
+        self.assertIn('Imported from docs/user-stories-and-bugs.md, where it is US-01. Built 2026-10-06. '
+                      'Closed by aaaaaaa.', body)
+
+    def test_titles_leave_out_the_old_numbers(self):
+        titles = [i['title'] for i in plan()]
+        self.assertEqual(titles, ['Epic: Setup and getting started', 'Epic: Organize folders', 'Install the plugin',
+                                  'Flatten folders', 'Flatten lost a file', 'Keep named folders',
+                                  'Slow on big folders'])
 
     def test_not_started_story_says_asked_for(self):
         self.assertIn('Asked for 2026-11-03.', {i['id']: i for i in plan()}['US-03']['body'])
@@ -175,7 +188,7 @@ class BodyTests(unittest.TestCase):
     def test_epic_body_lists_its_stories(self):
         body = {i['id']: i for i in plan()}['Organize folders']['body']
         self.assertIn('Tidy the folders.', body)
-        self.assertIn('- US-02 (#4) Flatten folders\n- US-03 (#6) Keep named folders', body)
+        self.assertIn('- #4 Flatten folders\n- #6 Keep named folders', body)
 
 
 class FakeGitHub:
@@ -232,6 +245,8 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(github.imported, [1, 2, 3, 4, 5, 6, 7])
         self.assertIn('Organize folders', github.created_labels)
         self.assertIn('In progress', github.created_labels)
+        self.assertIn('Found by: Claude', github.created_labels)
+        self.assertNotIn('Found by: Automated tests', github.created_labels)
         self.assertNotIn('bug', github.created_labels)
         self.assertNotIn('S4: Trivial', github.created_labels)
         self.assertEqual(sorted(github.links), [(1, 1003), (2, 1004), (2, 1006)])
@@ -265,7 +280,7 @@ class ApplyTests(unittest.TestCase):
         with redirect_stdout(out):
             gi.preview(plan())
         text = out.getvalue()
-        self.assertIn('WOULD IMPORT #5 BUG-01 Flatten lost a file', text)
+        self.assertIn('WOULD IMPORT #5 Flatten lost a file', text)
         self.assertIn('7 issues: 2 epics, 3 user stories, 2 bugs (3 closed after import)', text)
         self.assertIn('DRY RUN: nothing was changed.', text)
 

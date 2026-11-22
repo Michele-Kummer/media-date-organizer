@@ -682,7 +682,7 @@ As a media owner reading the README, I want the before and after screenshots lai
 As a maintainer, I want every epic, user story and bug in GitHub Issues with the dates it really opened and closed, so that new work is tracked where the code lives and the history reads as if it had been kept there from the start.
 
 - `scripts/import_github_issues.py` takes the order, dates and labels from `docs/github-import-order.md`, a local plan that is not pushed, and the text of each issue from this file.
-- Epics come first, then stories and bugs mixed by date, with the Desktop app epic on the day it was asked for. Each issue keeps its US or BUG number in its title, and US and BUG numbers in its text link to their issues.
+- Epics come first, then stories and bugs mixed by date, with the Desktop app epic on the day it was asked for. Titles leave out the US and BUG numbers, which go in each issue's footer instead ("where it is US-04"), and US and BUG numbers in the text link to their issues.
 - It uses GitHub's Issue Import API, so each issue opens on the date it was built, asked for or found, and closes at the time of the commit that built or fixed it. Open issues have no closed date.
 - Labels: `epic`, `user story` or `bug`; the epic's name on the epic and its stories; `P1: Critical` to `P4: Low`; `S1: Blocker` to `S3: Minor` on bugs; and `In progress` on Partly done stories. Missing labels are created.
 - Each story is linked to its epic as a sub-issue.

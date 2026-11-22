@@ -35,6 +35,7 @@ IMPORT_ACCEPT = 'application/vnd.github.golden-comet-preview+json'
 PRIORITY = {'P1': 'P1: Critical', 'P2': 'P2: High', 'P3': 'P3: Medium', 'P4': 'P4: Low'}
 SEVERITY = {'S1': 'S1: Blocker', 'S2': 'S2: Major', 'S3': 'S3: Minor', 'S4': 'S4: Trivial'}
 IN_PROGRESS = 'In progress'
+FOUND_BY = ('Michele Kummer', 'Claude', 'Automated tests')
 
 # The Epic column in the plan uses short names
 EPIC_SHORT_NAMES = {
@@ -57,6 +58,7 @@ BASE_LABELS = {
     IN_PROGRESS: ('0E8A16', 'Someone is working on this now'),
     **{name: ('EDEDED', '') for name in PRIORITY.values()},
     **{name: ('EDEDED', '') for name in SEVERITY.values()},
+    **{f'Found by: {who}': ('C5DEF5', f'Bug found by {who}') for who in FOUND_BY},
 }
 
 
@@ -134,7 +136,7 @@ def parse_plan(text, commit_time=git_commit_time):
                 epic_name = EPIC_SHORT_NAMES.get(epic, epic) if epic else None
                 if epic and epic not in EPIC_SHORT_NAMES:
                     raise PlanError(f'Unknown epic "{epic}" in: {line}')
-                item = {'number': int(number), 'kind': kind, 'id': match.group(1), 'title': issue,
+                item = {'number': int(number), 'kind': kind, 'id': match.group(1), 'title': match.group(3),
                         'epic': epic_name, 'labels': [x.strip() for x in labels.split(',') if x.strip()],
                         'state': state}
         else:
@@ -215,7 +217,7 @@ def build_body(item, epics, sections, numbers, epic_numbers, repo):
         text = epics.get(item['epic'])
         if text is None:
             raise PlanError(f'Epic "{item["epic"]}" is not in the stories file')
-        stories = [f'- {sid} {sections[sid]["title"]}'
+        stories = [f'- #{number} {sections[sid]["title"]}'
                    for sid, number in sorted(numbers.items(), key=lambda kv: kv[1])
                    if sid in sections and sections[sid]['epic'] == item['epic']]
         parts = [text, '**User stories**\n\n' + '\n'.join(stories) if stories else '']
@@ -235,9 +237,11 @@ def build_body(item, epics, sections, numbers, epic_numbers, repo):
         parts.append(section['body'])
     if item['commit']:
         source += f' Closed by {item["commit"]}.'
-    parts.append(f'---\n<sub>Imported from docs/user-stories-and-bugs.md. {source}</sub>')
-    body = '\n\n'.join(p for p in parts if p)
-    return link_references(rewrite_links(body, repo), numbers)
+    source = link_references(source, numbers)
+    body = link_references(rewrite_links('\n\n'.join(p for p in parts if p), repo), numbers)
+    # The old number goes in last, so it is not linked to the issue itself
+    where = '' if item['kind'] == 'epic' else f', where it is {item["id"]}'
+    return f'{body}\n\n---\n<sub>Imported from docs/user-stories-and-bugs.md{where}. {source}</sub>'
 
 
 def labels_for(item):
@@ -251,7 +255,15 @@ def labels_for(item):
         labels.append(table[code])
     if IN_PROGRESS.lower() in item['state'].lower():
         labels.append(IN_PROGRESS)
+    if item['kind'] == 'bug':
+        labels.append(found_by_label(item.get('found_by')))
     return labels
+
+
+def found_by_label(who):
+    if who not in FOUND_BY:
+        raise PlanError(f'"{who}" is not one of the found-by labels: {", ".join(FOUND_BY)}')
+    return f'Found by: {who}'
 
 
 def build_plan(plan_text, stories_text, repo, commit_time=git_commit_time):
@@ -261,6 +273,8 @@ def build_plan(plan_text, stories_text, repo, commit_time=git_commit_time):
     numbers = {i['id']: i['number'] for i in items if i['kind'] != 'epic'}
     epic_numbers = {i['epic']: i['number'] for i in items if i['kind'] == 'epic'}
     for item in items:
+        if item['kind'] == 'bug':
+            item['found_by'] = found_by(sections[item['id']]['body'])
         item['labels_full'] = labels_for(item)
         item['body'] = build_body(item, epics, sections, numbers, epic_numbers, repo)
         item['payload'] = {'issue': {
