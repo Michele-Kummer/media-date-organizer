@@ -1,6 +1,6 @@
 {
   "name": "michele-kummer",
-  "owner": { "name": "Michele Kummer" },
+  "owner": { "name": "SK | SkyOrbit" },
   "plugins": [
     { "name": "media-date-organizer", "source": "./" }
   ]
