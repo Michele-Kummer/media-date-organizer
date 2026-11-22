@@ -197,6 +197,23 @@ class PowerShellDryRunTests(unittest.TestCase):
         self.assertFalse((self.root / 'empty').exists())
         self.assertTrue((self.root / '_empty_folders' / 'empty').is_dir())
 
+    def test_cleanup_finds_paths_in_a_folder_given_by_its_short_name(self):
+        """A folder given by its Windows short name (RUNNER~1) gets the right
+        relative paths, and its empty folders move to the right place (#116)."""
+        import ctypes
+        root = self.root / 'A folder with a long name'
+        (root / 'empty').mkdir(parents=True)
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not ctypes.windll.kernel32.GetShortPathNameW(str(root), buffer, len(buffer)) or '~' not in buffer.value:
+            self.skipTest('this drive does not give folders short names')
+        args = [powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                str(SCRIPTS / 'Cleanup-Pictures.ps1'), '-Path', buffer.value]
+        r = subprocess.run(args, capture_output=True, text=True, timeout=120)
+        self.assertIn('WOULD MOVE EMPTY: empty -> ' + os.path.join('_empty_folders', 'empty'), r.stdout)
+        subprocess.run(args + ['-Apply'], capture_output=True, text=True, timeout=120)
+        self.assertFalse((root / 'empty').exists())
+        self.assertTrue((root / '_empty_folders' / 'empty').is_dir())
+
     def test_cleanup_reports_media_from_a_different_year(self):
         year = self.root / '2020'
         make_image(year / 'right.jpg', taken=datetime.datetime(2020, 5, 1, 10, 0, 0))

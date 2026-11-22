@@ -132,6 +132,19 @@ function Get-PixelDifference([string]$a, [string]$b) {
 }
 
 $root = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\')
+# A folder given by its short name (C:\Users\RUNNER~1\...) keeps that name in
+# $root, but Windows lists its files under their full names. Expand it, so the
+# relative paths cut from the files' full names below are right (#116).
+if ($root.Contains('~')) {
+    Add-Type -Namespace MediaDateOrganizer -Name NativePath -MemberDefinition @'
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern uint GetLongPathName(string shortPath, System.Text.StringBuilder longPath, uint size);
+'@
+    $long = [System.Text.StringBuilder]::new(32767)
+    if ([MediaDateOrganizer.NativePath]::GetLongPathName($root, $long, [uint32]$long.Capacity) -gt 0) {
+        $root = $long.ToString().TrimEnd('\')
+    }
+}
 # Same holding folders organize.py leaves alone (HOLDING_DIRS)
 $holding = '_ads', '_incomplete', '_no-image-data', '_empty_folders', '_junk', '_thumbnails', '_screenshots', '_converted'
 function Test-InHolding([string]$dir) {

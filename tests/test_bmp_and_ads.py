@@ -3,6 +3,7 @@ E:\\Pictures\\2023 are quarantined (US-30).
 Run with: py -m unittest discover tests -v"""
 
 import datetime
+import functools
 import os
 import pathlib
 import shutil
@@ -14,6 +15,25 @@ from PIL import Image
 
 from test_dry_run import SCRIPTS, powershell, snapshot
 from test_smoke import date_taken, make_image, names, organize, run
+
+
+@functools.lru_cache(maxsize=None)
+def windows_reads_webp():
+    """True when Windows can decode WebP, through the WebP Image Extension that
+    Windows 11 includes and Windows Server does not. Cleanup-Pictures.ps1 needs it
+    to compare a WebP with its JPG, and keeps the WebP when it is missing (#117)."""
+    if os.name != 'nt' or not powershell():
+        return False
+    with tempfile.TemporaryDirectory() as folder:
+        probe = pathlib.Path(folder) / 'probe.webp'
+        make_image(probe, fmt='WEBP')
+        script = ("Add-Type -AssemblyName PresentationCore; "
+                  f"$s = [IO.File]::OpenRead('{probe}'); "
+                  "try { [void][Windows.Media.Imaging.BitmapDecoder]::Create($s, 'None', 'OnLoad'); 'yes' } "
+                  "catch { 'no' } finally { $s.Dispose() }")
+        r = subprocess.run([powershell(), '-NoProfile', '-Command', script],
+                           capture_output=True, text=True, timeout=120)
+        return r.stdout.strip() == 'yes'
 
 
 class BmpTests(unittest.TestCase):
@@ -119,15 +139,25 @@ class CleanupConvertedTests(unittest.TestCase):
         before = snapshot(self.root)
         out = self.cleanup()
         self.assertEqual(snapshot(self.root), before, 'a preview must not move anything')
-        self.assertIn('WOULD MOVE (converted to saved.jpg): '
-                      + os.path.join('2021-05-04', 'saved.webp') + ' -> '
-                      + os.path.join('_converted', 'saved.webp'), out)
-        self.assertIn('Converted PNGs, BMPs and WebPs would be moved : 3', out)
+        if windows_reads_webp():
+            self.assertIn('WOULD MOVE (converted to saved.jpg): '
+                          + os.path.join('2021-05-04', 'saved.webp') + ' -> '
+                          + os.path.join('_converted', 'saved.webp'), out)
+            self.assertIn('Converted PNGs, BMPs and WebPs would be moved : 3', out)
+        else:
+            # Without a WebP decoder the WebP cannot be compared, so it is kept, not moved
+            self.assertIn('KEPT (not the same picture, cannot read picture size): ', out)
+            self.assertIn('Converted PNGs, BMPs and WebPs would be moved : 2', out)
 
         out = self.cleanup('-Apply')
-        self.assertEqual(names(self.day), ['saved.jpg', 'scan.jpg', 'shot.jpg'])
-        self.assertEqual(names(self.converted), ['saved.webp', 'scan.bmp', 'shot.png'])
-        self.assertIn('Converted PNGs, BMPs and WebPs moved : 3', out)
+        if windows_reads_webp():
+            self.assertEqual(names(self.day), ['saved.jpg', 'scan.jpg', 'shot.jpg'])
+            self.assertEqual(names(self.converted), ['saved.webp', 'scan.bmp', 'shot.png'])
+            self.assertIn('Converted PNGs, BMPs and WebPs moved : 3', out)
+        else:
+            self.assertEqual(names(self.day), ['saved.jpg', 'saved.webp', 'scan.jpg', 'shot.jpg'])
+            self.assertEqual(names(self.converted), ['scan.bmp', 'shot.png'])
+            self.assertIn('Converted PNGs, BMPs and WebPs moved : 2', out)
 
     def test_a_webp_whose_jpg_differs_is_kept(self):
         make_image(self.day / 'saved.webp', fmt='WEBP')
