@@ -17,6 +17,8 @@ Separately: [before](docs/screenshots/All/Before_All.jpg) and [after](docs/scree
 
 </details>
 
+**How the work is tracked:** the requirements, user stories and bugs are on the [project board](https://github.com/users/Michele-Kummer/projects/1) and in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues), each with the date it was opened and closed.
+
 ## Why it's useful
 
 Missing dates are rarely just missing. They come from a handful of everyday problems, and this tool handles each one:
