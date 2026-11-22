@@ -1,6 +1,7 @@
 name: User story
 description: A requirement, written from the point of view of the person it is for.
 labels: ["user story"]
+type: Feature
 body:
   - type: markdown
     attributes:

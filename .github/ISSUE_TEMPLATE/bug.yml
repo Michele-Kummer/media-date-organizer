@@ -1,6 +1,7 @@
 name: Bug
 description: Something that gives a wrong result, stops, or loses a file.
 labels: ["bug"]
+type: Bug
 body:
   - type: markdown
     attributes:

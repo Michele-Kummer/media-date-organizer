@@ -27,6 +27,7 @@ class IssueFormTests(unittest.TestCase):
     def test_story_form(self):
         text = read('story.yml')
         self.assertIn('labels: ["user story"]', text)
+        self.assertIn('\ntype: Feature\n', text)
         self.assertNotIn('title:', text)
         self.assertEqual(options(text, 'priority'), list(gi.PRIORITY.values()))
         self.assertEqual(options(text, 'persona'), ['Media owner', 'Photo owner', 'Maintainer'])
@@ -36,6 +37,7 @@ class IssueFormTests(unittest.TestCase):
     def test_bug_form(self):
         text = read('bug.yml')
         self.assertIn('labels: ["bug"]', text)
+        self.assertIn('\ntype: Bug\n', text)
         self.assertNotIn('title:', text)
         self.assertEqual([o.split(' (')[0] for o in options(text, 'severity')], list(gi.SEVERITY.values()))
         self.assertEqual(options(text, 'found_by'), list(gi.FOUND_BY))

@@ -26,7 +26,7 @@ PLAN = """# GitHub import order
 | # | Opened | Closed | Issue | Epic | Labels | State |
 |---|---|---|---|---|---|---|
 | 3 | 2026-10-06 09:02 | 2026-10-06 10:56 (`aaaaaaa`) | US-01 Install the plugin | Setup | P1 | Closed |
-| 4 | 2026-10-06 09:03 | | US-02 Flatten folders | Organize | P2 | Open, In progress |
+| 4 | 2026-10-06 09:03 | | US-02 Flatten: Flatten folders | Organize | P2 | Open, In progress |
 | 5 | 2026-10-06 09:04 | 2026-10-07 14:00 (`bbbbbbb`) | BUG-01 Flatten lost a file | | P1, S1 | Closed |
 | 6 | 2026-11-03 09:00 | | US-03 Keep named folders | Organize | P3 | Open |
 | 7 | 2026-11-03 09:01 | | BUG-02 Slow on big folders | | P3, S3 | Open |
@@ -161,10 +161,10 @@ class BodyTests(unittest.TestCase):
         self.assertIn('Imported from docs/user-stories-and-bugs.md, where it is US-01. Built 2026-10-06. '
                       'Closed by aaaaaaa.', body)
 
-    def test_titles_leave_out_the_old_numbers(self):
+    def test_titles_leave_out_the_old_numbers_and_keep_the_area(self):
         titles = [i['title'] for i in plan()]
         self.assertEqual(titles, ['Epic: Setup and getting started', 'Epic: Organize folders', 'Install the plugin',
-                                  'Flatten folders', 'Flatten lost a file', 'Keep named folders',
+                                  'Flatten: Flatten folders', 'Flatten lost a file', 'Keep named folders',
                                   'Slow on big folders'])
 
     def test_not_started_story_says_asked_for(self):
@@ -188,7 +188,7 @@ class BodyTests(unittest.TestCase):
     def test_epic_body_lists_its_stories(self):
         body = {i['id']: i for i in plan()}['Organize folders']['body']
         self.assertIn('Tidy the folders.', body)
-        self.assertIn('- #4 Flatten folders\n- #6 Keep named folders', body)
+        self.assertIn('- #4 Flatten: Flatten folders\n- #6 Keep named folders', body)
 
 
 class FakeGitHub:
@@ -198,6 +198,7 @@ class FakeGitHub:
         self.issues = dict(existing or {})
         self.labels = {'bug'}
         self.created_labels, self.imported, self.links = [], [], []
+        self.types = {}
         self.pending = {}
         self.skip_number = skip_number
 
@@ -229,6 +230,9 @@ class FakeGitHub:
     def sub_issue_numbers(self, number):
         return {child - 1000 for parent, child in self.links if parent == number}
 
+    def set_type(self, number, issue_type):
+        self.types[number] = issue_type
+
     def add_sub_issue(self, parent, child_id):
         self.links.append((parent, child_id))
 
@@ -250,6 +254,7 @@ class ApplyTests(unittest.TestCase):
         self.assertNotIn('bug', github.created_labels)
         self.assertNotIn('S4: Trivial', github.created_labels)
         self.assertEqual(sorted(github.links), [(1, 1003), (2, 1004), (2, 1006)])
+        self.assertEqual(github.types, {3: 'Feature', 4: 'Feature', 5: 'Bug', 6: 'Feature', 7: 'Bug'})
 
     def test_a_rerun_skips_what_is_already_there(self):
         items = plan()

@@ -35,6 +35,7 @@ IMPORT_ACCEPT = 'application/vnd.github.golden-comet-preview+json'
 PRIORITY = {'P1': 'P1: Critical', 'P2': 'P2: High', 'P3': 'P3: Medium', 'P4': 'P4: Low'}
 SEVERITY = {'S1': 'S1: Blocker', 'S2': 'S2: Major', 'S3': 'S3: Minor', 'S4': 'S4: Trivial'}
 IN_PROGRESS = 'In progress'
+ISSUE_TYPES = {'story': 'Feature', 'bug': 'Bug'}   # GitHub issue types, so the type filters work
 FOUND_BY = ('Michele Kummer', 'Claude', 'Automated tests')
 
 # The Epic column in the plan uses short names
@@ -211,13 +212,14 @@ def found_by(body):
     return match.group(1).strip() if match else None
 
 
-def build_body(item, epics, sections, numbers, epic_numbers, repo):
+def build_body(item, epics, sections, numbers, epic_numbers, repo, titles=None):
     when = item['opened'].strftime('%Y-%m-%d')
+    titles = titles or {}
     if item['kind'] == 'epic':
         text = epics.get(item['epic'])
         if text is None:
             raise PlanError(f'Epic "{item["epic"]}" is not in the stories file')
-        stories = [f'- #{number} {sections[sid]["title"]}'
+        stories = [f'- #{number} {titles.get(sid, sections[sid]["title"])}'
                    for sid, number in sorted(numbers.items(), key=lambda kv: kv[1])
                    if sid in sections and sections[sid]['epic'] == item['epic']]
         parts = [text, '**User stories**\n\n' + '\n'.join(stories) if stories else '']
@@ -272,11 +274,13 @@ def build_plan(plan_text, stories_text, repo, commit_time=git_commit_time):
     validate(items, sections)
     numbers = {i['id']: i['number'] for i in items if i['kind'] != 'epic'}
     epic_numbers = {i['epic']: i['number'] for i in items if i['kind'] == 'epic'}
+    titles = {i['id']: i['title'] for i in items if i['kind'] != 'epic'}
     for item in items:
         if item['kind'] == 'bug':
             item['found_by'] = found_by(sections[item['id']]['body'])
         item['labels_full'] = labels_for(item)
-        item['body'] = build_body(item, epics, sections, numbers, epic_numbers, repo)
+        item['issue_type'] = ISSUE_TYPES.get(item['kind'])
+        item['body'] = build_body(item, epics, sections, numbers, epic_numbers, repo, titles)
         item['payload'] = {'issue': {
             'title': item['title'], 'body': item['body'], 'created_at': iso(item['opened']),
             'closed': item['state'] == 'Closed', 'labels': item['labels_full']}}
@@ -373,6 +377,9 @@ class GitHub:
         return {entry['number'] for entry in self.api(f'repos/{{repo}}/issues/{number}/sub_issues?per_page=100',
                                                       paginate=True) or []}
 
+    def set_type(self, number, issue_type):
+        self.api(f'repos/{{repo}}/issues/{number}', 'PATCH', {'type': issue_type})
+
     def add_sub_issue(self, parent, child_id):
         self.api(f'repos/{{repo}}/issues/{parent}/sub_issues', 'POST', {'sub_issue_id': child_id})
 
@@ -436,6 +443,9 @@ def apply(items, github, log=print, sleep=time.sleep, limit=None):
             log(f'ALREADY THERE #{item["number"]} {item["title"]}')
             continue
         import_issue(github, item, sleep=sleep, log=log)
+        if item['issue_type']:
+            # The Import API cannot set an issue type, so it is set straight after
+            github.set_type(item['number'], item['issue_type'])
     epic_numbers = {i['epic']: i['number'] for i in items if i['kind'] == 'epic'}
     linked = {number: github.sub_issue_numbers(number) for number in epic_numbers.values()}
     for item in items:
