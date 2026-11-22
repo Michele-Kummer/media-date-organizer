@@ -34,7 +34,7 @@ This document records the requirements for **media-date-organizer** as user stor
 - **Updated 2026-11-20:** Michele Kummer asked for screenshots and backup thumbnails to be sorted out of the photos into groups of their own, in an optional step that deletes nothing, recognised by the formats Claude knows of (US-60, built the same day). While building it, Claude found that writing a date into a PNG, or converting a PNG to JPEG, dropped its XMP, and with it the tag that marks an iPhone screenshot (BUG-40, fixed the same day).
 - **Updated 2026-11-20:** Michele Kummer found that `1000000714.jpg` in `E:\Pictures\2024`, a phone gallery thumbnail, was not set aside by `--move-thumbnails`. Claude found that Android 11 and later number media from 1000000000, so the name has 10 digits, while the step only accepted 1 to 7 (BUG-41, fixed the same day).
 - **Updated 2026-11-21:** Michele Kummer asked for the text in screenshots to be read with OCR (US-61), and for screenshots to be grouped into categories, taken in a set order so that one that fits more than one goes into the first (US-62).
-- **Updated 2026-11-22:** Michele Kummer chose to track stories and bugs in GitHub Issues instead of this file, in an order that reads as if they had been kept there from the start, with each issue's real opened and closed dates (US-63).
+- **Updated 2026-11-22:** Michele Kummer chose to track stories and bugs in GitHub Issues instead of this file, in an order that reads as if they had been kept there from the start, with each issue's real opened and closed dates (US-63). From then on, new stories and bugs are tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues), and this file is kept as the record of how the requirements were gathered.
 
 **Status** on each story is *Done* when every criterion holds, *Partly done* when some do not, with the gap named, or *Not started* when it is a requirement not yet built.
 
@@ -53,7 +53,7 @@ Each bug says what it **Affects**: photos, videos, both, or something other than
 | | Count |
 |---|---|
 | Epics | 8 |
-| User stories | 63 (39 Done, 3 Partly done, 21 Not started) |
+| User stories | 63 (40 Done, 2 Partly done, 21 Not started) |
 | Bugs | 41 (3 open, 38 resolved) |
 
 | Bugs found by | Open | Resolved | Total |
@@ -689,7 +689,7 @@ As a maintainer, I want every epic, user story and bug in GitHub Issues with the
 - It previews by default and changes nothing unless `--apply` is given. Run again, it skips issues already imported, and it stops if GitHub gives an issue a number other than the one planned.
 - `tests/test_import_github_issues.py` covers it without contacting GitHub.
 
-**Status:** Partly done. The script is written, but the issues are not imported yet.
+**Status:** Done. Built in `38a0e23` and run on 2026-11-22, which created issues #1 to #112.
 
 </details>
 

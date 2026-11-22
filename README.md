@@ -283,7 +283,7 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 
 ## Project documents
 
-- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 63 user stories in 8 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked. They are moving to [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues), where `py scripts/import_github_issues.py` creates each one with the dates it really opened and closed (US-63). It previews first, and creates the issues only with `--apply`.
+- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 63 user stories in 8 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked. Since 2026-11-22 they are tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues). `py scripts/import_github_issues.py` created each one there with the dates it really opened and closed (US-63). It previews first, and creates issues only with `--apply`.
 - **[Case study](docs/case-study.md):** how the approach changed on the first real folder, when a "blank Date Taken" problem turned out to be files with the wrong extension.
 - **[Example audit workbook](docs/example-audit.xlsx):** what the Excel audit trail looks like.
 - **[Command cheatsheet](docs/project-cheatsheet.md):** every command, ready to copy.
