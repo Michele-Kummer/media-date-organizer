@@ -272,20 +272,25 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 ```
 .
 ├── .claude-plugin/              Plugin manifest and marketplace entry
+├── .github/                     Issue forms, contributing guide, security policy and code of conduct
 ├── commands/                    Slash commands: fix-media-dates, flatten-media, move-thumbnails, sort-pictures, report-opposite-type, media-help
 ├── skills/media-date-organizer/ Main skill: organize.py and the cleanup script
 ├── skills/final-check-report/   Skill: what is left after organizing
 ├── skills/find-duplicates/      Skill: identical and likely duplicate files
 ├── scripts/                     Project scripts: import the user stories and bugs into GitHub Issues
 ├── tests/                       Automated tests
-├── docs/                        Case study, user stories and bugs, screenshots, example audit
+├── docs/                        Case study, user stories and bugs, accessibility statement, screenshots, example audit
 ├── sample-data/                 Generator for a before and after sample folder
 └── _review/                     Files set aside, not deleted: the retired Fix-Extensions.ps1
 ```
 
 ## Project documents
 
-- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 63 user stories in 8 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked. Since 2026-11-22 they are tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues). `py scripts/import_github_issues.py` created each one there with the dates it really opened and closed (US-63). It previews first, and creates issues only with `--apply`. New ones use the **User story** and **Bug** forms in [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE), which follow the same layout, and each bug has a `Found by` label. Stories have the **Feature** issue type and bugs the **Bug** type, and every issue is on the [project board](https://github.com/users/Michele-Kummer/projects/1) with its status, priority and severity.
+- **[User stories and bugs](docs/user-stories-and-bugs.md):** the project's requirements, written as 63 user stories in 8 epics, each with acceptance criteria and a status. Also every known bug, open and resolved, with severity, who found it and the commit that fixed it. It's a worked example of how the requirements were gathered and tracked. Since 2026-11-22 they are tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues). `py scripts/import_github_issues.py` created each one there with the dates it really opened and closed (US-63). It previews first, and creates issues only with `--apply`. New ones use the **User story**, **Bug** and **Task** forms in [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE), which follow the same layout, and each bug has a `Found by` label. Stories have the **Feature** issue type and bugs the **Bug** type, and every issue is on the [project board](https://github.com/users/Michele-Kummer/projects/1) with its status, priority and severity.
+- **[Contributing guide](.github/CONTRIBUTING.md):** how to report a bug or ask for a feature, how the issues are organised, how to run the tests, the rules every change follows, and how to make a change through a pull request.
+- **[Security policy](.github/SECURITY.md):** what counts as a security problem and how to report one privately.
+- **[Code of conduct](.github/CODE_OF_CONDUCT.md):** the Contributor Covenant 2.1.
+- **[Accessibility statement](docs/accessibility.md):** how accessible the tool and its docs are, the known limits, and how to report a problem.
 - **[Case study](docs/case-study.md):** how the approach changed on the first real folder, when a "blank Date Taken" problem turned out to be files with the wrong extension.
 - **[Example audit workbook](docs/example-audit.xlsx):** what the Excel audit trail looks like.
 - **[Command cheatsheet](docs/project-cheatsheet.md):** every command, ready to copy.
