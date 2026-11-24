@@ -245,7 +245,7 @@ The order under [Recommended order](#recommended-order) is the one that gives th
 - **Converting a PNG keeps its XMP only with Pillow 11 or later.** With an older Pillow, the iPhone's Screenshot tag is not carried into the JPEG.
 - **Duplicates are only reported.** Nothing is moved or deleted by the duplicate and compare steps; deciding which copy to keep is yours.
 - **The audit workbook must be closed.** If it is open in Excel, the run can't be recorded in it.
-- **Known open bugs.** One unreadable file can stop a step part way ([#57](https://github.com/Michele-Kummer/media-date-organizer/issues/57)). HEIF and AVIF photos are read as MP4 video, so fix extensions leaves them alone ([#59](https://github.com/Michele-Kummer/media-date-organizer/issues/59)). Setting incomplete files aside is slow on large folders ([#103](https://github.com/Michele-Kummer/media-date-organizer/issues/103)). See every [open bug](https://github.com/Michele-Kummer/media-date-organizer/issues?q=is%3Aissue%20is%3Aopen%20label%3Abug) in GitHub Issues.
+- **Known open bugs.** HEIF and AVIF photos are read as MP4 video, so fix extensions leaves them alone ([#59](https://github.com/Michele-Kummer/media-date-organizer/issues/59)). Setting incomplete files aside is slow on large folders ([#103](https://github.com/Michele-Kummer/media-date-organizer/issues/103)). See every [open bug](https://github.com/Michele-Kummer/media-date-organizer/issues?q=is%3Aissue%20is%3Aopen%20label%3Abug) in GitHub Issues.
 
 ## Guardrails
 
