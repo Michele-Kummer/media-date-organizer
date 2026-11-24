@@ -354,6 +354,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import traceback
 from collections import Counter
 from typing import Optional
 
@@ -947,9 +948,10 @@ def scan(root: str) -> list:
     to a sibling folder named for its date: Trip/2019-08-30/x.jpg taken on
     the 31st goes to Trip/2019-08-31. A file loose in root is never moved out
     of it; one whose date differs from a dated root is listed as
-    'in-root-date-differs'."""
+    'in-root-date-differs'. One that cannot be read (locked, or too large
+    to read whole) is reported and listed as 'read-failed', and left alone."""
     rows = []
-    for _label, name, full, ftype, folders in _iter_media_deep(root):
+    for label, name, full, ftype, folders in _iter_media_deep(root):
         parts = folders[-2::-1]            # path from root, root's own name left off
         folder = '/'.join(parts) or '.'
         folder_dt = _folder_name_date(folders[0])
@@ -961,7 +963,16 @@ def scan(root: str) -> list:
                          'detected_type': kind.upper(), 'date_taken': '',
                          'target_folder': folder, 'new_name': name, 'action': 'not-media'})
             continue
-        meta = read_metadata(full, ftype)
+        try:
+            meta = read_metadata(full, ftype)
+        except (OSError, MemoryError) as e:
+            # Locked by another program, or too large to read whole: listed
+            # in the plan and left alone, and the scan goes on
+            print(f"FAILED to read {label}: {str(e) or type(e).__name__}", file=sys.stderr)
+            rows.append({'current_folder': folder, 'current_name': name,
+                         'detected_type': (ftype or '').lstrip('.').upper(), 'date_taken': '',
+                         'target_folder': folder, 'new_name': name, 'action': 'read-failed'})
+            continue
         dt = meta['date_taken']
         # The name is kept as it is: a _YYYY-MM-DD ending is never stripped,
         # and the extension is --fix-extensions's business
@@ -1427,7 +1438,7 @@ def fill_blanks(root: str, dry_run: bool = False) -> dict:
             meta = read_metadata(full, ftype)
         except (OSError, MemoryError) as e:
             counts['read-failed'] += 1
-            print(f"FAILED to read {label}: {e or type(e).__name__}", file=sys.stderr)
+            print(f"FAILED to read {label}: {str(e) or type(e).__name__}", file=sys.stderr)
             continue
         if meta['date_taken'] is not None:
             counts['already-dated'] += 1
@@ -1539,7 +1550,7 @@ def _same_picture(original: str, jpeg: str) -> Optional[str]:
                 return f"sizes differ, {a.width}x{a.height} vs {b.width}x{b.height}"
             diff = _pixel_difference(a, b)
     except (OSError, SyntaxError, ValueError) as e:
-        return f"cannot read the JPEG: {e or type(e).__name__}"
+        return f"cannot read the JPEG: {str(e) or type(e).__name__}"
     if diff > CONVERT_MAX_PIXEL_DIFFERENCE:
         return f"pixel difference {diff:.1f}%"
     return None
@@ -1635,7 +1646,7 @@ def _convert_to_jpeg(root: str, ext: str, dry_run: bool) -> dict:
                 # Not a picture despite the name (a macOS "._" sidecar, a
                 # truncated download): report it and carry on with the rest
                 counts['read-failed'] += 1
-                print(f"FAILED to convert {os.path.relpath(p, root)}: {e or type(e).__name__}", file=sys.stderr)
+                print(f"FAILED to convert {os.path.relpath(p, root)}: {str(e) or type(e).__name__}", file=sys.stderr)
                 if not dry_run and os.path.exists(new):
                     # A half-written JPEG would pass for a finished conversion
                     os.remove(new)
@@ -1753,7 +1764,13 @@ def sync_timestamps(root: str, dry_run: bool = False) -> dict:
     and change nothing."""
     counts = Counter()
     for label, name, full, ftype, _folders in _iter_media_deep(root):
-        meta = read_metadata(full, ftype)
+        try:
+            meta = read_metadata(full, ftype)
+        except (OSError, MemoryError) as e:
+            # Locked by another program, or too large to read whole
+            counts['read-failed'] += 1
+            print(f"FAILED to read {label}: {str(e) or type(e).__name__}", file=sys.stderr)
+            continue
         if meta['date_taken'] is None:
             counts['no-date-taken'] += 1
             continue
@@ -3163,6 +3180,7 @@ def write_xlsx(root: str, plan: list, output: str) -> None:
     ws.append(['Keep in place', sum(1 for r in plan if r['action'] == 'keep')])
     ws.append(['Move to date-matched folder', sum(1 for r in plan if r['action'] == 'move')])
     ws.append(['Blank Date Taken (would fill)', sum(1 for r in plan if r['action'] == 'fill-blank')])
+    ws.append(['Could not be read', sum(1 for r in plan if r['action'] == 'read-failed')])
     style(ws, 2, [44, 10])
 
     ws2 = wb.create_sheet('Plan', 1)
@@ -3467,6 +3485,7 @@ def main(argv=None):
     # A phase that only reports runs the same either way
     dry = {p: not args.apply and p not in REPORT_PHASES for p in phases}
     results = []
+    stopped = None
     for phase in phases:
         key = phase + '_dry_run' if dry[phase] else phase
         if len(phases) > 1:
@@ -3477,15 +3496,30 @@ def main(argv=None):
         sys.stderr, sys.stdout = tee, out
         try:
             counts = _run_phase(phase, args)
+        except Exception as e:
+            # Still record this step and the ones before it in the audit
+            # workbook, and run no more steps on a folder in an unknown state
+            traceback.print_exc()
+            print(f"FAILED: {key} stopped with {type(e).__name__}: {e}", file=sys.stderr)
+            counts = {'step-failed': 1}
+            stopped = phase
         finally:
             sys.stderr, sys.stdout = tee.stream, out.stream
         print(json.dumps({key: counts}, indent=2))
         results.append((key, counts, tee.lines(), log))
+        if stopped:
+            break
     if len(phases) > 1:
         _print_summary(results)
     append_audit_log(out_xlsx, started,
                      [(phase, dry[phase], counts, log)
                       for phase, (_key, counts, _issues, log) in zip(phases, results)])
+    if stopped:
+        skipped = phases[phases.index(stopped) + 1:]
+        if skipped:
+            print(f"\nNOTE: {stopped} failed, so these steps were not run: {', '.join(skipped)}.",
+                  file=sys.stderr)
+        return 1
     if any(dry.values()):
         print("\nDRY RUN: nothing was changed. Run the same command again with --apply to make these changes.")
         if len([p for p in phases if dry[p]]) > 1:
