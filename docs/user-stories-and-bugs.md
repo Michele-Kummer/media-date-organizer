@@ -2,6 +2,8 @@
 
 This document records the requirements for **media-date-organizer** as user stories grouped into epics, followed by every known bug, open and resolved, and who found each one. It is meant as a worked example of how requirements were generated for this project.
 
+> **This file is a frozen record.** On 2026-11-22 every story and bug in it moved to [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues), and each issue says which US or BUG number it was. Statuses and counts here are as they stood on that date and are no longer updated. Current work, including stories and bugs added since, is tracked in Issues and on the [project board](https://github.com/users/Michele-Kummer/projects/1).
+
 **How it was made (2026-10-21)**
 
 - **User stories:** written with Claude Code (Claude Opus 5.5) by reading the plugin's code, docs and git history. Each story's acceptance criteria describe how the plugin behaves today.
