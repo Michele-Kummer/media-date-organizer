@@ -684,7 +684,7 @@ As a maintainer, I want every epic, user story and bug in GitHub Issues with the
 - `scripts/import_github_issues.py` takes the order, dates and labels from `docs/github-import-order.md`, a local plan that is not pushed, and the text of each issue from this file.
 - Epics come first, then stories and bugs mixed by date, with the Desktop app epic on the day it was asked for. Titles leave out the US and BUG numbers, which go in each issue's footer instead ("where it is US-04"), and US and BUG numbers in the text link to their issues.
 - It uses GitHub's Issue Import API, so each issue opens on the date it was built, asked for or found, and closes at the time of the commit that built or fixed it. Open issues have no closed date.
-- Labels: `epic`, `user story` or `bug`; the epic's name on the epic and its stories; `P1: Critical` to `P4: Low`; `S1: Blocker` to `S3: Minor` on bugs; and `In progress` on Partly done stories. Missing labels are created.
+- Labels: `epic`, `user story` or `bug`; `P1: Critical` to `P4: Low`; and `S1: Blocker` to `S3: Minor` on bugs. Missing labels are created. Epics are found through sub-issues, and progress through the project board's Status, so there are no epic-name or `In progress` labels.
 - Each story is linked to its epic as a sub-issue.
 - It previews by default and changes nothing unless `--apply` is given. Run again, it skips issues already imported, and it stops if GitHub gives an issue a number other than the one planned.
 - `tests/test_import_github_issues.py` covers it without contacting GitHub.
