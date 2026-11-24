@@ -1,5 +1,7 @@
 # media-date-organizer
 
+[![Tests](https://github.com/Michele-Kummer/media-date-organizer/actions/workflows/tests.yml/badge.svg)](https://github.com/Michele-Kummer/media-date-organizer/actions/workflows/tests.yml)
+
 **Fixes the dates on your photos and videos so they sort correctly in Windows.**
 
 Photos copied from phones, cameras and apps often show a blank or wrong **Date Taken** in Windows Explorer. As a result, they sort by the day they were copied, not the day they were taken. media-date-organizer finds each file's real date, writes it in where it's missing, and files every photo and video in a folder named for that date. It runs as a [Claude Code](https://docs.anthropic.com/claude/docs/claude-code) plugin, so you can ask for things in plain English. It is also a standalone Python command-line tool.

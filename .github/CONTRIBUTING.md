@@ -35,7 +35,7 @@ All work is tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-d
 py -m unittest discover tests -v
 ```
 
-The tests make their own photos and videos in temporary folders, so they never need real ones. Run them before every pull request.
+The tests make their own photos and videos in temporary folders, so they never need real ones. Run them before every pull request. GitHub also runs them on Windows, with Python 3.9 and 3.12, for every push and pull request, and the badge at the top of the README shows the latest result.
 
 ## Rules for changes
 
