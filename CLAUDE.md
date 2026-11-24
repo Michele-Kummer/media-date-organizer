@@ -21,6 +21,7 @@ media-date-organizer makes sure every photo and video in a folder has a readable
 | `sample-data/generate.py` | Builds a synthetic `Before` and `After` library in `sample-data/Sample_Pictures` (git-ignored). |
 | `scripts/import_github_issues.py` | One-off importer of stories and bugs into GitHub Issues (previews unless `--apply`). |
 | `scripts/close_finished_epics.py` | Closes an issue's epic once all its stories and bugs are closed. Run by `.github/workflows/close-epics.yml` each time an issue closes (previews unless `--apply`). |
+| `scripts/close_finished_stories.py` | Closes each user story whose **Status:** line was waiting only on issues now closed as completed, sets that line to `**Status:** Done`, and checks the story's epic. Run by the same workflow (previews unless `--apply`). |
 | `docs/` | Cheat sheet, case study, screenshots, example audit, and `user-stories-and-bugs.md`. |
 | `_review/` | Retired scripts kept aside (git-ignored). `Fix-Extensions.ps1` was replaced by `organize.py --fix-extensions`. |
 
