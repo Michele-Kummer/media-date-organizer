@@ -18,6 +18,11 @@ _spec = importlib.util.spec_from_file_location('generate', GENERATE)
 generate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(generate)
 
+# Without ExifTool the video whose date is only in its name gets no Media
+# Created, so it is rightly left in its day folder instead of flattened
+EXIFTOOL = generate.organize._find_exiftool()
+UNDATED_VIDEO = 'vid_20240704_201500.mp4'
+
 
 class SampleDataTests(unittest.TestCase):
 
@@ -58,7 +63,11 @@ class SampleDataTests(unittest.TestCase):
         for year in ('2023', '2024'):
             days = [d.name for d in (self.after / year).iterdir()
                     if d.is_dir() and not d.name.startswith('_')]
-            self.assertEqual(days, [], f'{year} should have no day folders left')
+            if year == '2024' and not EXIFTOOL:
+                self.assertEqual(days, ['2024-07-04'], self.log)
+                self.assertEqual(names(self.after / year / '2024-07-04'), [UNDATED_VIDEO], self.log)
+                continue
+            self.assertEqual(days, [], f'{year} should have no day folders left\n{self.log}')
         self.assertEqual([n for n in names(self.after / '2023') if n.endswith('.jpg')], ['cake.jpg', 'party.jpg'])
         # Filed under the import date, taken on New Year's Day: still in 2024
         self.assertIn('img_0412.jpg', names(self.after / '2024'))
@@ -71,7 +80,12 @@ class SampleDataTests(unittest.TestCase):
         self.assertEqual(names(self.after / '2024' / '_thumbnails'), ['46.jpg', '47.jpg'])
         self.assertEqual(names(self.after / '2024' / '_incomplete'), ['img_0420_2024-01-15.jpg'])
         # Emptied day folders are moved aside, not deleted
-        self.assertIn('2024-07-04', names(self.after / '2024' / '_empty_folders'))
+        emptied = names(self.after / '2024' / '_empty_folders')
+        if EXIFTOOL:
+            self.assertIn('2024-07-04', emptied, self.log)
+        else:
+            self.assertNotIn('2024-07-04', emptied, 'still holds the undated video')
+        self.assertIn('2024-01-15', emptied, self.log)
 
     def test_comparison_lists_both_folders(self):
         text = generate.comparison(self.before, self.after)
