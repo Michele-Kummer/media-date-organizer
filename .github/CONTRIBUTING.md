@@ -54,4 +54,4 @@ These keep the tool safe to run on a real photo library:
 2. Create a branch from `main`.
 3. Make the change, with its tests and docs, and run the tests.
 4. Write commit messages as a short summary in the imperative ("Skip hidden folders when flattening"), with more detail below it if needed.
-5. Open a pull request. Write `Fixes #<issue number>` in its description, so merging it closes the issue and the project board moves it to Done.
+5. Open a pull request and fill in the template. Write `Fixes #<issue number>` for a bug or `Closes #<issue number>` for a user story, so merging it closes the issue and the project board moves it to Done. Use `Part of #<issue number>` when a story needs more pull requests after this one.
