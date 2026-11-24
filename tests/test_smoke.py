@@ -393,7 +393,9 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('created only (edited)', out)
         for p in (plain, edited, in_root, deep):
-            self.assertEqual(datetime.datetime.fromtimestamp(os.stat(p).st_birthtime), taken)
+            # st_birthtime is only on Windows from Python 3.12; st_ctime is Date Created before that (#117)
+            st = os.stat(p)
+            self.assertEqual(datetime.datetime.fromtimestamp(getattr(st, 'st_birthtime', st.st_ctime)), taken)
         for p in (plain, in_root, deep):
             self.assertEqual(datetime.datetime.fromtimestamp(os.stat(p).st_mtime), taken)
         self.assertEqual(os.stat(edited).st_mtime, modified)
