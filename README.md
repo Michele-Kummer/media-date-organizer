@@ -274,14 +274,14 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 ```
 .
 ├── .claude-plugin/              Plugin manifest and marketplace entry
-├── .github/                     Issue forms, contributing guide, security policy and code of conduct
+├── .github/                     Issue forms, contributing guide, security policy, accessibility statement, and code of conduct
 ├── commands/                    Slash commands: fix-media-dates, flatten-media, move-thumbnails, sort-pictures, report-opposite-type, media-help
 ├── skills/media-date-organizer/ Main skill: organize.py and the cleanup script
 ├── skills/final-check-report/   Skill: what is left after organizing
 ├── skills/find-duplicates/      Skill: identical and likely duplicate files
 ├── scripts/                     Project scripts: import the user stories and bugs into GitHub Issues
 ├── tests/                       Automated tests
-├── docs/                        Case study, user stories and bugs, accessibility statement, screenshots, example audit
+├── docs/                        Case study, user stories and bugs, screenshots, example audit
 ├── sample-data/                 Generator for a before and after sample folder
 └── _review/                     Files set aside, not deleted: the retired Fix-Extensions.ps1
 ```
@@ -292,7 +292,7 @@ The full reference, with every flag, rule and edge case, is in the skill guide: 
 - **[Contributing guide](.github/CONTRIBUTING.md):** how to report a bug or ask for a feature, how the issues are organised, how to run the tests, the rules every change follows, and how to make a change through a pull request.
 - **[Security policy](.github/SECURITY.md):** what counts as a security problem and how to report one privately.
 - **[Code of conduct](.github/CODE_OF_CONDUCT.md):** the Contributor Covenant 2.1.
-- **[Accessibility statement](docs/accessibility.md):** how accessible the tool and its docs are, the known limits, and how to report a problem.
+- **[Accessibility statement](.github/ACCESSIBILITY.md):** how accessible the tool and its docs are, the known limits, and how to report a problem.
 - **[Case study](docs/case-study.md):** how the approach changed on the first real folder, when a "blank Date Taken" problem turned out to be files with the wrong extension.
 - **[Example audit workbook](docs/example-audit.xlsx):** what the Excel audit trail looks like.
 - **[Command cheatsheet](docs/project-cheatsheet.md):** every command, ready to copy.

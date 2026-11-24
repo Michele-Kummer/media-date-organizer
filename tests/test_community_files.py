@@ -7,7 +7,7 @@ import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FILES = ['.github/SECURITY.md', '.github/CONTRIBUTING.md', '.github/CODE_OF_CONDUCT.md', 'docs/accessibility.md']
+FILES = ['.github/SECURITY.md', '.github/CONTRIBUTING.md', '.github/CODE_OF_CONDUCT.md', '.github/ACCESSIBILITY.md']
 
 
 class CommunityFileTests(unittest.TestCase):
