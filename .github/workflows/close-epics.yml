@@ -1,6 +1,7 @@
-name: Close finished epics
+name: Close finished epics and stories
 
-# When an issue is closed, close its epic if every story and bug under the epic is closed.
+# When an issue is closed, close its epic if every story and bug under the epic is closed,
+# and close each user story whose Status line was waiting only on closed issues.
 # Run it by hand from the Actions tab to preview what it would do for one issue.
 
 on:
@@ -19,7 +20,7 @@ permissions:
 
 jobs:
   close:
-    name: Close the epic if it is finished
+    name: Close the epic and stories if they are finished
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,3 +31,10 @@ jobs:
           ISSUE: ${{ github.event.issue.number || inputs.issue }}
           APPLY: ${{ github.event_name == 'issues' && '--apply' || '' }}
         run: python3 scripts/close_finished_epics.py --repo "$REPO" --issue "$ISSUE" $APPLY
+      - name: Check the stories waiting on this issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          APPLY: ${{ github.event_name == 'issues' && '--apply' || '' }}
+        run: python3 scripts/close_finished_stories.py --repo "$REPO" --issue "$ISSUE" $APPLY

@@ -17,7 +17,7 @@ For a security problem, don't open an issue. Follow the [security policy](SECURI
 
 All work is tracked in [GitHub Issues](https://github.com/Michele-Kummer/media-date-organizer/issues) and on the [project board](https://github.com/users/Michele-Kummer/projects/1).
 
-- **Epics** group the work by area of the tool. Every user story and bug is a sub-issue of its epic, and each bug names the user story it affects. When the last of them is closed, a GitHub workflow closes the epic.
+- **Epics** group the work by area of the tool. Every user story and bug is a sub-issue of its epic, and each bug names the user story it affects. When the last of them is closed, a GitHub workflow closes the epic. A story that is partly done names the issues it waits on in its **Status:** line, such as `**Status:** Partly done. One unreadable file stops the whole step (#57).` When every issue named there is closed as completed, the same workflow sets the line to `**Status:** Done` and closes the story. An issue closed as not planned leaves the story open for someone to check.
 - **Titles** start with the area, such as `Dates:`, `Flatten:` or `Thumbnails:`.
 - **Types:** stories have the **Feature** type and bugs the **Bug** type.
 - **Labels** give the priority (`P1: Critical` to `P4: Low`), a bug's severity (`S1: Blocker` to `S4: Trivial`) and who found a bug (`Found by: …`). Epics have the `epic` label.
